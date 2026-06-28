@@ -232,6 +232,13 @@ interface BiliApiService {
     @GET("https://api.bilibili.com/x/member/web/coin/log")
     suspend fun getCoinLog(): ApiResponse<JsonElement>
 
+    /**
+     * HD/TV 扫码登录后激活 cookie;否则调 /nav 会被服务端判未登录。
+     * payload 为 B 站加密串(目前为预留,未调用时传空字符串)。
+     */
+    @POST("https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi")
+    suspend fun activeCookie(@Body payload: com.google.gson.JsonObject): ApiResponse<JsonElement>
+
     // ===== Series =====
 
     @GET("https://api.bilibili.com/x/polymer/web-space/seasons_series_list")

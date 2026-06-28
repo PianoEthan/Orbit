@@ -4,18 +4,22 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.qx.orbit.bili.data.model.ApiResponse
+import com.qx.orbit.bili.data.model.TvQrCodeAuth
+import com.qx.orbit.bili.data.model.TvQrCodePoll
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.sign.AppSignUtil
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
-import com.qx.orbit.bili.data.model.ApiResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
 
+/** LoginApi —— Web / HD 扫码登录端点 + Cookie 导入。 */
 object LoginApi {
 
     internal data class QRGenerateData(
@@ -112,4 +116,71 @@ object LoginApi {
     }
 
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
+
+    // ===== HD / TV 扫码登录(KiliKili 迁入)=====
+
+    /**
+     * HD 扫码登录：获取 TV 端 auth_code。
+     * 服务端字段约定：mobi_app=android_hd, platform=android。
+     */
+    suspend fun getTvAuthCode(): TvQrCodeAuth? = withContext(Dispatchers.IO) {
+        val signed = AppSignUtil.sign(
+            mutableMapOf(
+                "local_id" to "0",
+                "mobi_app" to "android_hd",
+                "platform" to "android",
+            )
+        )
+        val body = signed.toFormBody()
+        val request = Request.Builder()
+            .url("https://passport.bilibili.com/x/passport-tv-login/qrcode/auth_code")
+            .post(body)
+            .addHeader("Cookie", CookieManager.getCookie())
+            .addHeader("User-Agent", AppSignUtil.HD_USER_AGENT)
+            .addHeader("Referer", "https://www.bilibili.com/")
+            .addHeader("Origin", "https://www.bilibili.com")
+            .build()
+        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
+        val type = object : TypeToken<ApiResponse<TvQrCodeAuth>>() {}.type
+        val resp: ApiResponse<TvQrCodeAuth>? = GsonConfig.gson.fromJson(json, type)
+        if (resp?.isSuccess == true) resp.data else null
+    }
+
+    /**
+     * HD 扫码登录：轮询扫码结果。
+     *
+     * 服务端错误码：
+     *  - 86038：二维码已过期
+     *  - 86039 / 86042：未扫码（继续轮询）
+     *  - 86090：已扫码未确认（继续轮询）
+     */
+    suspend fun pollTvQrCode(authCode: String): TvQrCodePoll? = withContext(Dispatchers.IO) {
+        val signed = AppSignUtil.sign(
+            mutableMapOf(
+                "auth_code" to authCode,
+                "local_id" to "0",
+                "mobi_app" to "android_hd",
+                "platform" to "android",
+            )
+        )
+        val body = signed.toFormBody()
+        val request = Request.Builder()
+            .url("https://passport.bilibili.com/x/passport-tv-login/qrcode/poll")
+            .post(body)
+            .addHeader("Cookie", CookieManager.getCookie())
+            .addHeader("User-Agent", AppSignUtil.HD_USER_AGENT)
+            .addHeader("Referer", "https://www.bilibili.com/")
+            .addHeader("Origin", "https://www.bilibili.com")
+            .build()
+        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
+        val type = object : TypeToken<ApiResponse<TvQrCodePoll>>() {}.type
+        val resp: ApiResponse<TvQrCodePoll>? = GsonConfig.gson.fromJson(json, type)
+        resp?.data
+    }
+
+    private fun Map<String, String>.toFormBody(): okhttp3.FormBody {
+        val builder = FormBody.Builder()
+        forEach { (k, v) -> builder.add(k, v) }
+        return builder.build()
+    }
 }

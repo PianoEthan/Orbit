@@ -278,7 +278,7 @@ object OpusApi {
 
     suspend fun likeOpus(dynId: Long, up: Boolean): Int = withContext(Dispatchers.IO) {
         val csrf = CookieManager.getCsrf()
-        val jsonStr = "{\"dyn_id_str\":\"$dynId\",\"up\":${if (up) 1 else 2},\"csrf\":\"$csrf\"}"
+        val jsonStr = "{\"dyn_id_str\":\"$dynId\",\"up\":${if (up) 1 else 2},\"spmid\":\"333.1369.0.0\",\"from_spmid\":\"333.1387.0.0\"}"
         val body = jsonStr.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
         val request = Request.Builder()
             .url("https://api.bilibili.com/x/dynamic/feed/dyn/thumb?csrf=$csrf")
