@@ -18,6 +18,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +87,7 @@ fun PlayerScreen(
     
     var dragProgress by remember { mutableFloatStateOf(-1f) }
     var isLongPressSpeedUp by remember { mutableStateOf(false) }
+    var longPressUpTimestamp by remember { mutableLongStateOf(0L) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
 
     val mediaPlayer = remember { IjkMediaPlayer() }
@@ -314,6 +317,7 @@ fun PlayerScreen(
                 }
             }
             .pointerInput(Unit) {
+                var wasLongPress = false
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val timeout = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
@@ -324,6 +328,7 @@ fun PlayerScreen(
                         }
                     }
                     if (timeout == null) {
+                        wasLongPress = true
                         if (isPlaying && !showControls && SharedPreferencesUtil.getBoolean("player_longclick", true)) isLongPressSpeedUp = true
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -332,12 +337,25 @@ fun PlayerScreen(
                                 break
                             }
                         }
+                    } else {
+                        wasLongPress = false
+                        val upEvent = currentEvent.changes.firstOrNull()
+                        val upTime = upEvent?.uptimeMillis ?: 0L
+                        val downTime = down.uptimeMillis
+                        val duration = upTime - downTime
+                        if (duration < viewConfiguration.longPressTimeoutMillis && duration > 0) {
+                            val downPos = down.position
+                            val upPos = upEvent?.position ?: downPos
+                            val dist = (upPos - downPos).getDistance()
+                            if (dist < viewConfiguration.touchSlop) {
+                                if (!wasLongPress) showControls = !showControls
+                            }
+                        }
                     }
                 }
             }
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { showControls = !showControls },
                     onDoubleTap = {
                         if (isPlaying) {
                             mediaPlayer.pause()
@@ -385,17 +403,20 @@ fun PlayerScreen(
                     scaleY = scale,
                     translationX = offsetX,
                     translationY = offsetY
-                )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            // Video Surface
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // Video Surface - fit within round screen safe area by default
+            Box(modifier = Modifier.fillMaxSize(0.85f)) {
                 AndroidView(
                     factory = { ctx ->
                         SurfaceView(ctx).apply {
                             layoutParams = FrameLayout.LayoutParams(
                                 FrameLayout.LayoutParams.MATCH_PARENT,
                                 FrameLayout.LayoutParams.MATCH_PARENT
-                            )
+                            ).apply {
+                                gravity = android.view.Gravity.CENTER
+                            }
                             holder.addCallback(object : SurfaceHolder.Callback {
                                 override fun surfaceCreated(h: SurfaceHolder) {
                                     surfaceHolder = h
@@ -409,10 +430,12 @@ fun PlayerScreen(
                             })
                         }
                     },
-                    modifier = Modifier.aspectRatio(
-                        ratio = if (videoWidth > 0 && videoHeight > 0) videoWidth / videoHeight else 16f / 9f,
-                        matchHeightConstraintsFirst = videoHeight > videoWidth
-                    )
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .aspectRatio(
+                            ratio = if (videoWidth > 0 && videoHeight > 0) videoWidth / videoHeight else 16f / 9f,
+                            matchHeightConstraintsFirst = videoHeight > videoWidth
+                        )
                 )
             }
 
@@ -436,6 +459,30 @@ fun PlayerScreen(
                         fontSize = 12.sp
                     )
                 }
+            }
+        }
+
+        if (isLongPressSpeedUp) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.FastForward,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "倍速播放中",
+                    color = Color.White,
+                    fontSize = 11.sp
+                )
             }
         }
 
@@ -516,7 +563,7 @@ fun PlayerScreen(
                                 else -> 1.0f
                             }
                         },
-                        modifier = Modifier.align(Alignment.CenterStart).offset(x = (-16).dp)
+                        modifier = Modifier.align(Alignment.CenterStart).offset(x = (-16).dp).size(36.dp)
                     ) {
                         val iconRes = when (playbackSpeed) {
                             0.5f -> R.drawable.speed_0_5x
@@ -543,26 +590,26 @@ fun PlayerScreen(
                             }
                             isPlaying = !isPlaying
                         },
-                        modifier = Modifier.align(Alignment.Center)
+                        modifier = Modifier.align(Alignment.Center).size(48.dp)
                     ) {
                         Icon(
                             painter = painterResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
                             contentDescription = "Play/Pause",
                             tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(42.dp)
                         )
                     }
 
                     if (SharedPreferencesUtil.getBoolean("player_ui_showDanmakuBtn", true)) {
                         IconButton(
                             onClick = { showDanmaku = !showDanmaku },
-                            modifier = Modifier.align(Alignment.CenterEnd).offset(x = 16.dp)
+                            modifier = Modifier.align(Alignment.CenterEnd).offset(x = 16.dp).size(36.dp)
                         ) {
                             Icon(
                                 painter = painterResource(if (showDanmaku) R.drawable.ic_danmaku_inline_switch_v2_on else R.drawable.ic_danmaku_inline_switch_v2_off),
                                 contentDescription = "Toggle Danmaku",
                                 tint = Color.Unspecified,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(32.dp)
                             )
                         }
                     }
@@ -583,7 +630,7 @@ fun PlayerScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp)
+                        .padding(bottom = 16.dp)
                 ) {
                     Box(
                         modifier = Modifier
