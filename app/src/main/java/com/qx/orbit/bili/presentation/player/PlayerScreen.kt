@@ -86,6 +86,7 @@ fun PlayerScreen(
     var isPrepared by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(true) }
+    var interactionCounter by remember { mutableIntStateOf(0) }
     var currentProgress by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -120,11 +121,10 @@ fun PlayerScreen(
     var videoWidth by remember { mutableFloatStateOf(16f) }
     var videoHeight by remember { mutableFloatStateOf(9f) }
 
-    LaunchedEffect(showControls) {
-        if (showControls) {
-            delay(3000)
-            showControls = false
-        }
+    LaunchedEffect(interactionCounter) {
+        showControls = true
+        delay(3000)
+        showControls = false
     }
 
     LaunchedEffect(isPlaying, isPrepared) {
@@ -455,7 +455,10 @@ fun PlayerScreen(
                             val upPos = upEvent?.position ?: downPos
                             val dist = (upPos - downPos).getDistance()
                             if (dist < viewConfiguration.touchSlop) {
-                                if (!wasLongPress) showControls = !showControls
+                                if (!wasLongPress) {
+                                    if (showControls) showControls = false
+                                    else interactionCounter++
+                                }
                             }
                         }
                     }
@@ -486,7 +489,7 @@ fun PlayerScreen(
                             danmakuView.resume()
                             isPlaying = true
                         }
-                        showControls = true
+                        interactionCounter++
                     }
                 )
             }
@@ -497,7 +500,7 @@ fun PlayerScreen(
                     mediaPlayer.seekTo(newProgress)
                     danmakuView.seekTo(newProgress)
                     currentProgress = newProgress
-                    showControls = true
+                    interactionCounter++
                 }
                 true
             }
@@ -638,6 +641,7 @@ fun PlayerScreen(
                                 },
                                 onHorizontalDrag = { change, dragAmount ->
                                     change.consume()
+                                    interactionCounter++
                                     val progressDelta = dragAmount / (size.width.toFloat() * 0.8f) // use 80% screen width as full seek bar
                                     dragProgress = (dragProgress + progressDelta).coerceIn(0f, 1f)
                                 }
