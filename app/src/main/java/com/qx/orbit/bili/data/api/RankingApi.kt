@@ -2,14 +2,15 @@ package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object RankingApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class RankingItem(
         @SerializedName("aid") val aid: Long = 0,
@@ -27,13 +28,14 @@ object RankingApi {
     )
 
     suspend fun getRanking(rid: Int, type: String): List<VideoCard> = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/web-interface/ranking/v2?rid=$rid&type=$type"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
-        val typeToken = object : TypeToken<ApiResponse<RankingResponse>>() {}.type
-        val resp: ApiResponse<RankingResponse>? = GsonConfig.gson.fromJson(json, typeToken)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.list?.filterNotNull()?.map { it.toVideoCard() } ?: emptyList()
+        when (val resp = api.getRanking(rid, type)) {
+            is Result.Success -> {
+                val typeToken = object : TypeToken<ApiResponse<RankingResponse>>() {}.type
+                val parsed: ApiResponse<RankingResponse>? = GsonConfig.gson.fromJson(resp.data, typeToken)
+                parsed?.data?.list?.filterNotNull()?.map { it.toVideoCard() } ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     private fun RankingItem.toVideoCard(): VideoCard = VideoCard(
@@ -45,13 +47,4 @@ object RankingApi {
         bvid = bvid ?: "",
         cid = cid
     )
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", com.qx.orbit.bili.data.remote.CookieManager.getCookie())
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
 }

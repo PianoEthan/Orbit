@@ -166,6 +166,24 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                 OpusDetailScreen(opusId = id, navController = navController)
             }
             composable(
+                "article_detail/{id}",
+                arguments = listOf(
+                    navArgument("id") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getLong("id") ?: 0L
+                ArticleDetailScreen(articleId = id, navController = navController)
+            }
+            composable(
+                "live_room/{roomId}",
+                arguments = listOf(
+                    navArgument("roomId") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val roomId = backStackEntry.arguments?.getLong("roomId") ?: 0L
+                LiveDetailScreen(roomId = roomId, navController = navController)
+            }
+            composable(
                 "detail/{bvid}/{aid}",
                 arguments = listOf(
                     navArgument("bvid") { type = NavType.StringType },
@@ -185,8 +203,9 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     SearchResultScreen(viewModel = searchViewModel, query = query, navController = navController)
                 }
                 composable(
-                    "reply_detail/{replyJson}",
+                    "reply_detail/{rpid}/{replyJson}",
                     arguments = listOf(
+                        navArgument("rpid") { type = NavType.LongType },
                         navArgument("replyJson") { type = NavType.StringType }
                     )
                 ) { backStackEntry ->

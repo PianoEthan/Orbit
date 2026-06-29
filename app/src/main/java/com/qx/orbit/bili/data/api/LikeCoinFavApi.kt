@@ -4,14 +4,16 @@ import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
 import okhttp3.Request
 
 object LikeCoinFavApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class RelationData(
         @SerializedName("attention") val attention: Boolean = false,
@@ -21,79 +23,32 @@ object LikeCoinFavApi {
         @SerializedName("coin") val coin: Int = 0
     )
 
-    suspend fun triple(aid: Long): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("aid", aid.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/web-interface/archive/like/triple")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+    suspend fun triple(aid: Long): Int {
+        return when (val resp = api.triple(aid, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> resp.exception.code
+        }
     }
 
-    suspend fun like(aid: Long, likeState: Int): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("aid", aid.toString())
-            .add("like", likeState.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/web-interface/archive/like")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+    suspend fun like(aid: Long, likeState: Int): Int {
+        return when (val resp = api.like(aid, likeState, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> resp.exception.code
+        }
     }
 
-    suspend fun coin(aid: Long, multiply: Int = 1): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("aid", aid.toString())
-            .add("multiply", multiply.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/web-interface/coin/add")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+    suspend fun coin(aid: Long, multiply: Int = 1): Int {
+        return when (val resp = api.coin(aid, multiply, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> resp.exception.code
+        }
     }
 
-    suspend fun favorite(aid: Long, fid: Long): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("rid", aid.toString())
-            .add("media_id", fid.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/medialist/gateway/coll/resource/deal")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+    suspend fun favorite(aid: Long, fid: Long): Int {
+        return when (val resp = api.favorite(aid, fid, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> resp.exception.code
+        }
     }
 
     suspend fun getVideoStats(videoInfo: VideoInfo): Pair<ApiResponse<*>, VideoInfo> = withContext(Dispatchers.IO) {

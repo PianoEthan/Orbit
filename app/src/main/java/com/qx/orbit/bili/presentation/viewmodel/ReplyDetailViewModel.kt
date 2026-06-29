@@ -46,9 +46,7 @@ class ReplyDetailViewModel : ViewModel() {
             try {
                 val newReplies = ReplyApi.getReplies(oid = oid, rpid = rpid, pageNumber = page)
                 _childReplies.value = _childReplies.value + newReplies
-                if (newReplies.isNotEmpty()) {
-                    page++
-                }
+                if (newReplies.isNotEmpty()) page++
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

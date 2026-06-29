@@ -1,16 +1,16 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object TimelineApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class TimelineData(
         @SerializedName("result") val result: List<TimelineItem>? = null
@@ -39,44 +39,36 @@ object TimelineApi {
     )
 
     suspend fun getTimeline(types: String, before: Int, after: Int): List<Timeline.DayInfo> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/pgc/web/timeline?types=$types&before=$before&after=$after"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<TimelineData>>() {}.type
-        val resp: ApiResponse<TimelineData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.result?.map { item ->
-            Timeline.DayInfo(
-                date = item.date ?: "",
-                date_ts = item.date_ts,
-                day_of_week = item.day_of_week,
-                episodes = item.episodes?.map { ep ->
-                    Timeline.Episode(
-                        cover = ep.cover ?: "",
-                        delay = ep.delay,
-                        episode_id = ep.episode_id,
-                        pub_index = ep.pub_index ?: "",
-                        pub_time = ep.pub_time ?: "",
-                        pub_ts = ep.pub_ts,
-                        published = ep.published,
-                        follows = ep.follows ?: "",
-                        plays = ep.plays ?: "",
-                        season_id = ep.season_id,
-                        title = ep.title ?: ""
+        when (val resp = api.getTimeline(types, before, after)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<TimelineData>>() {}.type
+                val apiResp: ApiResponse<TimelineData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data: TimelineData? = apiResp?.data
+                data?.result?.map { item ->
+                    Timeline.DayInfo(
+                        date = item.date ?: "",
+                        date_ts = item.date_ts,
+                        day_of_week = item.day_of_week,
+                        episodes = item.episodes?.map { ep ->
+                            Timeline.Episode(
+                                cover = ep.cover ?: "",
+                                delay = ep.delay,
+                                episode_id = ep.episode_id,
+                                pub_index = ep.pub_index ?: "",
+                                pub_time = ep.pub_time ?: "",
+                                pub_ts = ep.pub_ts,
+                                published = ep.published,
+                                follows = ep.follows ?: "",
+                                plays = ep.plays ?: "",
+                                season_id = ep.season_id,
+                                title = ep.title ?: ""
+                            )
+                        } ?: emptyList(),
+                        is_today = item.is_today
                     )
-                } ?: emptyList(),
-                is_today = item.is_today
-            )
-        } ?: emptyList()
+                } ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

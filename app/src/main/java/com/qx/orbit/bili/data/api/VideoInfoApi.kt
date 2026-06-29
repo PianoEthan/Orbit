@@ -2,7 +2,7 @@ package com.qx.orbit.bili.data.api
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.util.*
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.data.model.UserInfo
@@ -13,12 +13,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 import java.text.SimpleDateFormat
 import java.util.*
 import com.qx.orbit.bili.data.model.Collection as BiliCollection
 
 object VideoInfoApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class VideoInfoData(
         @SerializedName("title") val title: String? = null,
@@ -50,14 +51,6 @@ object VideoInfoApi {
         @SerializedName("coin") val coin: Int = 0
     )
 
-    internal data class RelationData(
-        @SerializedName("attention") val attention: Int = 0,
-        @SerializedName("like") val like: Int = 0,
-        @SerializedName("dislik") val dislik: Int = 0,
-        @SerializedName("favorite") val favorite: Int = 0,
-        @SerializedName("coin") val coin: Int = 0
-    )
-
     internal data class DescV2(@SerializedName("type") val type: Int = 0, @SerializedName("raw_text") val raw_text: String? = null, @SerializedName("biz_id") val biz_id: Long = 0)
     internal data class StatData(@SerializedName("view") val view: Int = 0, @SerializedName("like") val like: Int = 0, @SerializedName("coin") val coin: Int = 0, @SerializedName("reply") val reply: Int = 0, @SerializedName("danmaku") val danmaku: Int = 0, @SerializedName("favorite") val favorite: Int = 0)
     internal data class PageData(@SerializedName("part") val part: String? = null, @SerializedName("cid") val cid: Long = 0)
@@ -73,70 +66,89 @@ object VideoInfoApi {
     internal data class UgcEpisodeData(@SerializedName("season_id") val season_id: Int = 0, @SerializedName("section_id") val section_id: Int = 0, @SerializedName("id") val id: Int = 0, @SerializedName("aid") val aid: Long = 0, @SerializedName("cid") val cid: Long = 0, @SerializedName("title") val title: String? = null, @SerializedName("arc") val arc: VideoInfoData? = null, @SerializedName("bvid") val bvid: String? = null)
     internal data class TagData(@SerializedName("tag_name") val tag_name: String? = null)
     internal data class TotalData(@SerializedName("total") val total: Any? = null)
+    internal data class RelationData(
+        @SerializedName("attention") val attention: Int = 0,
+        @SerializedName("favorite") val favorite: Int = 0,
+        @SerializedName("like") val like: Int = 0,
+        @SerializedName("dislike") val dislike: Int = 0,
+        @SerializedName("coin") val coin: Int = 0
+    )
 
     suspend fun getVideoInfo(bvid: String): VideoInfo? = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/web-interface/view?bvid=$bvid"
-        fetchAndBuildVideoInfo(url)
+        fetchAndBuildVideoInfo(bvid = bvid, aid = null)
     }
 
     suspend fun getVideoInfo(aid: Long): VideoInfo? = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/web-interface/view?aid=$aid"
-        fetchAndBuildVideoInfo(url)
+        fetchAndBuildVideoInfo(bvid = null, aid = aid)
     }
 
-    private suspend fun fetchAndBuildVideoInfo(url: String): VideoInfo? {
-        val json = httpGet(url)
+    private suspend fun fetchAndBuildVideoInfo(bvid: String?, aid: Long?): VideoInfo? {
+        val result = api.getVideoInfo(bvid = bvid, aid = aid)
+        val jsonElement = when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> return null
+        }
         val type = object : TypeToken<ApiResponse<VideoInfoData>>() {}.type
-        val resp: ApiResponse<VideoInfoData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<VideoInfoData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return null
         var videoInfo = buildVideoInfo(resp.data, fetchDetailedUser = true)
-        
-        // Fetch relation stats
+
         try {
             if (CookieManager.getCookie().isNotEmpty()) {
-                val relationUrl = "https://api.bilibili.com/x/web-interface/archive/relation?aid=${videoInfo.aid}"
-                val relationJson = httpGet(relationUrl)
-                val relationType = object : TypeToken<ApiResponse<RelationData>>() {}.type
-                val relationResp: ApiResponse<RelationData>? = GsonConfig.gson.fromJson(relationJson, relationType)
-                if (relationResp != null && relationResp.isSuccess && relationResp.data != null) {
-                    val updatedStats = videoInfo.stats?.copy(
-                        followed = relationResp.data.attention != 0,
-                        liked = relationResp.data.like != 0,
-                        disliked = relationResp.data.dislik != 0,
-                        favoured = relationResp.data.favorite != 0,
-                        coined = relationResp.data.coin
-                    )
-                    videoInfo = videoInfo.copy(stats = updatedStats)
+                when (val statsResult = api.getVideoStats(videoInfo.aid)) {
+                    is Result.Success -> {
+                        val type = object : TypeToken<ApiResponse<RelationData>>() {}.type
+                        val apiResp: ApiResponse<RelationData>? = GsonConfig.gson.fromJson(statsResult.data, type)
+                        val rel = apiResp?.data
+                        if (rel != null) {
+                            val updatedStats = videoInfo.stats?.copy(
+                                followed = rel.attention == 1,
+                                liked = rel.like == 1,
+                                disliked = rel.dislike == 1,
+                                favoured = rel.favorite == 1,
+                                coined = rel.coin
+                            )
+                            videoInfo = videoInfo.copy(stats = updatedStats)
+                        }
+                    }
+                    is Result.Error -> {}
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        
+
         return videoInfo
     }
 
     suspend fun getTags(bvid: String): String = withContext(Dispatchers.IO) {
-        fetchTags("https://api.bilibili.com/x/tag/archive/tags?bvid=$bvid")
+        fetchTags(bvid = bvid, aid = null)
     }
 
     suspend fun getTags(aid: Long): String = withContext(Dispatchers.IO) {
-        fetchTags("https://api.bilibili.com/x/tag/archive/tags?aid=$aid")
+        fetchTags(bvid = null, aid = aid)
     }
 
-    private fun fetchTags(url: String): String {
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<List<TagData>>>() {}.type
-        val resp: ApiResponse<List<TagData>>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || resp.data == null) return ""
-        return resp.data.filterNotNull().joinToString("/") { it.tag_name ?: "" }
+    private suspend fun fetchTags(bvid: String?, aid: Long?): String {
+        val result = api.getVideoTags(bvid = bvid, aid = aid)
+        val jsonElement = when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> return ""
+        }
+        if (!jsonElement.isJsonArray) return ""
+        return jsonElement.asJsonArray.mapNotNull { element ->
+            GsonConfig.gson.fromJson(element, TagData::class.java)
+        }.joinToString("/") { it.tag_name ?: "" }
     }
 
     suspend fun getWatching(aid: Long, cid: Long): String = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/player/online/total?aid=$aid&cid=$cid"
-        val json = httpGet(url)
+        val result = api.getWatching(aid = aid, cid = cid)
+        val jsonElement = when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext ""
+        }
         val type = object : TypeToken<ApiResponse<TotalData>>() {}.type
-        val resp: ApiResponse<TotalData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<TotalData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || resp.data == null || resp.data.total == null) return@withContext ""
         val total = resp.data.total
         if (total is String) total
@@ -295,12 +307,4 @@ object VideoInfoApi {
         )
     }
 
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", com.qx.orbit.bili.data.remote.CookieManager.getCookie())
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
 }

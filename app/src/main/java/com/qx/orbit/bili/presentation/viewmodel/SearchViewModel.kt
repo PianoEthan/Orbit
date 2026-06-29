@@ -92,12 +92,12 @@ class SearchViewModel : ViewModel() {
                         }
 
                         if (arr != null) {
-                            val jsonArray = org.json.JSONArray(arr.toString())
-                            val items = when (tab) {
-                                SearchTab.LIVE -> SearchApi.getLiveFromSearchResult(jsonArray)
-                                SearchTab.USER -> SearchApi.getUsersFromSearchResult(jsonArray)
-                                SearchTab.ARTICLE -> SearchApi.getArticlesFromSearchResult(jsonArray)
-                                else -> emptyList<Any>()
+                            val arrList = arr.map { it }
+                            val items: List<Any> = when (tab) {
+                                SearchTab.LIVE -> SearchApi.getLiveFromSearchResult(arrList)
+                                SearchTab.USER -> SearchApi.getUsersFromSearchResult(arrList)
+                                SearchTab.ARTICLE -> SearchApi.getArticlesFromSearchResult(arrList)
+                                else -> emptyList()
                             }
                             if (items.isEmpty()) isEnds[tab] = true
                             val currentList = _results.value[tab] ?: emptyList()

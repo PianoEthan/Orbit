@@ -1,16 +1,15 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object ElectricApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class ElectricPanelData(
         @SerializedName("count") val count: Int = 0,
@@ -39,47 +38,39 @@ object ElectricApi {
     )
 
     suspend fun getElectricPanel(upMid: Long): ElectricPanel? = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/ugcpay-rank/elec/month/up?up_mid=$upMid"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<ElectricPanelData>>() {}.type
-        val resp: ApiResponse<ElectricPanelData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
-        val data = resp.data
-        ElectricPanel(
-            count = data.count,
-            total_count = data.total_count,
-            total = data.total,
-            special_day = data.special_day,
-            list = data.list?.map {
-                ElectricUser(
-                    uname = it.uname ?: "",
-                    avatar = it.avatar ?: "",
-                    mid = it.mid,
-                    pay_mid = it.pay_mid,
-                    rank = it.rank,
-                    trend_type = it.trend_type,
-                    message = it.message ?: "",
-                    msg_hidden = it.msg_hidden,
-                    vip_info = it.vip_info?.let { v ->
-                        ElectricUser.VipInfoData(
-                            vipDueMsec = v.vipDueMsec,
-                            vipStatus = v.vipStatus,
-                            vipType = v.vipType
+        when (val resp = api.getElectricPanel(upMid)) {
+            is com.qx.orbit.bili.data.remote.Result.Success -> {
+                val type = object : TypeToken<ApiResponse<ElectricPanelData>>() {}.type
+                val parsed: ApiResponse<ElectricPanelData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext null
+                val data = parsed.data
+                ElectricPanel(
+                    count = data.count,
+                    total_count = data.total_count,
+                    total = data.total,
+                    special_day = data.special_day,
+                    list = data.list?.map {
+                        ElectricUser(
+                            uname = it.uname ?: "",
+                            avatar = it.avatar ?: "",
+                            mid = it.mid,
+                            pay_mid = it.pay_mid,
+                            rank = it.rank,
+                            trend_type = it.trend_type,
+                            message = it.message ?: "",
+                            msg_hidden = it.msg_hidden,
+                            vip_info = it.vip_info?.let { v ->
+                                ElectricUser.VipInfoData(
+                                    vipDueMsec = v.vipDueMsec,
+                                    vipStatus = v.vipStatus,
+                                    vipType = v.vipType
+                                )
+                            }
                         )
-                    }
+                    } ?: emptyList()
                 )
-            } ?: emptyList()
-        )
+            }
+            is com.qx.orbit.bili.data.remote.Result.Error -> null
+        }
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

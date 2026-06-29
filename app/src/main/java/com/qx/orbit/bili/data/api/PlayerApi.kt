@@ -1,9 +1,7 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
-import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.*
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +9,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 
 object PlayerApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class PlayUrlData(
         @SerializedName("quality") val quality: Int = 0,
@@ -123,11 +123,24 @@ object PlayerApi {
     )
 
     suspend fun getVideoDash(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/player/wbi/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=16&fourk=1&fnver=0&platform=pc&voice_balance=1&gaia_source=pre-load&isGaiaAvoided=true"
-        val url = ConfInfoApi.signWBI(baseUrl)
-        val json = httpGet(url)
+        val params = WbiSigner.signParams(mapOf(
+            "avid" to playerData.aid.toString(),
+            "cid" to playerData.cid.toString(),
+            "qn" to playerData.qn.toString(),
+            "fnval" to "16",
+            "fourk" to "1",
+            "fnver" to "0",
+            "platform" to "pc",
+            "voice_balance" to "1",
+            "gaia_source" to "pre-load",
+            "isGaiaAvoided" to "true"
+        ))
+        val jsonElement = when (val result = api.getPlayUrl(params)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext playerData
+        }
         val type = object : TypeToken<ApiResponse<PlayUrlData>>() {}.type
-        val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext playerData
         val data = resp.data
         val dash = data.dash
@@ -197,11 +210,24 @@ object PlayerApi {
     }
 
     suspend fun getVideo(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/player/wbi/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&high_quality=1&fnval=1&fnver=0&platform=html5&voice_balance=1&gaia_source=pre-load&isGaiaAvoided=true"
-        val url = ConfInfoApi.signWBI(baseUrl)
-        val json = httpGet(url)
+        val params = WbiSigner.signParams(mapOf(
+            "avid" to playerData.aid.toString(),
+            "cid" to playerData.cid.toString(),
+            "qn" to playerData.qn.toString(),
+            "high_quality" to "1",
+            "fnval" to "1",
+            "fnver" to "0",
+            "platform" to "html5",
+            "voice_balance" to "1",
+            "gaia_source" to "pre-load",
+            "isGaiaAvoided" to "true"
+        ))
+        val jsonElement = when (val result = api.getPlayUrl(params)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext playerData
+        }
         val type = object : TypeToken<ApiResponse<PlayUrlData>>() {}.type
-        val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext playerData
         val data = resp.data
         val videoUrl = data.durl?.firstOrNull()?.url ?: ""
@@ -272,11 +298,12 @@ object PlayerApi {
     }
 
     suspend fun getSubtitleLinks(aid: Long, cid: Long): Array<SubtitleLink> = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/player/wbi/v2?aid=$aid&cid=$cid"
-        val url = ConfInfoApi.signWBI(baseUrl)
-        val json = httpGet(url)
+        val jsonElement = when (val result = api.getPlayerV2(aid, cid)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext emptyArray()
+        }
         val type = object : TypeToken<ApiResponse<SubtitleLinkData>>() {}.type
-        val resp: ApiResponse<SubtitleLinkData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<SubtitleLinkData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyArray()
         resp.data.subtitles?.map { s ->
             SubtitleLink(
@@ -289,11 +316,12 @@ object PlayerApi {
     }
 
     suspend fun getViewPoints(aid: Long, cid: Long): List<ViewPoint> = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/player/wbi/v2?aid=$aid&cid=$cid"
-        val url = ConfInfoApi.signWBI(baseUrl)
-        val json = httpGet(url)
+        val jsonElement = when (val result = api.getPlayerV2(aid, cid)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext emptyList()
+        }
         val type = object : TypeToken<ApiResponse<ViewPointData>>() {}.type
-        val resp: ApiResponse<ViewPointData>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<ViewPointData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
         resp.data.view_points?.map { vp ->
             ViewPoint(
@@ -308,11 +336,12 @@ object PlayerApi {
     }
 
     suspend fun getInteractionGraphVersion(aid: Long, cid: Long): Long = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/player/wbi/v2?aid=$aid&cid=$cid"
-        val url = ConfInfoApi.signWBI(baseUrl)
-        val json = httpGet(url)
+        val jsonElement = when (val result = api.getPlayerV2(aid, cid)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext 0L
+        }
         val type = object : TypeToken<ApiResponse<SubtitleInner>>() {}.type
-        val resp: ApiResponse<SubtitleInner>? = GsonConfig.gson.fromJson(json, type)
+        val resp: ApiResponse<SubtitleInner>? = GsonConfig.gson.fromJson(jsonElement, type)
         resp?.data?.interaction?.graph_version ?: 0L
     }
 

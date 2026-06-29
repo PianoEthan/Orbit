@@ -4,15 +4,18 @@ import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
-import org.json.JSONObject
 
 object UserInfoApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class CardData(
         @SerializedName("card") val card: CardDetail? = null,
@@ -176,6 +179,11 @@ object UserInfoApi {
         @SerializedName("money") val money: Double = 0.0
     )
 
+    internal data class NoticeRespData(
+        @SerializedName("code") val code: Int = -1,
+        @SerializedName("data") val data: JsonElement? = null
+    )
+
     suspend fun getUserInfo(mid: Long): UserInfo? = withContext(Dispatchers.IO) {
         val cardUrl = "https://api.bilibili.com/x/web-interface/card?mid=$mid"
         val cardJson = httpGet(cardUrl)
@@ -188,16 +196,16 @@ object UserInfoApi {
         val noticeJson = httpGet(noticeUrl)
         var notice = ""
         try {
-            val noticeObj = org.json.JSONObject(noticeJson)
-            if (noticeObj.optInt("code") == 0) {
-                val dataObj = noticeObj.opt("data")
-                if (dataObj is String) {
-                    notice = dataObj
-                } else if (dataObj is org.json.JSONObject) {
-                    notice = dataObj.optString("notice", "")
+            val noticeResp: NoticeRespData? = GsonConfig.gson.fromJson(noticeJson, NoticeRespData::class.java)
+            if (noticeResp?.code == 0) {
+                val dataEl = noticeResp.data
+                if (dataEl != null && dataEl.isJsonPrimitive) {
+                    notice = dataEl.asString
+                } else if (dataEl != null && dataEl.isJsonObject) {
+                    notice = dataEl.asJsonObject.get("notice")?.asString ?: ""
                 }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
         }
 
         val accInfoUrl = WbiSigner.signUrl("https://api.bilibili.com/x/space/wbi/acc/info?mid=$mid")
@@ -252,25 +260,28 @@ object UserInfoApi {
     }
 
     suspend fun getCurrentUserInfo(): UserInfo = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/space/myinfo"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<MyInfoData>>() {}.type
-        val resp: ApiResponse<MyInfoData>? = GsonConfig.gson.fromJson(json, type)
-        val data = resp?.data ?: return@withContext UserInfo()
-        UserInfo(
-            mid = data.mid,
-            name = data.uname ?: "",
-            avatar = data.face ?: "",
-            sign = data.sign ?: "",
-            level = data.level_info?.current_level ?: 0,
-            current_exp = data.level_info?.current_exp ?: 0,
-            next_exp = data.level_info?.next_exp ?: 0,
-            official = data.official?.role ?: 0,
-            officialDesc = data.official?.title ?: "",
-            vip_role = data.vip?.vipStatus ?: 0,
-            vip_nickname_color = data.vip?.nickname_color ?: "",
-            is_senior_member = data.is_senior_member
-        )
+        when (val resp = api.getMyInfo()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<MyInfoData>>() {}.type
+                val parsed: ApiResponse<MyInfoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data = parsed?.data ?: return@withContext UserInfo()
+                UserInfo(
+                    mid = data.mid,
+                    name = data.uname ?: "",
+                    avatar = data.face ?: "",
+                    sign = data.sign ?: "",
+                    level = data.level_info?.current_level ?: 0,
+                    current_exp = data.level_info?.current_exp ?: 0,
+                    next_exp = data.level_info?.next_exp ?: 0,
+                    official = data.official?.role ?: 0,
+                    officialDesc = data.official?.title ?: "",
+                    vip_role = data.vip?.vipStatus ?: 0,
+                    vip_nickname_color = data.vip?.nickname_color ?: "",
+                    is_senior_member = data.is_senior_member
+                )
+            }
+            is Result.Error -> UserInfo()
+        }
     }
 
     suspend fun getNavInfo(): NavInfoData? = withContext(Dispatchers.IO) {
@@ -282,59 +293,85 @@ object UserInfoApi {
     }
 
     suspend fun getCurrentUserCoin(): Int = withContext(Dispatchers.IO) {
-        val url = "https://account.bilibili.com/site/getCoin"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<CoinData>>() {}.type
-        val resp: ApiResponse<CoinData>? = GsonConfig.gson.fromJson(json, type)
-        resp?.data?.money?.toInt() ?: 0
+        when (val resp = api.getCoin()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<CoinData>>() {}.type
+                val parsed: ApiResponse<CoinData>? = GsonConfig.gson.fromJson(resp.data, type)
+                parsed?.data?.money?.toInt() ?: 0
+            }
+            is Result.Error -> 0
+        }
     }
 
     suspend fun getUserVideos(mid: Long, page: Int, searchKeyword: String = ""): Pair<Int, List<VideoCard>> = withContext(Dispatchers.IO) {
-        var url = "https://api.bilibili.com/x/space/wbi/arc/search?mid=$mid&pn=$page&ps=30"
+        val params = mutableMapOf(
+            "mid" to mid.toString(),
+            "pn" to page.toString(),
+            "ps" to "30",
+            "tid" to "0",
+            "order" to "pubdate",
+            "order_avoided" to "true",
+            "web_location" to "333.999"
+        )
         if (searchKeyword.isNotEmpty()) {
-            url += "&keyword=$searchKeyword"
+            params["keyword"] = searchKeyword
         }
-        url = WbiSigner.signUrl(url)
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<UserVideoData>>() {}.type
-        val resp: ApiResponse<UserVideoData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess) return@withContext Pair(-1, emptyList<VideoCard>())
-        val data = resp.data ?: return@withContext Pair(1, emptyList<VideoCard>())
-        val vlist = data.list?.vlist
-        if (vlist.isNullOrEmpty()) return@withContext Pair(1, emptyList<VideoCard>())
-        val cards = vlist.map { item ->
-            val coverUrl = item.pic?.replace("http://", "https://")?.let { if (it.startsWith("//")) "https:$it" else it } ?: ""
-            VideoCard(
-                title = item.title ?: "",
-                upName = "",
-                view = StringUtil.toWan(item.play.toLong()),
-                cover = coverUrl,
-                aid = item.aid,
-                bvid = item.bvid ?: ""
-            )
+        val signedParams = WbiSigner.signParams(params)
+        when (val resp = api.getUserVideos(signedParams)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<UserVideoData>>() {}.type
+                val parsed: ApiResponse<UserVideoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess) return@withContext Pair(-1, emptyList<VideoCard>())
+                val data = parsed.data ?: return@withContext Pair(1, emptyList<VideoCard>())
+                val vlist = data.list?.vlist
+                if (vlist.isNullOrEmpty()) return@withContext Pair(1, emptyList<VideoCard>())
+                val cards = vlist.map { item ->
+                    val coverUrl = item.pic?.replace("http://", "https://")?.let { if (it.startsWith("//")) "https:$it" else it } ?: ""
+                    VideoCard(
+                        title = item.title ?: "",
+                        upName = "",
+                        view = StringUtil.toWan(item.play.toLong()),
+                        cover = coverUrl,
+                        aid = item.aid,
+                        bvid = item.bvid ?: ""
+                    )
+                }
+                Pair(0, cards)
+            }
+            is Result.Error -> Pair(-1, emptyList())
         }
-        Pair(0, cards)
     }
 
     suspend fun getUserArticles(mid: Long, page: Int): Pair<Int, List<ArticleCard>> = withContext(Dispatchers.IO) {
-        val url = WbiSigner.signUrl("https://api.bilibili.com/x/space/wbi/article?mid=$mid&pn=$page&ps=20&sort=0")
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<UserArticleData>>() {}.type
-        val resp: ApiResponse<UserArticleData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess) return@withContext Pair(-1, emptyList<ArticleCard>())
-        val data = resp.data ?: return@withContext Pair(1, emptyList<ArticleCard>())
-        val articles = data.articles
-        if (articles.isNullOrEmpty()) return@withContext Pair(1, emptyList<ArticleCard>())
-        val cards = articles.map { item ->
-            ArticleCard(
-                title = item.title ?: "",
-                id = item.id,
-                cover = item.image_urls?.firstOrNull() ?: "",
-                upName = item.author?.name ?: "",
-                view = StringUtil.toWan(item.stats?.view?.toLong() ?: 0)
-            )
+        val signedParams = WbiSigner.signParams(mapOf(
+            "mid" to mid.toString(),
+            "pn" to page.toString(),
+            "ps" to "30",
+            "tid" to "0",
+            "order" to "pubdate",
+            "order_avoided" to "true"
+        ))
+        when (val resp = api.getUserArticles(signedParams)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<UserArticleData>>() {}.type
+                val parsed: ApiResponse<UserArticleData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess) return@withContext Pair(-1, emptyList<ArticleCard>())
+                val data = parsed.data ?: return@withContext Pair(1, emptyList<ArticleCard>())
+                val articles = data.articles
+                if (articles.isNullOrEmpty()) return@withContext Pair(1, emptyList<ArticleCard>())
+                val cards = articles.map { item ->
+                    ArticleCard(
+                        title = item.title ?: "",
+                        id = item.id,
+                        cover = item.image_urls?.firstOrNull() ?: "",
+                        upName = item.author?.name ?: "",
+                        view = StringUtil.toWan(item.stats?.view?.toLong() ?: 0)
+                    )
+                }
+                Pair(0, cards)
+            }
+            is Result.Error -> Pair(-1, emptyList())
         }
-        Pair(0, cards)
     }
 
     suspend fun followUser(mid: Long, isFollow: Boolean): Int = withContext(Dispatchers.IO) {
@@ -373,18 +410,15 @@ object UserInfoApi {
         CookieManager.setCookie("")
     }
 
-    suspend fun getMedalWall(targetId: Long): JSONObject? = withContext(Dispatchers.IO) {
+    suspend fun getMedalWall(targetId: Long): JsonElement? = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/xlive/web-ucenter/user/MedalWall?target_id=$targetId"
         val json = httpGet(url)
-        try {
-            val obj = JSONObject(json)
-            if (obj.optInt("code") == 0) obj.optJSONObject("data") else null
-        } catch (_: Exception) {
-            null
-        }
+        val type = object : TypeToken<ApiResponse<JsonElement>>() {}.type
+        val resp: ApiResponse<JsonElement>? = GsonConfig.gson.fromJson(json, type)
+        if (resp == null || !resp.isSuccess) null else resp.data
     }
 
-    suspend fun updateUserSign(userSign: String): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun updateUserSign(userSign: String): Int = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/x/member/web/sign/update"
         val body = FormBody.Builder()
             .add("user_sign", userSign)
@@ -396,13 +430,10 @@ object UserInfoApi {
             .addHeader("User-Agent", USER_AGENT)
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
-        val response = HttpClient.client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: return@withContext JSONObject()
-        try {
-            JSONObject(responseBody)
-        } catch (_: Exception) {
-            JSONObject()
-        }
+        val json = HttpClient.client.newCall(request).execute().body?.string() ?: return@withContext -1
+        val type = object : TypeToken<ApiResponse<*>>() {}.type
+        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, type)
+        resp?.code ?: -1
     }
 
     private fun httpGet(url: String): String {

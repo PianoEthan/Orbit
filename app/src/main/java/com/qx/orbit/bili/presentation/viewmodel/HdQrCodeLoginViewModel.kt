@@ -5,8 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.JsonParser
 import com.qx.orbit.bili.data.api.BiliApiService
 import com.qx.orbit.bili.data.api.LoginApi
+import com.qx.orbit.bili.data.model.TvQrCodeAuth
 import com.qx.orbit.bili.data.model.TvQrCodePoll
+import com.qx.orbit.bili.data.remote.BilibiliApiException
 import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.data.remote.GsonConfig
+import com.qx.orbit.bili.data.remote.Result
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,13 +57,20 @@ class HdQrCodeLoginViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                val data = LoginApi.getTvAuthCode()
-                if (data == null || data.authCode.isBlank() || data.url.isBlank()) {
-                    _uiState.value = HdQrCodeState(status = HdQrStatus.ERROR, error = "获取二维码失败")
-                    return@launch
+                when (val result = LoginApi.getTvAuthCode()) {
+                    is Result.Success -> {
+                        val data = GsonConfig.gson.fromJson(result.data, TvQrCodeAuth::class.java)
+                        if (data == null || data.authCode.isBlank() || data.url.isBlank()) {
+                            _uiState.value = HdQrCodeState(status = HdQrStatus.ERROR, error = "获取二维码失败")
+                            return@launch
+                        }
+                        _uiState.value = HdQrCodeState(qrCodeUrl = data.url, status = HdQrStatus.WAITING)
+                        startPolling(data.authCode)
+                    }
+                    is Result.Error -> {
+                        _uiState.value = HdQrCodeState(status = HdQrStatus.ERROR, error = result.exception.message ?: "获取二维码失败")
+                    }
                 }
-                _uiState.value = HdQrCodeState(qrCodeUrl = data.url, status = HdQrStatus.WAITING)
-                startPolling(data.authCode)
             } catch (e: Exception) {
                 _uiState.value = HdQrCodeState(status = HdQrStatus.ERROR, error = e.message ?: "获取二维码失败")
             }
@@ -72,12 +83,27 @@ class HdQrCodeLoginViewModel : ViewModel() {
                 delay(1000.milliseconds)
                 if (!isActive) break
 
-                val poll: TvQrCodePoll? = try { LoginApi.pollTvQrCode(authCode) } catch (_: Exception) { null }
-                if (poll == null) continue
-
-                if (poll.tokenInfo != null) {
-                    saveLoginResult(poll)
-                    return@launch
+                when (val result = LoginApi.pollTvQrCode(authCode)) {
+                    is Result.Success -> {
+                        val poll = GsonConfig.gson.fromJson(result.data, TvQrCodePoll::class.java)
+                        if (poll != null && poll.tokenInfo != null) {
+                            saveLoginResult(poll)
+                            return@launch
+                        }
+                    }
+                    is Result.Error -> {
+                        when (result.exception.code) {
+                            86038 -> {
+                                _uiState.value = HdQrCodeState(status = HdQrStatus.EXPIRED, error = "二维码已过期")
+                                return@launch
+                            }
+                            86090 -> {
+                                _uiState.value = _uiState.value.copy(status = HdQrStatus.SCANNED)
+                            }
+                            86039, 86042 -> { /* 未扫码，继续轮询 */ }
+                            else -> { /* 其他错误，继续轮询 */ }
+                        }
+                    }
                 }
             }
             _uiState.value = HdQrCodeState(status = HdQrStatus.EXPIRED)

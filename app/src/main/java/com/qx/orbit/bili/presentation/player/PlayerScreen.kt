@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +54,7 @@ import com.qx.orbit.bili.data.api.HistoryApi
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.data.api.LiveApi
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
@@ -75,6 +80,7 @@ fun PlayerScreen(
     val scope = rememberCoroutineScope()
     
     var playerData by remember { mutableStateOf(initialData) }
+    val isLive = playerData.type == PlayerData.TYPE_LIVE
     var showDanmaku by remember { mutableStateOf(SharedPreferencesUtil.getBoolean("player_danmaku_default_show", true)) }
     var isPlaying by remember { mutableStateOf(false) }
     var isPrepared by remember { mutableStateOf(false) }
@@ -89,10 +95,24 @@ fun PlayerScreen(
     var isLongPressSpeedUp by remember { mutableStateOf(false) }
     var longPressUpTimestamp by remember { mutableLongStateOf(0L) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
+    var liveElapsedSeconds by remember { mutableLongStateOf(0L) }
+    var onlineNumber by remember { mutableStateOf("") }
+
+    LaunchedEffect(isLive, playerData.timeStamp) {
+        if (isLive && playerData.timeStamp > 0) {
+            while (true) {
+                liveElapsedSeconds = (System.currentTimeMillis() / 1000) - playerData.timeStamp
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
 
     val mediaPlayer = remember { IjkMediaPlayer() }
     val danmakuView = remember { DanmakuView(context) }
+    var danmakuContext by remember { mutableStateOf<DanmakuContext?>(null) }
+    var liveWebSocket by remember { mutableStateOf<okhttp3.WebSocket?>(null) }
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
+    var surfaceReady by remember { mutableStateOf(false) }
     
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -145,43 +165,59 @@ fun PlayerScreen(
         if (showDanmaku) danmakuView.show() else danmakuView.hide()
     }
 
-    LaunchedEffect(playerData.cid) {
+    LaunchedEffect(if (isLive) playerData.aid else playerData.cid) {
         isLoading = true
         try {
             if (!CookieManager.getCookie().contains("buvid3")) {
                 CookiesApi.checkCookies()
             }
-            
-            val danmakuSegment = DanmakuApi.getVideoDanmakuSegment(playerData.aid, playerData.cid, 1)
-            val parser = BiliProtobufDanmakuParser()
-            if (danmakuSegment != null) {
-                parser.setDanmakuSegments(listOf(danmakuSegment))
-            }
-            val danmakuContext = DanmakuContext.create().apply {
-                val mergeDuplicates = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
-                val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true)
-                val maxLines = SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)
 
-                setDuplicateMergingEnabled(mergeDuplicates)
-                
-                if (!allowOverlap) {
-                    val overlappingPairs = mapOf(1 to true, 5 to true, 4 to true, 6 to true)
-                    preventOverlapping(overlappingPairs)
+            if (!isLive) {
+                val danmakuSegment = DanmakuApi.getVideoDanmakuSegment(playerData.aid, playerData.cid, 1)
+                val parser = BiliProtobufDanmakuParser()
+                if (danmakuSegment != null) {
+                    parser.setDanmakuSegments(listOf(danmakuSegment))
                 }
+                val ctx = DanmakuContext.create().apply {
+                    val mergeDuplicates = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
+                    val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true)
+                    val maxLines = SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)
 
-                if (maxLines > 0) {
-                    val maxLinesPair = mapOf(1 to maxLines, 5 to maxLines, 4 to maxLines, 6 to maxLines)
-                    setMaximumLines(maxLinesPair)
+                    setDuplicateMergingEnabled(mergeDuplicates)
+                    
+                    if (!allowOverlap) {
+                        val overlappingPairs = mapOf(1 to true, 5 to true, 4 to true, 6 to true)
+                        preventOverlapping(overlappingPairs)
+                    }
+
+                    if (maxLines > 0) {
+                        val maxLinesPair = mapOf(1 to maxLines, 5 to maxLines, 4 to maxLines, 6 to maxLines)
+                        setMaximumLines(maxLinesPair)
+                    }
+
+                    setScaleTextSize(0.8f)
+                    setDanmakuTransparency(0.4f)
                 }
-
-                setScaleTextSize(0.8f)
-                setDanmakuTransparency(0.4f)
+                danmakuContext = ctx
+                danmakuView.prepare(parser, ctx)
+                danmakuView.enableDanmakuDrawingCache(true)
+            } else {
+                val ctx = DanmakuContext.create().apply {
+                    setDuplicateMergingEnabled(false)
+                    setScaleTextSize(0.8f)
+                    setDanmakuTransparency(0.4f)
+                }
+                danmakuContext = ctx
+                danmakuView.prepare(object : master.flame.danmaku.danmaku.parser.BaseDanmakuParser() {
+                    override fun parse(): master.flame.danmaku.danmaku.model.android.Danmakus {
+                        return master.flame.danmaku.danmaku.model.android.Danmakus()
+                    }
+                }, ctx)
+                danmakuView.enableDanmakuDrawingCache(true)
             }
-            danmakuView.prepare(parser, danmakuContext)
-            danmakuView.enableDanmakuDrawingCache(true)
 
-            val result = PlayerApi.getVideo(playerData)
-            playerData = result
+            val result = if (isLive) playerData else PlayerApi.getVideo(playerData)
+            if (!isLive) playerData = result
             if (result.videoUrl.isNotEmpty()) {
                 mediaPlayer.reset()
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
@@ -193,8 +229,15 @@ fun PlayerScreen(
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1)
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_delay_max", 2)
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
+                if (isLive) {
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "live直播延时", 1)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
+                }
                 mediaPlayer.dataSource = result.videoUrl
-                surfaceHolder?.let { mediaPlayer.setDisplay(it) }
+                if (surfaceHolder != null) {
+                    mediaPlayer.setDisplay(surfaceHolder)
+                }
                 if (SharedPreferencesUtil.getBoolean("player_loop", false)) {
                     mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "loop", 1)
                 }
@@ -207,16 +250,18 @@ fun PlayerScreen(
                     isPlaying = true
                     danmakuView.start()
                     
-                    // Report heartbeat on start
-                    scope.launch {
-                        try {
-                            HeartbeatApi.reportHeartbeat(
-                                aid = playerData.aid,
-                                bvid = playerData.bvid,
-                                cid = playerData.cid,
-                                playedTime = 0
-                            )
-                        } catch (e: Exception) {}
+                    if (!isLive) {
+                        // Report heartbeat on start
+                        scope.launch {
+                            try {
+                                HeartbeatApi.reportHeartbeat(
+                                    aid = playerData.aid,
+                                    bvid = playerData.bvid,
+                                    cid = playerData.cid,
+                                    playedTime = 0
+                                )
+                            } catch (e: Exception) {}
+                        }
                     }
                 }
                 mediaPlayer.setOnVideoSizeChangedListener { _, width, height, _, _ ->
@@ -254,6 +299,67 @@ fun PlayerScreen(
         }
     }
 
+    // Live danmaku WebSocket connection
+    LaunchedEffect(isLive, isPrepared) {
+        if (isLive && isPrepared) {
+            try {
+                val danmuInfo = LiveApi.getDanmuInfo(playerData.aid)
+                val host = danmuInfo?.host_list?.firstOrNull()
+                val token = danmuInfo?.token
+                if (host != null && token != null) {
+                    val url = "wss://${host.host}:${host.wss_port}/sub"
+                    val buvid = CookieManager.getCookie().split("; ")
+                        .find { it.startsWith("buvid3=") }?.substringAfter("=") ?: ""
+                    val mid = CookieManager.getMid()
+
+                    val callback = object : PlayerCallback {
+                        override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String) {
+                            try {
+                                val ctx = danmakuContext ?: return
+                                val item = ctx.mDanmakuFactory.createDanmaku(type) ?: return
+                                val showSender = com.qx.orbit.bili.util.SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true)
+                                val displayText = if (!showSender && senderName.isNotEmpty()) {
+                                    text.removePrefix("$senderName：")
+                                } else text
+                                item.text = displayText
+                                item.padding = 5
+                                item.priority = 1
+                                item.textColor = color
+                                item.textSize = textSize * (context.resources.displayMetrics.density - 0.6f)
+                                item.time = danmakuView.currentTime + 100
+                                danmakuView.addDanmaku(item)
+                            } catch (_: Exception) {}
+                        }
+                        override var onlineNumber: String = ""
+                            set(value) {
+                                field = value
+                                onlineNumber = value
+                            }
+                        override fun updateTitle(title: String) {}
+                    }
+
+                    val listener = PlayerDanmuClientListener(
+                        roomId = playerData.aid,
+                        uid = mid,
+                        buvid = buvid,
+                        key = token,
+                        callback = callback
+                    )
+
+                    val client = okhttp3.OkHttpClient()
+                    val request = okhttp3.Request.Builder()
+                        .url(url)
+                        .header("Cookie", CookieManager.getCookie())
+                        .header("Origin", "https://live.bilibili.com")
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
+                        .build()
+                    liveWebSocket = client.newWebSocket(request, listener)
+                    android.util.Log.d("BiliApi", "PlayerScreen danmaku WS connecting to $url, uid=$mid, roomid=${playerData.aid}")
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     LaunchedEffect(isLongPressSpeedUp, playbackSpeed) {
         if (isLongPressSpeedUp) {
             try { mediaPlayer.setSpeed(2.0f) } catch(e:Exception){}
@@ -271,23 +377,29 @@ fun PlayerScreen(
         val startTs = System.currentTimeMillis() / 1000
         onDispose {
             view.keepScreenOn = false
-            var currentPosSeconds = 0L
-            try {
-                currentPosSeconds = mediaPlayer.currentPosition / 1000
-            } catch (e: Exception) {}
 
-            GlobalScope.launch {
+            if (!isLive) {
+                var currentPosSeconds = 0L
                 try {
-                    HistoryApi.reportHistory(playerData.aid, playerData.cid, currentPosSeconds)
-                    HeartbeatApi.reportHeartbeat(
-                        aid = playerData.aid,
-                        bvid = playerData.bvid,
-                        cid = playerData.cid,
-                        playedTime = currentPosSeconds,
-                        startTs = startTs
-                    )
+                    currentPosSeconds = mediaPlayer.currentPosition / 1000
                 } catch (e: Exception) {}
+
+                GlobalScope.launch {
+                    try {
+                        HistoryApi.reportHistory(playerData.aid, playerData.cid, currentPosSeconds)
+                        HeartbeatApi.reportHeartbeat(
+                            aid = playerData.aid,
+                            bvid = playerData.bvid,
+                            cid = playerData.cid,
+                            playedTime = currentPosSeconds,
+                            startTs = startTs
+                        )
+                    } catch (e: Exception) {}
+                }
             }
+
+            liveWebSocket?.close(1000, "bye")
+            liveWebSocket = null
             mediaPlayer.release()
             danmakuView.release()
         }
@@ -329,7 +441,7 @@ fun PlayerScreen(
                     }
                     if (timeout == null) {
                         wasLongPress = true
-                        if (isPlaying && !showControls && SharedPreferencesUtil.getBoolean("player_longclick", true)) isLongPressSpeedUp = true
+                        if (isPlaying && !showControls && !isLive && SharedPreferencesUtil.getBoolean("player_longclick", true)) isLongPressSpeedUp = true
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Initial)
                             if (event.changes.any { it.changedToUp() }) {
@@ -407,7 +519,7 @@ fun PlayerScreen(
             contentAlignment = Alignment.Center
         ) {
             // Video Surface - fit within round screen safe area by default
-            Box(modifier = Modifier.fillMaxSize(0.85f)) {
+            Box(modifier = Modifier.fillMaxSize(0.865f)) {
                 AndroidView(
                     factory = { ctx ->
                         SurfaceView(ctx).apply {
@@ -420,11 +532,13 @@ fun PlayerScreen(
                             holder.addCallback(object : SurfaceHolder.Callback {
                                 override fun surfaceCreated(h: SurfaceHolder) {
                                     surfaceHolder = h
-                                    if (isPrepared) mediaPlayer.setDisplay(h)
+                                    surfaceReady = true
+                                    mediaPlayer.setDisplay(h)
                                 }
                                 override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
                                 override fun surfaceDestroyed(h: SurfaceHolder) {
                                     surfaceHolder = null
+                                    surfaceReady = false
                                     mediaPlayer.setDisplay(null)
                                 }
                             })
@@ -547,6 +661,16 @@ fun PlayerScreen(
                         .clickable { onBack() }
                         .basicMarquee()
                 )
+                if (isLive && onlineNumber.isNotEmpty() && SharedPreferencesUtil.getBoolean("player_show_online", true)) {
+                    Text(
+                        text = onlineNumber,
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 44.dp, start = 24.dp, end = 24.dp)
+                    )
+                }
                 
                 Box(
                     modifier = Modifier
@@ -554,29 +678,31 @@ fun PlayerScreen(
                         .align(Alignment.Center)
                         .padding(horizontal = 24.dp)
                 ) {
-                    IconButton(
-                        onClick = {
-                            playbackSpeed = when (playbackSpeed) {
-                                1.0f -> 1.5f
-                                1.5f -> 2.0f
-                                2.0f -> 0.5f
-                                else -> 1.0f
+                    if (!isLive) {
+                        IconButton(
+                            onClick = {
+                                playbackSpeed = when (playbackSpeed) {
+                                    1.0f -> 1.5f
+                                    1.5f -> 2.0f
+                                    2.0f -> 0.5f
+                                    else -> 1.0f
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.CenterStart).offset(x = (-16).dp).size(36.dp)
+                        ) {
+                            val iconRes = when (playbackSpeed) {
+                                0.5f -> R.drawable.speed_0_5x
+                                1.5f -> R.drawable.speed_1_5x
+                                2.0f -> R.drawable.speed_2x
+                                else -> R.drawable.speed_1x
                             }
-                        },
-                        modifier = Modifier.align(Alignment.CenterStart).offset(x = (-16).dp).size(36.dp)
-                    ) {
-                        val iconRes = when (playbackSpeed) {
-                            0.5f -> R.drawable.speed_0_5x
-                            1.5f -> R.drawable.speed_1_5x
-                            2.0f -> R.drawable.speed_2x
-                            else -> R.drawable.speed_1x
+                            Icon(
+                                painter = painterResource(iconRes),
+                                contentDescription = "Playback Speed",
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = "Playback Speed",
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(28.dp)
-                        )
                     }
 
                     IconButton(
@@ -593,7 +719,7 @@ fun PlayerScreen(
                         modifier = Modifier.align(Alignment.Center).size(48.dp)
                     ) {
                         Icon(
-                            painter = painterResource(if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
+                            imageVector = (if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow),
                             contentDescription = "Play/Pause",
                             tint = Color.White.copy(alpha = 0.9f),
                             modifier = Modifier.size(42.dp)
@@ -609,20 +735,19 @@ fun PlayerScreen(
                                 painter = painterResource(if (showDanmaku) R.drawable.ic_danmaku_inline_switch_v2_on else R.drawable.ic_danmaku_inline_switch_v2_off),
                                 contentDescription = "Toggle Danmaku",
                                 tint = Color.Unspecified,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(36.dp)
                             )
                         }
                     }
                 }
 
-                val displayProgress = if (dragProgress >= 0f) dragProgress else (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                val displayTimeMs = if (dragProgress >= 0f) (dragProgress * totalDuration).toLong() else currentProgress
-
                 val formatTime = { timeMs: Long ->
                     val totalSeconds = timeMs / 1000
-                    val m = totalSeconds / 60
+                    val h = totalSeconds / 3600
+                    val m = (totalSeconds % 3600) / 60
                     val s = totalSeconds % 60
-                    "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+                    if (h > 0) "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+                    else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
                 }
 
                 Column(
@@ -632,25 +757,37 @@ fun PlayerScreen(
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .width(120.dp)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color.White.copy(alpha = 0.3f))
-                    ) {
+                    if (isLive) {
+                        Text(
+                            text = if (playerData.timeStamp > 0) "直播 ${formatTime(liveElapsedSeconds * 1000)}"
+                            else "直播中",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        val displayProgress = if (dragProgress >= 0f) dragProgress else (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+                        val displayTimeMs = if (dragProgress >= 0f) (dragProgress * totalDuration).toLong() else currentProgress
+
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(displayProgress)
-                                .fillMaxHeight()
-                                .background(Color.White)
+                                .width(120.dp)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.White.copy(alpha = 0.3f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(displayProgress)
+                                    .fillMaxHeight()
+                                    .background(Color.White)
+                            )
+                        }
+                        Text(
+                            text = "${formatTime(displayTimeMs)} / ${formatTime(totalDuration)}",
+                            color = Color.White,
+                            fontSize = 12.sp
                         )
                     }
-                    Text(
-                        text = "${formatTime(displayTimeMs)} / ${formatTime(totalDuration)}",
-                        color = Color.White,
-                        fontSize = 12.sp
-                    )
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.qx.orbit.bili.data.api
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 
 object RecommendApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class RecommendResponse(
         @SerializedName("item") val item: List<Item>? = null
@@ -58,21 +61,25 @@ object RecommendApi {
     }
 
     suspend fun getRelated(aid: Long): List<VideoCard> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/web-interface/archive/related?aid=$aid"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<List<Item>>>() {}.type
-        val resp: ApiResponse<List<Item>>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.filterNotNull().map { it.toVideoCard() }
+        when (val resp = api.getRelated(aid)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<List<Item>>>() {}.type
+                val apiResp: ApiResponse<List<Item>>? = GsonConfig.gson.fromJson(resp.data, type)
+                apiResp?.data?.filterNotNull()?.map { it.toVideoCard() } ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     suspend fun getPopular(page: Int): List<VideoCard> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/web-interface/popular?pn=$page&ps=10"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<PopularResponse>>() {}.type
-        val resp: ApiResponse<PopularResponse>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.list?.filterNotNull()?.map { it.toVideoCard() } ?: emptyList()
+        when (val resp = api.getPopular(page)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<PopularResponse>>() {}.type
+                val apiResp: ApiResponse<PopularResponse>? = GsonConfig.gson.fromJson(resp.data, type)
+                apiResp?.data?.list?.filterNotNull()?.map { it.toVideoCard() } ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     suspend fun getPrecious(page: Int): List<VideoCard> = withContext(Dispatchers.IO) {

@@ -1,20 +1,16 @@
 package com.qx.orbit.bili.data.api
 
-import com.qx.orbit.bili.data.remote.CookieManager
-import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.model.ApiResponse
+import com.qx.orbit.bili.data.remote.*
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
-import com.qx.orbit.bili.data.model.ApiResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 
 object CookiesApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class BuvidData(
         @SerializedName("b_3") val b_3: String? = null
@@ -25,65 +21,53 @@ object CookiesApi {
         @SerializedName("b_4") val b_4: String? = null
     )
 
-    internal data class TicketData(
+    internal data class BiliTicketData(
         @SerializedName("ticket") val ticket: String? = null,
         @SerializedName("created_at") val created_at: Int = 0
     )
 
     suspend fun activeCookieInfo(): Int = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi"
-        val body = FormBody.Builder()
-            .add("payload", "{}")
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder().url(url)
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        val payload = JsonObject().apply { addProperty("payload", "{}") }
+        when (val resp = api.activeCookie(payload)) {
+            is Result.Success -> 0
+            is Result.Error -> resp.exception.code
+        }
     }
 
     suspend fun getBuvid3Only(): String = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/web-frontend/getbuvid"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<BuvidData>>() {}.type
-        val resp: ApiResponse<BuvidData>? = GsonConfig.gson.fromJson(json, type)
-        resp?.data?.b_3 ?: ""
+        when (val resp = api.getBuvid3Only()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<BuvidData>>() {}.type
+                val apiResp: ApiResponse<BuvidData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data = apiResp?.data
+                data?.b_3 ?: ""
+            }
+            is Result.Error -> ""
+        }
     }
 
     suspend fun getWebBuvids(): Pair<String, String> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/frontend/finger/spi"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<WebBuvidData>>() {}.type
-        val resp: ApiResponse<WebBuvidData>? = GsonConfig.gson.fromJson(json, type)
-        Pair(resp?.data?.b_3 ?: "", resp?.data?.b_4 ?: "")
+        when (val resp = api.getWebBuvids()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<WebBuvidData>>() {}.type
+                val apiResp: ApiResponse<WebBuvidData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data = apiResp?.data
+                Pair(data?.b_3 ?: "", data?.b_4 ?: "")
+            }
+            is Result.Error -> Pair("", "")
+        }
     }
 
     suspend fun genBiliTicket(): Pair<String, Int> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket"
-        val jsonBody = JSONObject().apply {
-            put("key_id", "ec02")
-        }.toString()
-        val body = jsonBody.toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url)
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val response = HttpClient.client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: return@withContext Pair("", 0)
-        try {
-            val json = JSONObject(responseBody)
-            val data = json.optJSONObject("data")
-            Pair(data?.optString("ticket") ?: "", data?.optInt("created_at") ?: 0)
-        } catch (_: Exception) {
-            Pair("", 0)
+        val body = JsonObject().apply { addProperty("key_id", "ec02") }
+        when (val resp = api.genBiliTicket(body)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<BiliTicketData>>() {}.type
+                val apiResp: ApiResponse<BiliTicketData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data = apiResp?.data
+                Pair(data?.ticket ?: "", data?.created_at ?: 0)
+            }
+            is Result.Error -> Pair("", 0)
         }
     }
 
@@ -99,15 +83,4 @@ object CookiesApi {
         }
         genBiliTicket()
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

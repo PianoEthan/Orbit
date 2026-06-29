@@ -4,6 +4,7 @@ import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 
 object BangumiApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class BangumiFollowData(
         @SerializedName("list") val list: List<BangumiFollowItem>? = null,
@@ -257,17 +260,21 @@ object BangumiApi {
     }
 
     suspend fun getMdidFromEpid(epid: Long): Long? = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/pgc/view/web/season?ep_id=$epid"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<SeasonIdData>>() {}.type
-        val resp: ApiResponse<SeasonIdData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
-        resp.data.media_id.takeIf { it > 0 }
+        when (val resp = api.getSeasonInfo(epId = epid)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<SeasonIdData>>() {}.type
+                val parsed: ApiResponse<SeasonIdData>? = GsonConfig.gson.fromJson(resp.data, type)
+                parsed?.data?.media_id?.takeIf { it > 0 }
+            }
+            is Result.Error -> null
+        }
     }
 
     suspend fun getInfo(mediaId: Long): Bangumi.Info? = withContext(Dispatchers.IO) {
-        val reviewUrl = "https://api.bilibili.com/pgc/review/user?media_id=$mediaId"
-        val reviewJson = httpGet(reviewUrl)
+        val reviewJson = when (val r = api.getBangumiReview(mediaId)) {
+            is Result.Success -> r.data
+            is Result.Error -> return@withContext null
+        }
         val reviewType = object : TypeToken<ApiResponse<ReviewData>>() {}.type
         val reviewResp: ApiResponse<ReviewData>? = GsonConfig.gson.fromJson(reviewJson, reviewType)
         if (reviewResp == null || !reviewResp.isSuccess || reviewResp.data == null) return@withContext null
@@ -317,8 +324,10 @@ object BangumiApi {
             )
         }
 
-        val seasonUrl = "https://api.bilibili.com/pgc/view/web/season?season_id=$seasonId"
-        val seasonJson = httpGet(seasonUrl)
+        val seasonJson = when (val r = api.getSeasonInfo(seasonId = seasonId)) {
+            is Result.Success -> r.data
+            is Result.Error -> null
+        }
         val seasonType = object : TypeToken<ApiResponse<SeasonDetailData>>() {}.type
         val seasonResp: ApiResponse<SeasonDetailData>? = GsonConfig.gson.fromJson(seasonJson, seasonType)
         if (seasonResp == null || !seasonResp.isSuccess || seasonResp.data == null) {
@@ -415,8 +424,10 @@ object BangumiApi {
     }
 
     suspend fun getSections(seasonId: Long): List<Bangumi.Section> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/pgc/web/season/section?season_id=$seasonId"
-        val json = httpGet(url)
+        val json = when (val r = api.getSeasonSection(seasonId)) {
+            is Result.Success -> r.data
+            is Result.Error -> return@withContext emptyList()
+        }
         val type = object : TypeToken<ApiResponse<SectionData>>() {}.type
         val resp: ApiResponse<SectionData>? = GsonConfig.gson.fromJson(json, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()

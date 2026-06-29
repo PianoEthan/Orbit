@@ -9,6 +9,8 @@ import okhttp3.Request
 
 object HeartbeatApi {
 
+    private val api by lazy { BiliApiService.create() }
+
     suspend fun reportHeartbeat(
         aid: Long,
         bvid: String,
@@ -19,31 +21,10 @@ object HeartbeatApi {
     ) = withContext(Dispatchers.IO) {
         val mid = CookieManager.getMid()
         val csrf = CookieManager.getCsrf()
-        if (csrf.isBlank()) return@withContext // Not logged in
-
-        val body = FormBody.Builder()
-            .add("aid", aid.toString())
-            .add("bvid", bvid)
-            .add("cid", cid.toString())
-            .add("mid", mid.toString())
-            .add("csrf", csrf)
-            .add("played_time", playedTime.toString())
-            .add("realtime", realtime.toString())
-            .add("start_ts", startTs.toString())
-            .add("type", "3")
-            .add("dt", "2")
-            .add("play_type", "0")
-            .build()
-            
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/click-interface/web/heartbeat")
-            .post(body)
-            .build()
-            
+        if (csrf.isBlank()) return@withContext
         try {
-            HttpClient.client.newCall(request).execute().close()
-        } catch (e: Exception) {
-            e.printStackTrace()
+            api.reportHeartbeat(aid, bvid, cid, mid, csrf, playedTime, realtime, startTs)
+        } catch (_: Exception) {
         }
     }
 }

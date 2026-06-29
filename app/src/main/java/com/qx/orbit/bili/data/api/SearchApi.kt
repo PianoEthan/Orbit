@@ -2,7 +2,7 @@ package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -11,10 +11,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
-import okhttp3.Request
-import org.json.JSONArray
 
 object SearchApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class SearchVideoItem(
         @SerializedName("aid") val aid: Long = 0,
@@ -84,46 +84,60 @@ object SearchApi {
         @SerializedName("show_name") val show_name: String? = null
     )
 
-    suspend fun search(keyword: String, page: Int): JSONArray? = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/web-interface/wbi/search/all/v2?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}&page=$page"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
-        val jsonObj = org.json.JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext null
-        val resultArray = jsonObj.optJSONObject("data")?.optJSONArray("result") ?: return@withContext null
-        // search/all/v2 returns: [ { "result_type": "video", "data": [...] }, ... ]
-        // Flatten into a single array with "type" on each item for downstream parsers
-        val flattened = JSONArray()
-        for (i in 0 until resultArray.length()) {
-            val group = resultArray.optJSONObject(i) ?: continue
-            val resultType = group.optString("result_type", "")
-            val dataArr = group.optJSONArray("data") ?: continue
-            for (j in 0 until dataArr.length()) {
-                val item = dataArr.optJSONObject(j) ?: continue
-                item.put("type", resultType)
-                flattened.put(item)
+    internal data class SearchAllData(
+        @SerializedName("result") val result: List<SearchResultGroup>? = null
+    )
+
+    suspend fun search(keyword: String, page: Int): List<JsonElement>? = withContext(Dispatchers.IO) {
+        val params = WbiSigner.signParams(mapOf(
+            "keyword" to keyword,
+            "page" to page.toString()
+        ))
+        val jsonElement = when (val result = api.searchAll(params)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext null
+        }
+        val type = object : TypeToken<ApiResponse<SearchAllData>>() {}.type
+        val resp: ApiResponse<SearchAllData>? = GsonConfig.gson.fromJson(jsonElement, type)
+        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
+        val flattened = mutableListOf<JsonElement>()
+        for (group in resp.data.result ?: return@withContext null) {
+            val resultType = group.result_type.ifEmpty { continue }
+            for (item in group.data) {
+                if (item.isJsonObject) {
+                    val obj = item.asJsonObject.deepCopy()
+                    obj.addProperty("type", resultType)
+                    flattened.add(obj)
+                }
             }
         }
         flattened
     }
 
     suspend fun searchType(keyword: String, page: Int, type: String): JsonElement? = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/web-interface/wbi/search/type?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}&page=$page&search_type=$type"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
-        val resp: ApiResponse<SearchTypeData>? = GsonConfig.gson.fromJson(json, object : TypeToken<ApiResponse<SearchTypeData>>() {}.type)
+        val params = WbiSigner.signParams(mapOf(
+            "keyword" to keyword,
+            "page" to page.toString(),
+            "search_type" to type
+        ))
+        val jsonElement = when (val result = api.searchType(params)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext null
+        }
+        val resp: ApiResponse<SearchTypeData>? = GsonConfig.gson.fromJson(jsonElement, object : TypeToken<ApiResponse<SearchTypeData>>() {}.type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
         resp.data.result
     }
 
-    suspend fun getVideosFromSearchResult(input: JSONArray?, first: Boolean = false): List<VideoCard> = withContext(Dispatchers.IO) {
+    suspend fun getVideosFromSearchResult(input: List<JsonElement>?, first: Boolean = false): List<VideoCard> = withContext(Dispatchers.IO) {
         if (input == null) return@withContext emptyList()
         val result = mutableListOf<VideoCard>()
-        for (i in 0 until input.length()) {
-            val obj = input.optJSONObject(i) ?: continue
-            val type = obj.optString("type")
+        for (el in input) {
+            if (!el.isJsonObject) continue
+            val obj = el.asJsonObject
+            val type = obj.get("type")?.asString
             if (type != "video") continue
-            val item = GsonConfig.gson.fromJson(obj.toString(), SearchVideoItem::class.java) ?: continue
+            val item = GsonConfig.gson.fromJson(obj, SearchVideoItem::class.java) ?: continue
             result.add(VideoCard(
                 title = htmlToString(item.title ?: ""),
                 upName = item.author ?: "",
@@ -138,17 +152,17 @@ object SearchApi {
         result
     }
 
-    suspend fun getUsersFromSearchResult(input: JSONArray?): List<UserInfo> = withContext(Dispatchers.IO) {
+    suspend fun getUsersFromSearchResult(input: List<JsonElement>?): List<UserInfo> = withContext(Dispatchers.IO) {
         if (input == null) return@withContext emptyList()
         val deferreds = mutableListOf<Deferred<UserInfo>>()
-        for (i in 0 until input.length()) {
-            val obj = input.optJSONObject(i) ?: continue
-            val item = GsonConfig.gson.fromJson(obj.toString(), SearchUserItem::class.java) ?: continue
+        for (el in input) {
+            if (!el.isJsonObject) continue
+            val item = GsonConfig.gson.fromJson(el, SearchUserItem::class.java) ?: continue
             deferreds.add(async {
                 val fullInfo = try {
                     UserInfoApi.getUserInfo(item.mid)
                 } catch (e: Exception) { null }
-                
+
                 val vipStatus = fullInfo?.vip_role ?: 0
                 val officialType = fullInfo?.official ?: -1
                 val officialDesc = fullInfo?.officialDesc ?: ""
@@ -170,12 +184,12 @@ object SearchApi {
         deferreds.awaitAll()
     }
 
-    suspend fun getArticlesFromSearchResult(input: JSONArray?): List<ArticleCard> = withContext(Dispatchers.IO) {
+    suspend fun getArticlesFromSearchResult(input: List<JsonElement>?): List<ArticleCard> = withContext(Dispatchers.IO) {
         if (input == null) return@withContext emptyList()
         val result = mutableListOf<ArticleCard>()
-        for (i in 0 until input.length()) {
-            val obj = input.optJSONObject(i) ?: continue
-            val item = GsonConfig.gson.fromJson(obj.toString(), SearchArticleItem::class.java) ?: continue
+        for (el in input) {
+            if (!el.isJsonObject) continue
+            val item = GsonConfig.gson.fromJson(el, SearchArticleItem::class.java) ?: continue
             result.add(ArticleCard(
                 title = htmlToString(item.title ?: ""),
                 id = item.id,
@@ -187,12 +201,12 @@ object SearchApi {
         result
     }
 
-    suspend fun getLiveFromSearchResult(input: JSONArray?): List<LiveRoom> = withContext(Dispatchers.IO) {
+    suspend fun getLiveFromSearchResult(input: List<JsonElement>?): List<LiveRoom> = withContext(Dispatchers.IO) {
         if (input == null) return@withContext emptyList()
         val result = mutableListOf<LiveRoom>()
-        for (i in 0 until input.length()) {
-            val obj = input.optJSONObject(i) ?: continue
-            val item = GsonConfig.gson.fromJson(obj.toString(), SearchLiveItem::class.java) ?: continue
+        for (el in input) {
+            if (!el.isJsonObject) continue
+            val item = GsonConfig.gson.fromJson(el, SearchLiveItem::class.java) ?: continue
             val finalRoomId = if (item.roomid <= 0) item.short_id else item.roomid
             result.add(LiveRoom(
                 roomid = finalRoomId,
@@ -209,24 +223,26 @@ object SearchApi {
         result
     }
 
+    internal data class SuggestData(
+        @SerializedName("tag") val tag: List<SuggestTag>? = null
+    )
+
+    internal data class SuggestTag(
+        @SerializedName("value") val value: String? = null
+    )
+
     suspend fun getSearchSuggestions(keyword: String): List<String> = withContext(Dispatchers.IO) {
-        val url = "https://s.search.bilibili.com/main/suggest?term=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
-        val json = httpGet(url)
-        val jsonObj = org.json.JSONObject(json)
-        val tags = jsonObj.optJSONArray("tag") ?: return@withContext emptyList()
-        val result = mutableListOf<String>()
-        for (i in 0 until tags.length()) {
-            val obj = tags.optJSONObject(i) ?: continue
-            obj.optString("value").takeIf { it.isNotEmpty() }?.let { result.add(it) }
-        }
-        result
+        val jsonElement = api.getSearchSuggest(keyword)
+        val resp: SuggestData? = GsonConfig.gson.fromJson(jsonElement, SuggestData::class.java)
+        resp?.tag?.mapNotNull { it.value?.takeIf { v -> v.isNotEmpty() } } ?: emptyList()
     }
 
     suspend fun getDefaultSearchContent(): String? = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/web-interface/wbi/search/default"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
-        val resp: ApiResponse<DefaultSearchData>? = GsonConfig.gson.fromJson(json, object : TypeToken<ApiResponse<DefaultSearchData>>() {}.type)
+        val jsonElement = when (val result = api.getDefaultSearch()) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext null
+        }
+        val resp: ApiResponse<DefaultSearchData>? = GsonConfig.gson.fromJson(jsonElement, object : TypeToken<ApiResponse<DefaultSearchData>>() {}.type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
         resp.data.show_name
     }
@@ -241,14 +257,5 @@ object SearchApi {
     private fun fixCoverUrl(url: String): String {
         if (url.startsWith("//")) return "https:$url"
         return url
-    }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", com.qx.orbit.bili.data.remote.CookieManager.getCookie())
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
     }
 }

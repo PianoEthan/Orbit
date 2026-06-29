@@ -3,15 +3,15 @@ package com.qx.orbit.bili.data.api
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.Request
 
 object ArticleApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class ArticleViewData(
         @SerializedName("id") val id: Long = 0,
@@ -42,11 +42,12 @@ object ArticleApi {
     )
 
     suspend fun getArticle(id: Long): ArticleInfo? = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/article/view?id=$id"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
+        val jsonElement = when (val result = api.getArticle(id)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext null
+        }
         val typeToken = object : TypeToken<ApiResponse<ArticleViewData>>() {}.type
-        val resp: ApiResponse<ArticleViewData>? = GsonConfig.gson.fromJson(json, typeToken)
+        val resp: ApiResponse<ArticleViewData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
         val data = resp.data
         val author = data.author
@@ -73,88 +74,30 @@ object ArticleApi {
     }
 
     suspend fun like(cvid: Long, type: Int): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("id", cvid.toString())
-            .add("type", type.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/article/like")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.likeArticle(cvid, type, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
 
     suspend fun addCoin(cvid: Long, upid: Long, multiply: Int = 1): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("aid", cvid.toString())
-            .add("upid", upid.toString())
-            .add("multiply", multiply.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/web-interface/coin/add")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.coinArticle(cvid, upid, multiply, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
 
     suspend fun favorite(cvid: Long): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("id", cvid.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/article/favorites/add")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.favoriteArticle(cvid, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
 
     suspend fun delFavorite(cvid: Long): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("id", cvid.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/article/favorites/del")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
-        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.delFavoriteArticle(cvid, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

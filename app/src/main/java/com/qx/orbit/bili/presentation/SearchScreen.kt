@@ -382,7 +382,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                                 is LiveRoom -> LiveRoomCard(
                                     item = item, 
                                     onClick = {
-                                        // navController.navigate("live_room/${item.roomid}")
+                                        navController.navigate("live_room/${item.roomid}")
                                     },
                                     transformation = SurfaceTransformation(transformationSpec)
                                 )
@@ -396,7 +396,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                                 is ArticleCard -> ArticleCardItem(
                                     item = item, 
                                     onClick = {
-                                        // navController.navigate("article/${item.id}")
+                                        navController.navigate("article_detail/${item.id}")
                                     },
                                     transformation = SurfaceTransformation(transformationSpec)
                                 )

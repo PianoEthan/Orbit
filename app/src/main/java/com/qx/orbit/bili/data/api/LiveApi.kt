@@ -1,16 +1,16 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object LiveApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class LiveRoomListData(
         @SerializedName("list") val list: List<LiveRoom>? = null,
@@ -58,88 +58,130 @@ object LiveApi {
     )
 
     suspend fun getRecommend(page: Int): List<LiveRoom> = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.live.bilibili.com/xlive/web-interface/v1/second/getUserRecommend?page=$page&page_size=10"
-        val url = ConfInfoApi.signWBI(rawUrl)
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<LiveRoomListData>>() {}.type
-        val resp: ApiResponse<LiveRoomListData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.list ?: resp.data.rooms ?: emptyList()
+        val params = WbiSigner.signParams(mapOf(
+            "page" to page.toString(),
+            "page_size" to "10",
+            "platform" to "web"
+        ))
+        when (val resp = api.getLiveRecommend(params)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<LiveRoomListData>>() {}.type
+                val parsed: ApiResponse<LiveRoomListData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext emptyList()
+                parsed.data.list ?: parsed.data.rooms ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     suspend fun getFollowed(page: Int): List<LiveRoom> = withContext(Dispatchers.IO) {
-        val url = "https://api.live.bilibili.com/xlive/web-ucenter/v1/xfetter/GetWebList?page=$page&page_size=10"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<LiveRoomListData>>() {}.type
-        val resp: ApiResponse<LiveRoomListData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.list ?: resp.data.rooms ?: emptyList()
+        when (val resp = api.getLiveFollowed(page)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<LiveRoomListData>>() {}.type
+                val parsed: ApiResponse<LiveRoomListData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext emptyList()
+                parsed.data.list ?: parsed.data.rooms ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     suspend fun getRoomInfo(roomId: Long): LiveRoom? = withContext(Dispatchers.IO) {
-        val url = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=$roomId"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<RoomInfoData>>() {}.type
-        val resp: ApiResponse<RoomInfoData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
-        val d = resp.data
-        LiveRoom(
-            roomid = d.room_id,
-            short_id = d.short_id,
-            uid = d.uid,
-            title = d.title ?: "",
-            uname = d.uname ?: "",
-            tags = d.tags ?: "",
-            description = d.description ?: "",
-            online = d.online,
-            attention = d.attention,
-            user_cover = d.user_cover ?: "",
-            cover = d.cover ?: "",
-            keyframe = d.keyframe ?: "",
-            face = d.face ?: "",
-            area_parent_id = d.area_parent_id,
-            area_parent_name = d.area_parent_name ?: "",
-            area_id = d.area_id,
-            area_name = d.area_name ?: "",
-            live_status = d.live_status,
-            liveTime = d.liveTime ?: "",
-            is_portrait = d.is_portrait
-        )
+        when (val resp = api.getLiveRoomInfo(roomId)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<RoomInfoData>>() {}.type
+                val parsed: ApiResponse<RoomInfoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext null
+                val d = parsed.data
+                LiveRoom(
+                    roomid = d.room_id,
+                    short_id = d.short_id,
+                    uid = d.uid,
+                    title = d.title ?: "",
+                    uname = d.uname ?: "",
+                    tags = d.tags ?: "",
+                    description = d.description ?: "",
+                    online = d.online,
+                    attention = d.attention,
+                    user_cover = d.user_cover ?: "",
+                    cover = d.cover ?: "",
+                    keyframe = d.keyframe ?: "",
+                    face = d.face?.takeIf { it.isNotEmpty() } ?: "https://i0.hdslb.com/face/${d.uid}.jpg",
+                    area_parent_id = d.area_parent_id,
+                    area_parent_name = d.area_parent_name ?: "",
+                    area_id = d.area_id,
+                    area_name = d.area_name ?: "",
+                    live_status = d.live_status,
+                    liveTime = d.liveTime ?: "",
+                    is_portrait = d.is_portrait
+                )
+            }
+            is Result.Error -> null
+        }
     }
 
     suspend fun getRoomPlayInfo(roomId: Long, qn: Int): LivePlayInfo? = withContext(Dispatchers.IO) {
-        val url = "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo?room_id=$roomId&qn=$qn"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<RoomPlayInfoData>>() {}.type
-        val resp: ApiResponse<RoomPlayInfoData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
-        val d = resp.data
-        LivePlayInfo(
-            roomid = d.room_id,
-            short_id = d.short_id,
-            uid = d.uid,
-            isHidden = d.isHidden,
-            isLocked = d.isLocked,
-            isPortrait = d.isPortrait,
-            live_status = d.live_status,
-            encrypted = d.encrypted,
-            pwd_verified = d.pwd_verified,
-            live_time = d.live_time,
-            playurl_info = d.playurl_info,
-            official_type = d.official_type,
-            official_room_id = d.official_room_id,
-            risk_with_delay = d.risk_with_delay
+        val params = mapOf(
+            "room_id" to roomId.toString(),
+            "qn" to qn.toString(),
+            "protocol" to "0,1",
+            "format" to "0,1,2",
+            "codec" to "0,1,2",
+            "platform" to "web",
+            "ptype" to "8",
+            "dolby" to "5",
+            "panorama" to "1"
         )
+        when (val resp = api.getLivePlayInfo(params)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<RoomPlayInfoData>>() {}.type
+                val parsed: ApiResponse<RoomPlayInfoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext null
+                val d = parsed.data
+                LivePlayInfo(
+                    roomid = d.room_id,
+                    short_id = d.short_id,
+                    uid = d.uid,
+                    isHidden = d.isHidden,
+                    isLocked = d.isLocked,
+                    isPortrait = d.isPortrait,
+                    live_status = d.live_status,
+                    encrypted = d.encrypted,
+                    pwd_verified = d.pwd_verified,
+                    live_time = d.live_time,
+                    playurl_info = d.playurl_info,
+                    official_type = d.official_type,
+                    official_room_id = d.official_room_id,
+                    risk_with_delay = d.risk_with_delay
+                )
+            }
+            is Result.Error -> null
+        }
     }
 
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
+    data class DanmuInfoData(
+        @SerializedName("host_list") val host_list: List<DanmuHost>? = null,
+        @SerializedName("token") val token: String? = null
+    )
 
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
+    data class DanmuHost(
+        @SerializedName("host") val host: String? = null,
+        @SerializedName("wss_port") val wss_port: Int = 0,
+        @SerializedName("ws_port") val ws_port: Int = 0
+    )
+
+    suspend fun getDanmuInfo(roomId: Long): DanmuInfoData? = withContext(Dispatchers.IO) {
+        val params = WbiSigner.signParams(mapOf(
+            "id" to roomId.toString(),
+            "type" to "0"
+        ))
+        when (val resp = api.getDanmuInfo(params)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<DanmuInfoData>>() {}.type
+                val parsed: ApiResponse<DanmuInfoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                parsed?.data
+            }
+            is Result.Error -> null
+        }
+    }
 }

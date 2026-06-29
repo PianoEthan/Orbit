@@ -206,7 +206,6 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                             focusRequester = focusRequesters[0],
                             onPlayClick = {
                                 val info = videoInfo ?: return@VideoInfoPage
-                                // Launch PlayerActivity
                                 val qn = SharedPreferencesUtil.getInt("play_qn", 16)
                                 val playerData = PlayerData(
                                     title = info.title,
@@ -240,7 +239,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                             onClick = { reply ->
                                 val json = Gson().toJson(reply)
                                 val encoded = URLEncoder.encode(json, "UTF-8")
-                                navController.navigate("reply_detail/$encoded")
+                                navController.navigate("reply_detail/${reply.rpid}/$encoded")
                             },
                             onLikeClick = { reply -> viewModel.likeReply(reply.rpid, reply.liked) },
                             onReplyClick = { reply ->

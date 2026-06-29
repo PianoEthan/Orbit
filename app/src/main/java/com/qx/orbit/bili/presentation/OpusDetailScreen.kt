@@ -77,6 +77,7 @@ import coil.request.ImageRequest
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.Opus
 import com.qx.orbit.bili.data.model.OpusParagraph
+import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.presentation.theme.BiliPink
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
@@ -91,8 +92,12 @@ fun OpusDetailScreen(
     viewModel: OpusDetailViewModel = viewModel()
 ) {
     val opus by viewModel.opus.collectAsState()
+    val error by viewModel.error.collectAsState()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val focusRequesters = remember { List(2) { FocusRequester() } }
+    var showWriteReply by remember { mutableStateOf(false) }
+    var replyTarget by remember { mutableStateOf<Reply?>(null) }
+    val emotes by viewModel.emotes.collectAsState()
 
     LaunchedEffect(opusId) {
         viewModel.loadOpus(opusId)
@@ -107,9 +112,29 @@ fun OpusDetailScreen(
     }
 
     ScreenScaffold {
-        if (opus == null) {
+        val errorMsg = error
+        if (opus == null && errorMsg == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
+            }
+        } else if (opus == null) {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = errorMsg ?: "加载失败",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { viewModel.loadOpus(opusId) },
+                        modifier = Modifier.size(width = 80.dp, height = 32.dp)
+                    ) {
+                        Text("重试", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         } else {
             val item = opus!!
@@ -120,12 +145,36 @@ fun OpusDetailScreen(
                 ) { page ->
                     when (page) {
                         0 -> OpusContentPage(item, viewModel, navController, focusRequesters[0])
-                        1 -> OpusCommentsPage(viewModel, navController, focusRequesters[1])
+                        1 -> OpusCommentsPage(
+                            viewModel, navController, focusRequesters[1],
+                            onReplyClick = { reply ->
+                                replyTarget = reply
+                                viewModel.loadEmotes()
+                                showWriteReply = true
+                            },
+                            onSendCommentClick = {
+                                replyTarget = null
+                                viewModel.loadEmotes()
+                                showWriteReply = true
+                            }
+                        )
                     }
                 }
                 HorizontalPageIndicator(
                     pagerState = pagerState,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp)
+                )
+            }
+            if (showWriteReply) {
+                WriteReplyScreen(
+                    visible = showWriteReply,
+                    targetName = replyTarget?.sender?.name,
+                    emotes = emotes,
+                    onSend = { text ->
+                        viewModel.sendReply(text, replyTarget)
+                        showWriteReply = false
+                    },
+                    onClose = { showWriteReply = false }
                 )
             }
         }
@@ -379,14 +428,15 @@ fun OpusContentPage(
 fun OpusCommentsPage(
     viewModel: OpusDetailViewModel,
     navController: NavHostController,
-    focusRequester: FocusRequester
+    focusRequester: FocusRequester,
+    onReplyClick: (Reply) -> Unit = {},
+    onSendCommentClick: () -> Unit = {}
 ) {
     val replies by viewModel.replies.collectAsState()
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val behavior = RotaryScrollableDefaults.behavior(listState)
-    val coroutineScope = rememberCoroutineScope()
 
     TransformingLazyColumn(
         state = listState,
@@ -402,7 +452,7 @@ fun OpusCommentsPage(
         }
         item {
             Button(
-                onClick = { /* TODO: Open send comment dialog */ },
+                onClick = onSendCommentClick,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
@@ -418,7 +468,8 @@ fun OpusCommentsPage(
                 transformation = SurfaceTransformation(transformationSpec),
                 modifier = Modifier.transformedHeight(this, transformationSpec),
                 navController = navController,
-                onLikeClick = { viewModel.likeReply(replies[index].rpid) }
+                onLikeClick = { viewModel.likeReply(replies[index].rpid) },
+                onReplyClick = { onReplyClick(replies[index]) }
             )
         }
         if (isReplyLoading) {

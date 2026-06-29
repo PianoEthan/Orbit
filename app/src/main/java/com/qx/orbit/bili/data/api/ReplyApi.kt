@@ -3,18 +3,17 @@ package com.qx.orbit.bili.data.api
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
-import okhttp3.Request
-import java.security.MessageDigest
 import com.qx.orbit.bili.util.formatBiliTime
 import java.util.*
 
 object ReplyApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     const val REPLY_TYPE_VIDEO = 1
     const val REPLY_TYPE_VIDEO_CHILD = 0
@@ -141,20 +140,37 @@ object ReplyApi {
         type: Int = REPLY_TYPE_VIDEO,
         sort: Int = 1
     ): List<Reply> = withContext(Dispatchers.IO) {
-        val url = if (rpid > 0) {
-            "https://api.bilibili.com/x/v2/reply/reply?oid=$oid&root=$rpid&pn=$pageNumber&type=$type&sort=$sort"
+        android.util.Log.d("BiliApi", "getReplies oid=$oid rpid=$rpid page=$pageNumber type=$type sort=$sort")
+        val jsonElement = if (rpid > 0) {
+            when (val result = api.getSubReplies(oid, type, pageNumber, rpid)) {
+                is Result.Success -> result.data
+                is Result.Error -> {
+                    android.util.Log.e("BiliApi", "getSubReplies error: ${result.exception.code} ${result.exception.message}")
+                    return@withContext emptyList()
+                }
+            }
         } else {
-            "https://api.bilibili.com/x/v2/reply?oid=$oid&pn=$pageNumber&type=$type&sort=$sort"
+            when (val result = api.getReplies(oid, type, pageNumber, sort, 0)) {
+                is Result.Success -> result.data
+                is Result.Error -> {
+                    android.util.Log.e("BiliApi", "getReplies error: ${result.exception.code} ${result.exception.message}")
+                    return@withContext emptyList()
+                }
+            }
         }
-        val json = httpGet(url)
         val typeToken = object : TypeToken<ApiResponse<ReplyListData>>() {}.type
-        val resp: ApiResponse<ReplyListData>? = GsonConfig.gson.fromJson(json, typeToken)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
+        val resp: ApiResponse<ReplyListData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
+        if (resp == null || !resp.isSuccess || resp.data == null) {
+            android.util.Log.w("BiliApi", "getReplies parse failed: code=${resp?.code}")
+            return@withContext emptyList()
+        }
+        android.util.Log.d("BiliApi", "getReplies replies=${resp.data.replies?.size} top=${resp.data.top_replies?.size}")
         val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
         val normalList = resp.data.replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid) } ?: emptyList()
         if (pageNumber == 1) {
             val topList = resp.data.top_replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid) } ?: emptyList()
             val topIds = topList.map { it.rpid }.toSet()
+            android.util.Log.d("BiliApi", "getReplies result: top=${topList.size} normal=${normalList.size}")
             topList + normalList.filter { it.rpid !in topIds }
         } else {
             normalList
@@ -173,23 +189,34 @@ object ReplyApi {
             "type" to type.toString(),
             "mode" to sort.toString()
         )
-        if (rpid > 0) params["root"] = rpid.toString()
+        if (rpid > 0) params["seek_rpid"] = rpid.toString()
         if (!pagination.isNullOrEmpty()) params["pagination_str"] = "{\"offset\":\"$pagination\"}"
-        val signedUrl = WbiSigner.signUrl(
-            "https://api.bilibili.com/x/v2/reply/wbi/main?" +
-                    params.entries.joinToString("&") { "${it.key}=${it.value}" }
-        )
-        val json = httpGet(signedUrl)
+        android.util.Log.d("BiliApi", "getRepliesLazy params=$params")
+        val signedParams = WbiSigner.signParams(params)
+        android.util.Log.d("BiliApi", "getRepliesLazy signed=$signedParams")
+        val jsonElement = when (val result = api.getRepliesLazy(signedParams)) {
+            is Result.Success -> result.data
+            is Result.Error -> {
+                android.util.Log.e("BiliApi", "getRepliesLazy error: ${result.exception.code} ${result.exception.message}")
+                return@withContext Triple(0, null, emptyList())
+            }
+        }
+        android.util.Log.d("BiliApi", "getRepliesLazy response: ${jsonElement.toString().take(500)}")
         val typeToken = object : TypeToken<ApiResponse<ReplyLazyData>>() {}.type
-        val resp: ApiResponse<ReplyLazyData>? = GsonConfig.gson.fromJson(json, typeToken)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Triple(0, null, emptyList())
+        val resp: ApiResponse<ReplyLazyData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
+        if (resp == null || !resp.isSuccess || resp.data == null) {
+            android.util.Log.w("BiliApi", "getRepliesLazy parse failed: resp=$resp code=${resp?.code}")
+            return@withContext Triple(0, null, emptyList())
+        }
+        android.util.Log.d("BiliApi", "getRepliesLazy replies=${resp.data.replies?.size} top=${resp.data.top_replies?.size}")
         val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
         val count = resp.data.cursor?.all_count ?: 0
         val nextOffset = resp.data.cursor?.pagination_reply?.next_offset
         val topList = resp.data.top_replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid) } ?: emptyList()
         val normalList = resp.data.replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid) } ?: emptyList()
         val topIds = topList.map { it.rpid }.toSet()
-        Triple(count, nextOffset, topList + normalList.filter { it.rpid !in topIds })
+        val filtered = normalList.filter { it.rpid !in topIds && it.rpid != rpid }
+        Triple(count, nextOffset, topList + filtered)
     }
 
     suspend fun sendReply(
@@ -199,24 +226,12 @@ object ReplyApi {
         text: String,
         type: Int = REPLY_TYPE_VIDEO
     ): Pair<Int, Reply?> = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("oid", oid.toString())
-            .add("root", root.toString())
-            .add("parent", parent.toString())
-            .add("message", text)
-            .add("type", type.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/v2/reply/add")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
+        val jsonElement = when (val result = api.sendReply(oid, root, parent, text, type, CookieManager.getCsrf())) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext Pair(result.exception.code, null)
+        }
         val typeToken = object : TypeToken<ApiResponse<ReplyRootData>>() {}.type
-        val resp: ApiResponse<ReplyRootData>? = GsonConfig.gson.fromJson(json, typeToken)
+        val resp: ApiResponse<ReplyRootData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
         if (resp == null) return@withContext Pair(-1, null)
         if (!resp.isSuccess) return@withContext Pair(resp.code, null)
         val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
@@ -225,51 +240,26 @@ object ReplyApi {
     }
 
     suspend fun likeReply(oid: Long, rpid: Long, action: Int, type: Int = 1): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("oid", oid.toString())
-            .add("rpid", rpid.toString())
-            .add("type", type.toString())
-            .add("action", action.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/v2/reply/action")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<Unit>>() {}.type
-        val resp: ApiResponse<Unit>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.likeReply(oid, rpid, action, type, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
 
     suspend fun deleteReply(oid: Long, rpid: Long, type: Int = REPLY_TYPE_VIDEO): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("oid", oid.toString())
-            .add("rpid", rpid.toString())
-            .add("type", type.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.bilibili.com/x/v2/reply/del")
-            .post(body)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val typeToken = object : TypeToken<ApiResponse<Unit>>() {}.type
-        val resp: ApiResponse<Unit>? = GsonConfig.gson.fromJson(json, typeToken)
-        resp?.code ?: -1
+        when (val result = api.deleteReply(oid, rpid, type, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
     }
 
     suspend fun getReplyCount(oid: Long, type: Int = REPLY_TYPE_VIDEO): Long = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/v2/reply/count?oid=$oid&type=$type"
-        val json = httpGet(url)
+        val jsonElement = when (val result = api.getReplyCount(oid, type)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext 0L
+        }
         val typeToken = object : TypeToken<ApiResponse<ReplyCountData>>() {}.type
-        val resp: ApiResponse<ReplyCountData>? = GsonConfig.gson.fromJson(json, typeToken)
+        val resp: ApiResponse<ReplyCountData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext 0L
         resp.data.count
     }
@@ -326,14 +316,4 @@ object ReplyApi {
         )
     }
 
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

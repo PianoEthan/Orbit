@@ -4,6 +4,7 @@ import okhttp3.*
 import java.net.InetAddress
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import com.qx.orbit.bili.data.sign.AppSignInterceptor
 
 object HttpClient {
     private val ipv4Dns = object : Dns {
@@ -15,6 +16,8 @@ object HttpClient {
     val client: OkHttpClient = OkHttpClient.Builder()
         .followRedirects(false)
         .addInterceptor(RedirectInterceptor())
+        .addInterceptor(AppSignInterceptor())
+        .addInterceptor(DefaultHeadersInterceptor())
         .addInterceptor(CookieAddInterceptor())
         .addInterceptor(CookieSaveInterceptor())
         .dns(ipv4Dns)
@@ -41,6 +44,20 @@ object HttpClient {
                 return chain.proceed(request.newBuilder().url(location).build())
             }
             return response
+        }
+    }
+
+    private class DefaultHeadersInterceptor : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val builder = request.newBuilder()
+            if (request.header("User-Agent") == null) {
+                builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
+            }
+            if (request.header("Referer") == null) {
+                builder.header("Referer", "https://www.bilibili.com/")
+            }
+            return chain.proceed(builder.build())
         }
     }
 

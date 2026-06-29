@@ -1,17 +1,15 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
-import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.*
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
-import org.json.JSONObject
 
 object CreativeCenterApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class ScrollsData(
         @SerializedName("be_up") val be_up: BeUpData? = null
@@ -22,40 +20,32 @@ object CreativeCenterApi {
         @SerializedName("be_up_stat") val be_up_stat: Int = 0
     )
 
-    suspend fun getVideoStat(): JSONObject? = withContext(Dispatchers.IO) {
-        val url = "https://member.bilibili.com/x/web/index/stat"
-        val json = httpGet(url)
-        try {
-            val obj = JSONObject(json)
-            if (obj.optInt("code") == 0) obj.optJSONObject("data") else null
-        } catch (_: Exception) {
-            null
+    data class VideoStatData(
+        @SerializedName("total_click") val total_click: Int = 0,
+        @SerializedName("total_fan") val total_fan: Int = 0,
+        @SerializedName("total_like") val total_like: Int = 0
+    )
+
+    suspend fun getVideoStat(): VideoStatData? = withContext(Dispatchers.IO) {
+        when (val resp = api.getVideoStat()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<VideoStatData>>() {}.type
+                val apiResp: ApiResponse<VideoStatData>? = GsonConfig.gson.fromJson(resp.data, type)
+                apiResp?.data
+            }
+            is Result.Error -> null
         }
     }
 
     suspend fun getBeUPTime(): ApiResult = withContext(Dispatchers.IO) {
-        val url = "https://member.bilibili.com/x/web/index/scrolls"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<ScrollsData>>() {}.type
-        val resp: ApiResponse<ScrollsData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) {
-            return@withContext ApiResult(code = resp?.code ?: -1, message = resp?.message ?: "")
+        when (val resp = api.getBeUPTime()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<ScrollsData>>() {}.type
+                val apiResp: ApiResponse<ScrollsData>? = GsonConfig.gson.fromJson(resp.data, type)
+                val data = apiResp?.data
+                ApiResult(code = 0, message = "ok", business = data?.be_up?.be_up_minutes.toString())
+            }
+            is Result.Error -> ApiResult(code = resp.exception.code, message = resp.exception.message ?: "")
         }
-        ApiResult(
-            code = 0,
-            message = "ok",
-            business = resp.data.be_up?.be_up_minutes.toString()
-        )
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

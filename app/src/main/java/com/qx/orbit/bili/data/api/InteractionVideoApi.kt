@@ -1,16 +1,16 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object InteractionVideoApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class EdgeInfoData(
         @SerializedName("title") val title: String? = null,
@@ -53,61 +53,53 @@ object InteractionVideoApi {
     )
 
     suspend fun getEdgeInfo(aid: Long, bvid: String, graphVersion: Long, edgeId: Long): InteractionVideoData? = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/stein/edgeinfo_v2?aid=$aid&bvid=$bvid&graph_version=$graphVersion&edge_id=$edgeId"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<EdgeInfoData>>() {}.type
-        val resp: ApiResponse<EdgeInfoData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext null
-        val data = resp.data
-        InteractionVideoData(
-            title = data.title ?: "",
-            edgeId = data.edge_id,
-            storyList = data.story_list?.map { node ->
-                InteractionVideoData.StoryNode(
-                    nodeId = node.node_id,
-                    edgeId = node.edge_id,
-                    title = node.title ?: "",
-                    cid = node.cid,
-                    startPos = node.start_pos,
-                    cover = node.cover ?: "",
-                    isCurrent = node.is_current
-                )
-            } ?: emptyList(),
-            edges = data.edges?.let { edgesData ->
-                InteractionVideoData.InteractionEdge(
-                    questions = edgesData.questions?.map { q ->
-                        InteractionVideoData.Question(
-                            id = q.id,
-                            type = q.type,
-                            startTimeR = q.start_time_r,
-                            duration = q.duration,
-                            pauseVideo = q.pause_video,
-                            title = q.title ?: "",
-                            choices = q.choices?.map { c ->
-                                InteractionVideoData.Choice(
-                                    id = c.id,
-                                    cid = c.cid,
-                                    option = c.option ?: "",
-                                    isDefault = c.is_default,
-                                    isHidden = c.is_hidden
+        when (val resp = api.getEdgeInfo(aid, bvid, graphVersion, edgeId)) {
+            is Result.Success -> {
+                val type = TypeToken.getParameterized(ApiResponse::class.java, EdgeInfoData::class.java).type
+                val parsed: ApiResponse<EdgeInfoData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext null
+                val data = parsed.data
+                InteractionVideoData(
+                    title = data.title ?: "",
+                    edgeId = data.edge_id,
+                    storyList = data.story_list?.map { node ->
+                        InteractionVideoData.StoryNode(
+                            nodeId = node.node_id,
+                            edgeId = node.edge_id,
+                            title = node.title ?: "",
+                            cid = node.cid,
+                            startPos = node.start_pos,
+                            cover = node.cover ?: "",
+                            isCurrent = node.is_current
+                        )
+                    } ?: emptyList(),
+                    edges = data.edges?.let { edgesData ->
+                        InteractionVideoData.InteractionEdge(
+                            questions = edgesData.questions?.map { q ->
+                                InteractionVideoData.Question(
+                                    id = q.id,
+                                    type = q.type,
+                                    startTimeR = q.start_time_r,
+                                    duration = q.duration,
+                                    pauseVideo = q.pause_video,
+                                    title = q.title ?: "",
+                                    choices = q.choices?.map { c ->
+                                        InteractionVideoData.Choice(
+                                            id = c.id,
+                                            cid = c.cid,
+                                            option = c.option ?: "",
+                                            isDefault = c.is_default,
+                                            isHidden = c.is_hidden
+                                        )
+                                    } ?: emptyList()
                                 )
                             } ?: emptyList()
                         )
-                    } ?: emptyList()
+                    },
+                    isLeaf = data.is_leaf
                 )
-            },
-            isLeaf = data.is_leaf
-        )
+            }
+            is Result.Error -> null
+        }
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

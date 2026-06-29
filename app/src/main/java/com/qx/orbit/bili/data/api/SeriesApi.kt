@@ -1,16 +1,16 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object SeriesApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class SeriesListData(
         @SerializedName("items_lists") val items_lists: SeriesItems? = null
@@ -62,43 +62,75 @@ object SeriesApi {
     )
 
     suspend fun getUserSeries(mid: Long, page: Int): Pair<List<Series>, PageInfo?> = withContext(Dispatchers.IO) {
-        val rawUrl = "https://api.bilibili.com/x/polymer/web-space/seasons_series_list?mid=$mid&page_num=$page&page_size=20"
-        val url = WbiSigner.signUrl(rawUrl)
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<SeriesListData>>() {}.type
-        val resp: ApiResponse<SeriesListData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(emptyList(), null)
-        val items = resp.data.items_lists
-        val seriesList = items?.series_list?.map { meta ->
-            Series(
-                type = "series",
-                id = meta.meta?.series_id ?: 0,
-                title = meta.meta?.name ?: "",
-                cover = meta.meta?.cover ?: "",
-                intro = meta.meta?.description ?: "",
-                mid = mid,
-                total = (meta.meta?.total ?: 0).toString()
-            )
-        } ?: emptyList()
-        val pageInfo = items?.page?.let {
-            PageInfo(page_num = it.page_num, total = it.total, return_ps = it.page_size)
+        val params = WbiSigner.signParams(mapOf(
+            "mid" to mid.toString(),
+            "page_num" to page.toString(),
+            "page_size" to "20"
+        ))
+        when (val resp = api.getUserSeries(params)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<SeriesListData>>() {}.type
+                val parsed: ApiResponse<SeriesListData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext Pair(emptyList(), null)
+                val items = parsed.data.items_lists
+                val seriesList = items?.series_list?.map { meta ->
+                    Series(
+                        type = "series",
+                        id = meta.meta?.series_id ?: 0,
+                        title = meta.meta?.name ?: "",
+                        cover = meta.meta?.cover ?: "",
+                        intro = meta.meta?.description ?: "",
+                        mid = mid,
+                        total = (meta.meta?.total ?: 0).toString()
+                    )
+                } ?: emptyList()
+                val pageInfo = items?.page?.let {
+                    PageInfo(page_num = it.page_num, total = it.total, return_ps = it.page_size)
+                }
+                Pair(seriesList, pageInfo)
+            }
+            is Result.Error -> Pair(emptyList(), null)
         }
-        Pair(seriesList, pageInfo)
     }
 
     suspend fun getSeriesInfo(type: String, mid: Long, id: Int, page: Int): Pair<List<VideoCard>, PageInfo?> = withContext(Dispatchers.IO) {
-        val rawUrl = if (type == "series") {
-            "https://api.bilibili.com/x/series/archives?mid=$mid&series_id=$id&pn=$page&ps=20"
+        if (type == "series") {
+            val params = WbiSigner.signParams(mapOf(
+                "mid" to mid.toString(),
+                "series_id" to id.toString(),
+                "pn" to page.toString(),
+                "ps" to "20"
+            ))
+            when (val resp = api.getSeriesArchives(params)) {
+                is Result.Success -> {
+                    val type2 = object : TypeToken<ApiResponse<SeriesArchivesData>>() {}.type
+                    val parsed: ApiResponse<SeriesArchivesData>? = GsonConfig.gson.fromJson(resp.data, type2)
+                    if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext Pair(emptyList(), null)
+                    parseArchives(parsed.data)
+                }
+                is Result.Error -> Pair(emptyList(), null)
+            }
         } else {
-            "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=$mid&season_id=$id&page_num=$page&page_size=20"
+            val params = WbiSigner.signParams(mapOf(
+                "mid" to mid.toString(),
+                "season_id" to id.toString(),
+                "page_num" to page.toString(),
+                "page_size" to "20"
+            ))
+            when (val resp = api.getSeasonsArchives(params)) {
+                is Result.Success -> {
+                    val type2 = object : TypeToken<ApiResponse<SeriesArchivesData>>() {}.type
+                    val parsed: ApiResponse<SeriesArchivesData>? = GsonConfig.gson.fromJson(resp.data, type2)
+                    if (parsed == null || !parsed.isSuccess || parsed.data == null) return@withContext Pair(emptyList(), null)
+                    parseArchives(parsed.data)
+                }
+                is Result.Error -> Pair(emptyList(), null)
+            }
         }
-        val url = WbiSigner.signUrl(rawUrl)
-        val json = httpGet(url)
-        val type2 = object : TypeToken<ApiResponse<SeriesArchivesData>>() {}.type
-        val resp: ApiResponse<SeriesArchivesData>? = GsonConfig.gson.fromJson(json, type2)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(emptyList(), null)
-        val archives = resp.data.archives
-        val cards = archives?.map { archive ->
+    }
+
+    private fun parseArchives(data: SeriesArchivesData): Pair<List<VideoCard>, PageInfo?> {
+        val cards = data.archives?.map { archive ->
             VideoCard(
                 title = archive.title ?: "",
                 upName = archive.owner?.name ?: "",
@@ -108,20 +140,9 @@ object SeriesApi {
                 bvid = archive.bvid ?: ""
             )
         } ?: emptyList()
-        val pageInfo = resp.data.page?.let {
+        val pageInfo = data.page?.let {
             PageInfo(page_num = it.page_num, total = it.total, return_ps = it.page_size)
         }
-        Pair(cards, pageInfo)
+        return Pair(cards, pageInfo)
     }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

@@ -13,7 +13,13 @@ object CookieManager {
     fun getCookie(): String = prefs.getString("cookie", "") ?: ""
     fun setCookie(cookie: String) = prefs.edit().putString("cookie", cookie).apply()
     fun getCsrf(): String = getInfoFromCookie("bili_jct")
-    fun getMid(): Long = prefs.getLong("mid", 0)
+    fun getMid(): Long {
+        val stored = prefs.getLong("mid", 0)
+        if (stored > 0) return stored
+        val fromCookie = getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0
+        if (fromCookie > 0) prefs.edit().putLong("mid", fromCookie).apply()
+        return fromCookie
+    }
     fun setMid(mid: Long) = prefs.edit().putLong("mid", mid).apply()
 
     fun getInfoFromCookie(name: String): String {

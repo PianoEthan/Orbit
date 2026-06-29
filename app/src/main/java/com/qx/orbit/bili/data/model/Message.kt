@@ -1,7 +1,7 @@
 package com.qx.orbit.bili.data.model
 
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
-import org.json.JSONObject
 
 data class MessageCard(
     val id: Long = 0,
@@ -33,7 +33,7 @@ data class MessageCard(
 }
 
 data class PrivateMessage(
-    val content: JSONObject = JSONObject(),
+    val content: JsonElement? = null,
     val type: Int = 0,
     val timestamp: Long = 0,
     val uid: Long = 0,
@@ -59,7 +59,7 @@ data class PrivateMsgSession(
     val talkerUid: Long = 0,
     val unread: Int = 0,
     val contentType: Int = 0,
-    val content: JSONObject? = null
+    val content: JsonElement? = null
 )
 
 data class MessageSettingItem(

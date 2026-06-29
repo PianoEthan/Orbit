@@ -315,7 +315,7 @@ fun UserArticlesPage(
                     ArticleCardItem(
                         item = item, 
                         onClick = {
-                            // navController.navigate("article/${item.id}")
+                            navController.navigate("article_detail/${item.id}")
                         },
                         transformation = SurfaceTransformation(transformationSpec)
                     )

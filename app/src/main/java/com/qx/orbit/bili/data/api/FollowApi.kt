@@ -1,16 +1,16 @@
 package com.qx.orbit.bili.data.api
 
 import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 
 object FollowApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class FollowListData(
         @SerializedName("list") val list: List<FollowItem>? = null,
@@ -34,101 +34,75 @@ object FollowApi {
     )
 
     suspend fun getFollowingList(mid: Long, page: Int): Pair<Int, List<UserInfo>> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/relation/followings?vmid=$mid&pn=$page&ps=20&order=desc"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<FollowListData>>() {}.type
-        val resp: ApiResponse<FollowListData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
-        val data = resp.data ?: return@withContext Pair(1, emptyList<UserInfo>())
-        val list = data.list
-        if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
-        val users = list.map { item ->
-            UserInfo(
-                mid = item.mid,
-                name = item.uname ?: "",
-                avatar = item.face ?: "",
-                sign = item.sign ?: "",
-                fans = item.follower,
-                official = item.official_verify?.type ?: -1,
-                officialDesc = item.official_verify?.desc ?: "",
-                vip_role = item.vip?.vipStatus ?: 0,
-                vip_nickname_color = item.vip?.nickname_color ?: ""
-            )
+        when (val resp = api.getFollowingList(mid, page)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<FollowListData>>() {}.type
+                val parsed: ApiResponse<FollowListData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
+                val data = parsed.data ?: return@withContext Pair(1, emptyList<UserInfo>())
+                val list = data.list
+                if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
+                Pair(0, list.map { it.toUserInfo() })
+            }
+            is Result.Error -> Pair(-1, emptyList())
         }
-        Pair(0, users)
     }
 
     suspend fun getFollowerList(mid: Long, page: Int): Pair<Int, List<UserInfo>> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/relation/followers?vmid=$mid&pn=$page&ps=20&order=desc"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<FollowListData>>() {}.type
-        val resp: ApiResponse<FollowListData>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
-        val data = resp.data ?: return@withContext Pair(1, emptyList<UserInfo>())
-        val list = data.list
-        if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
-        val users = list.map { item ->
-            UserInfo(
-                mid = item.mid,
-                name = item.uname ?: "",
-                avatar = item.face ?: "",
-                sign = item.sign ?: "",
-                fans = item.follower,
-                official = item.official_verify?.type ?: -1,
-                officialDesc = item.official_verify?.desc ?: "",
-                vip_role = item.vip?.vipStatus ?: 0,
-                vip_nickname_color = item.vip?.nickname_color ?: ""
-            )
+        when (val resp = api.getFollowerList(mid, page)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<FollowListData>>() {}.type
+                val parsed: ApiResponse<FollowListData>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
+                val data = parsed.data ?: return@withContext Pair(1, emptyList<UserInfo>())
+                val list = data.list
+                if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
+                Pair(0, list.map { it.toUserInfo() })
+            }
+            is Result.Error -> Pair(-1, emptyList())
         }
-        Pair(0, users)
     }
 
     suspend fun getFollowTags(): List<FollowTag> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/relation/tags"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<List<TagItem>>>() {}.type
-        val resp: ApiResponse<List<TagItem>>? = GsonConfig.gson.fromJson(json, type)
-        resp?.data?.filterNotNull()?.map { item ->
-            FollowTag(
-                tagid = item.tagid,
-                name = item.name ?: "",
-                count = item.count
-            )
-        } ?: emptyList()
+        when (val resp = api.getFollowTags()) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<List<TagItem>>>() {}.type
+                val parsed: ApiResponse<List<TagItem>>? = GsonConfig.gson.fromJson(resp.data, type)
+                parsed?.data?.filterNotNull()?.map { item ->
+                    FollowTag(
+                        tagid = item.tagid,
+                        name = item.name ?: "",
+                        count = item.count
+                    )
+                } ?: emptyList()
+            }
+            is Result.Error -> emptyList()
+        }
     }
 
     suspend fun getFollowTagUsers(tagid: Int, page: Int): Pair<Int, List<UserInfo>> = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/x/relation/tag?tagid=$tagid&pn=$page&ps=20"
-        val json = httpGet(url)
-        val type = object : TypeToken<ApiResponse<List<FollowItem>>>() {}.type
-        val resp: ApiResponse<List<FollowItem>>? = GsonConfig.gson.fromJson(json, type)
-        if (resp == null || !resp.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
-        val list = resp.data
-        if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
-        val users = list.filterNotNull().map { item ->
-            UserInfo(
-                mid = item.mid,
-                name = item.uname ?: "",
-                avatar = item.face ?: "",
-                sign = item.sign ?: "",
-                fans = item.follower,
-                official = item.official_verify?.type ?: -1,
-                officialDesc = item.official_verify?.desc ?: "",
-                vip_role = item.vip?.vipStatus ?: 0,
-                vip_nickname_color = item.vip?.nickname_color ?: ""
-            )
+        when (val resp = api.getFollowTagUsers(tagid, page)) {
+            is Result.Success -> {
+                val type = object : TypeToken<ApiResponse<List<FollowItem>>>() {}.type
+                val parsed: ApiResponse<List<FollowItem>>? = GsonConfig.gson.fromJson(resp.data, type)
+                if (parsed == null || !parsed.isSuccess) return@withContext Pair(-1, emptyList<UserInfo>())
+                val list = parsed.data
+                if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<UserInfo>())
+                Pair(0, list.filterNotNull().map { it.toUserInfo() })
+            }
+            is Result.Error -> Pair(-1, emptyList())
         }
-        Pair(0, users)
     }
 
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
-    }
-
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
+    private fun FollowItem.toUserInfo(): UserInfo = UserInfo(
+        mid = mid,
+        name = uname ?: "",
+        avatar = face ?: "",
+        sign = sign ?: "",
+        fans = follower,
+        official = official_verify?.type ?: -1,
+        officialDesc = official_verify?.desc ?: "",
+        vip_role = vip?.vipStatus ?: 0,
+        vip_nickname_color = vip?.nickname_color ?: ""
+    )
 }

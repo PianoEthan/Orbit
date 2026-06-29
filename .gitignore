@@ -13,3 +13,4 @@ app/release/
 *.hprof
 /.agents/AGENTS.md
 /.kotlin/
+/.mimocode/

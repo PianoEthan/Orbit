@@ -3,6 +3,7 @@ package com.qx.orbit.bili.presentation.player
 import android.util.Log
 import org.brotli.dec.BrotliInputStream
 import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.util.SharedPreferencesUtil
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
 
 interface PlayerCallback {
-    fun addDanmaku(text: String, color: Int, textSize: Int = 25, type: Int = 1, borderColor: Int = 0)
+    fun addDanmaku(text: String, color: Int, textSize: Int = 25, type: Int = 1, borderColor: Int = 0, senderName: String = "")
     var onlineNumber: String
     fun updateTitle(title: String)
 }
@@ -33,7 +34,7 @@ class PlayerDanmuClientListener(
 ) : WebSocketListener() {
 
     companion object {
-        private const val TAG = "DanmuClient"
+        private const val TAG = "BiliApi"
         private const val HEARTBEAT_INTERVAL = 32L
     }
 
@@ -42,6 +43,7 @@ class PlayerDanmuClientListener(
     private var webSocket: WebSocket? = null
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
+        Log.d(TAG, "Danmu WS onOpen: roomid=$roomId uid=$uid")
         this.webSocket = webSocket
         sendAuthPacket(webSocket)
     }
@@ -50,25 +52,23 @@ class PlayerDanmuClientListener(
         try {
             parsePackage(bytes.toByteArray())
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing message", e)
+            Log.e(TAG, "Danmu WS parse error: ${e.message}")
         }
     }
 
-    override fun onMessage(webSocket: WebSocket, text: String) {
-        Log.d(TAG, "Text message: $text")
-    }
-
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        Log.d(TAG, "Danmu WS onClosing: $code $reason")
         stopHeartbeat()
         webSocket.close(code, reason)
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+        Log.d(TAG, "Danmu WS onClosed: $code $reason")
         stopHeartbeat()
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        Log.e(TAG, "WebSocket failure", t)
+        Log.e(TAG, "Danmu WS onFailure: ${t.message}")
         stopHeartbeat()
     }
 
@@ -103,7 +103,10 @@ class PlayerDanmuClientListener(
     }
 
     private fun parsePackage(data: ByteArray) {
-        if (data.size < 16) return
+        if (data.size < 16) {
+            Log.w(TAG, "Package too small: ${data.size} bytes")
+            return
+        }
         val buffer = ByteBuffer.wrap(data)
         val totalSize = buffer.int
         val headerSize = buffer.short.toInt() and 0xFFFF
@@ -111,13 +114,15 @@ class PlayerDanmuClientListener(
         val actionCode = buffer.int
         val sequence = buffer.int
 
+        //Log.d(TAG, "Package: action=$actionCode proto=$protocolVersion size=$totalSize headerSize=$headerSize")
+
         when (actionCode) {
             8 -> {
                 Log.d(TAG, "Auth success")
                 startHeartbeat()
             }
             5 -> {
-                val payload = data.copyOfRange(headerSize, totalSize)
+                val payload = data.copyOfRange(headerSize, data.size)
                 when (protocolVersion) {
                     0, 1 -> handlePlainPackage(payload)
                     3 -> {
@@ -142,21 +147,16 @@ class PlayerDanmuClientListener(
     }
 
     private fun handlePlainPackage(data: ByteArray) {
-        val json = String(data, StandardCharsets.UTF_8)
         try {
-            val obj = JSONObject(json)
+            val text = String(data, StandardCharsets.UTF_8)
+            val jsonStart = text.indexOf("{")
+            if (jsonStart < 0) return
+            val jsonStr = text.substring(jsonStart)
+            val obj = JSONObject(jsonStr)
             val cmd = obj.optString("cmd", "")
             handleCmd(cmd, obj)
         } catch (e: Exception) {
-            val bodyStart = json.indexOf('{')
-            if (bodyStart < 0) return
-            try {
-                val obj = JSONObject(json.substring(bodyStart))
-                val cmd = obj.optString("cmd", "")
-                handleCmd(cmd, obj)
-            } catch (e2: Exception) {
-                Log.e(TAG, "Failed to parse plain package", e2)
-            }
+            Log.e(TAG, "Failed to parse plain package", e)
         }
     }
 
@@ -165,9 +165,17 @@ class PlayerDanmuClientListener(
             cmd == "DANMU_MSG" -> {
                 val info = json.optJSONArray("info") ?: return
                 val message = info.optString(1, "")
-                if (message.isNotEmpty()) {
-                    callback.addDanmaku(message, 0xFFFFFF)
-                }
+                if (message.isEmpty()) return
+
+                val senderName = try {
+                    info.optJSONArray(0)?.optJSONObject(15)
+                        ?.optJSONObject("user")
+                        ?.optJSONObject("base")
+                        ?.optString("name", "") ?: ""
+                } catch (_: Exception) { "" }
+
+                val displayText = if (senderName.isNotEmpty()) "$senderName：$message" else message
+                callback.addDanmaku(displayText, 0xFFFFFF, senderName = senderName)
             }
             cmd == "WATCHED_CHANGE" -> {
                 val data = json.optJSONObject("data")
@@ -194,7 +202,7 @@ class PlayerDanmuClientListener(
             }
             cmd == "ENTRY_EFFECT" -> {
                 val data = json.optJSONObject("data")
-                val copyWriting = data?.optString("copy_writing", "") ?: ""
+                val copyWriting = data?.optString("copy_writing", "")?.replace(Regex("<[^>]+>"), "") ?: ""
                 if (copyWriting.isNotEmpty()) {
                     callback.addDanmaku(copyWriting, 0xFF6699, textSize = 20, type = 1)
                 }

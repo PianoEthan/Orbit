@@ -2,17 +2,16 @@ package com.qx.orbit.bili.data.api
 
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
-import com.qx.orbit.bili.data.remote.GsonConfig
-import com.qx.orbit.bili.data.remote.HttpClient
-import com.qx.orbit.bili.data.remote.CookieManager
-import okhttp3.Request
 import com.qx.orbit.bili.data.model.ApiResponse
+import com.qx.orbit.bili.data.remote.GsonConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object EmoteApi {
     const val BUSINESS_REPLY = "reply"
     const val BUSINESS_DYNAMIC = "dynamic"
+
+    private val api by lazy { BiliApiService.create() }
 
     data class Emote(
         @SerializedName("id") val id: Int = 0,
@@ -51,25 +50,13 @@ object EmoteApi {
     )
 
     suspend fun getEmotes(business: String): List<EmotePackage> = withContext(Dispatchers.IO) {
-        try {
-            val url = "https://api.bilibili.com/x/emote/user/panel/web?business=$business"
-            val json = httpGet(url)
-            val resp: ApiResponse<EmotePanelData>? = GsonConfig.gson.fromJson(json, object : TypeToken<ApiResponse<EmotePanelData>>() {}.type)
-            if (resp != null && resp.isSuccess) {
-                return@withContext resp.data?.packages ?: emptyList()
+        when (val resp = api.getEmotes(business)) {
+            is com.qx.orbit.bili.data.remote.Result.Success -> {
+                val type = TypeToken.getParameterized(ApiResponse::class.java, EmotePanelData::class.java).type
+                val parsed: ApiResponse<EmotePanelData>? = GsonConfig.gson.fromJson(resp.data, type)
+                parsed?.data?.packages ?: emptyList()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+            is com.qx.orbit.bili.data.remote.Result.Error -> emptyList()
         }
-        emptyList()
-    }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
     }
 }

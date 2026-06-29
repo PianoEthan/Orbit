@@ -281,6 +281,7 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
                 Triple("player_danmaku_allowoverlap", "弹幕允许重叠", true),
                 Triple("player_danmaku_mergeduplicate", "合并重复弹幕", false),
                 Triple("player_danmaku_showsender", "显示直播弹幕发送者", true),
+                Triple("player_show_online", "显示在线人数", true),
                 Triple("player_ui_showDanmakuBtn", "显示弹幕按钮", true)
             )
 

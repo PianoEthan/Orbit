@@ -1,40 +1,42 @@
 package com.qx.orbit.bili.util
 
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import kotlin.time.Clock
+import kotlin.time.toJavaInstant
 
 fun formatBiliTime(timestampSeconds: Long): String {
-    val timestampMillis = timestampSeconds * 1000
-    val target = Calendar.getInstance().apply { timeInMillis = timestampMillis }
-    val current = Calendar.getInstance()
-    
-    val diff = current.timeInMillis - target.timeInMillis
-    
-    val currentYear = current.get(Calendar.YEAR)
-    val targetYear = target.get(Calendar.YEAR)
-    
-    val currentDay = current.get(Calendar.DAY_OF_YEAR)
-    val targetDay = target.get(Calendar.DAY_OF_YEAR)
-    
-    val diffMinutes = diff / (60 * 1000)
-    val diffHours = diff / (60 * 60 * 1000)
-    
-    return if (currentYear == targetYear) {
-        if (currentDay == targetDay) {
+    val targetInstant = Instant.ofEpochSecond(timestampSeconds)
+    val currentInstant = Clock.System.now().toJavaInstant()
+    val zone = ZoneId.systemDefault()
+    val target = LocalDateTime.ofInstant(targetInstant, zone)
+    val current = LocalDateTime.ofInstant(currentInstant, zone)
+
+    val diffMillis = currentInstant.toEpochMilli() - targetInstant.toEpochMilli()
+    val diffMinutes = diffMillis / (60 * 1000)
+    val diffHours = diffMillis / (60 * 60 * 1000)
+
+    val dayDiff = current.dayOfYear - target.dayOfYear +
+            (current.year - target.year) * 365
+
+    return if (current.year == target.year) {
+        if (current.dayOfYear == target.dayOfYear) {
             when {
-                diffMinutes < 1 -> "刚刚"
-                diffMinutes < 60 -> "${diffMinutes}分钟前"
+                diffMinutes < 1L -> "刚刚"
+                diffMinutes < 60L -> "${diffMinutes}分钟前"
                 else -> "${diffHours}小时前"
             }
-        } else if (currentDay - targetDay == 1) {
-            "昨天 " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(target.time)
-        } else if (currentDay - targetDay > 1 && currentDay - targetDay <= 7) {
-            "${currentDay - targetDay}天前"
+        } else if (dayDiff == 1) {
+            "昨天 ${target.hour.pad()}:${target.minute.pad()}"
+        } else if (dayDiff in 2..7) {
+            "${dayDiff}天前"
         } else {
-            SimpleDateFormat("M月d日", Locale.getDefault()).format(target.time)
+            "${target.monthValue}月${target.dayOfMonth}日"
         }
     } else {
-        SimpleDateFormat("yyyy年M月d日", Locale.getDefault()).format(target.time)
+        "${target.year}年${target.monthValue}月${target.dayOfMonth}日"
     }
 }
+
+private fun Int.pad() = toString().padStart(2, '0')

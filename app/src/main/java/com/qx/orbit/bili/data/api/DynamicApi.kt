@@ -12,23 +12,19 @@ import okhttp3.FormBody
 import okhttp3.Request
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import org.json.JSONArray
 import com.qx.orbit.bili.data.model.Emote
-import java.text.SimpleDateFormat
-import java.util.*
 import com.qx.orbit.bili.util.formatBiliTime
 
 object DynamicApi {
 
     internal data class DynamicListData(
-        @SerializedName("items") val items: List<JSONObject>? = null,
+        @SerializedName("items") val items: List<DynamicRawItem>? = null,
         @SerializedName("has_more") val has_more: Boolean = false,
         @SerializedName("offset") val offset: String? = null
     )
 
     internal data class DynamicDetailData(
-        @SerializedName("item") val item: JSONObject? = null
+        @SerializedName("item") val item: DynamicRawItem? = null
     )
 
     internal data class UpdateData(
@@ -69,6 +65,138 @@ object DynamicApi {
         @SerializedName("has_update") val has_update: Boolean = false
     )
 
+    internal data class DynamicRawItem(
+        @SerializedName("id_str") val id_str: String? = null,
+        @SerializedName("type") val type: String? = null,
+        @SerializedName("modules") val modules: DynamicModules? = null,
+        @SerializedName("orig") val orig: DynamicRawItem? = null,
+        @SerializedName("basic") val basic: BasicData? = null
+    )
+
+    internal data class DynamicModules(
+        @SerializedName("module_author") val module_author: DynamicAuthor? = null,
+        @SerializedName("module_dynamic") val module_dynamic: DynamicContent? = null,
+        @SerializedName("module_stat") val module_stat: StatModule? = null,
+        @SerializedName("module_more") val module_more: MoreModule? = null
+    )
+
+    internal data class DynamicAuthor(
+        @SerializedName("mid") val mid: Long = 0,
+        @SerializedName("name") val name: String? = null,
+        @SerializedName("face") val face: String? = null,
+        @SerializedName("pub_ts") val pub_ts: Long = 0,
+        @SerializedName("desc") val desc: String? = null,
+        @SerializedName("is_top") val is_top: Boolean = false,
+        @SerializedName("official_verify") val official_verify: OfficialVerifyData? = null,
+        @SerializedName("vip") val vip: VipStatusData? = null
+    )
+
+    internal data class OfficialVerifyData(
+        @SerializedName("type") val type: Int = -1,
+        @SerializedName("desc") val desc: String? = null
+    )
+
+    internal data class VipStatusData(
+        @SerializedName("status") val status: Int = 0,
+        @SerializedName("vipStatus") val vipStatus: Int = 0
+    )
+
+    internal data class DynamicContent(
+        @SerializedName("major") val major: DynamicMajor? = null,
+        @SerializedName("desc") val desc: DescData? = null,
+        @SerializedName("topic") val topic: TopicData? = null
+    )
+
+    internal data class DynamicMajor(
+        @SerializedName("type") val type: String? = null,
+        @SerializedName("archive") val archive: ArchiveMajor? = null,
+        @SerializedName("draw") val draw: DrawMajor? = null,
+        @SerializedName("opus") val opus: OpusMajor? = null,
+        @SerializedName("article") val article: ArticleMajor? = null,
+        @SerializedName("common") val common: CommonMajor? = null
+    )
+
+    internal data class ArchiveMajor(
+        @SerializedName("aid") val aid: Long = 0,
+        @SerializedName("title") val title: String? = null,
+        @SerializedName("cover") val cover: String? = null,
+        @SerializedName("bvid") val bvid: String? = null
+    )
+
+    internal data class DrawMajor(
+        @SerializedName("items") val items: List<DrawItem>? = null,
+        @SerializedName("desc") val desc: String? = null
+    )
+
+    internal data class DrawItem(
+        @SerializedName("src") val src: String? = null
+    )
+
+    internal data class OpusMajor(
+        @SerializedName("title") val title: String? = null,
+        @SerializedName("pics") val pics: List<PicItem>? = null,
+        @SerializedName("summary") val summary: OpusSummary? = null
+    )
+
+    internal data class OpusSummary(
+        @SerializedName("text") val text: String? = null,
+        @SerializedName("rich_text_nodes") val rich_text_nodes: List<RichTextNode>? = null
+    )
+
+    internal data class PicItem(
+        @SerializedName("url") val url: String? = null
+    )
+
+    internal data class ArticleMajor(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("title") val title: String? = null
+    )
+
+    internal data class CommonMajor(
+        @SerializedName("title") val title: String? = null
+    )
+
+    internal data class DescData(
+        @SerializedName("text") val text: String? = null,
+        @SerializedName("rich_text_nodes") val rich_text_nodes: List<RichTextNode>? = null
+    )
+
+    internal data class RichTextNode(
+        @SerializedName("type") val type: String? = null,
+        @SerializedName("text") val text: String? = null,
+        @SerializedName("rid") val rid: String? = null,
+        @SerializedName("emoji") val emoji: EmojiData? = null
+    )
+
+    internal data class EmojiData(
+        @SerializedName("icon_url") val icon_url: String? = null,
+        @SerializedName("size") val size: Int = 1
+    )
+
+    internal data class TopicData(
+        @SerializedName("name") val name: String? = null
+    )
+
+    internal data class StatModule(
+        @SerializedName("comment") val comment: StatItem? = null,
+        @SerializedName("like") val like: StatItem? = null,
+        @SerializedName("forward") val forward: StatItem? = null
+    )
+
+    internal data class StatItem(
+        @SerializedName("count") val count: Int = 0,
+        @SerializedName("status") val status: Boolean = false
+    )
+
+    internal data class MoreModule(
+        @SerializedName("dyn_id_str") val dyn_id_str: String? = null
+    )
+
+    internal data class BasicData(
+        @SerializedName("comment_id_str") val comment_id_str: String? = null,
+        @SerializedName("comment_type") val comment_type: Int = 0
+    )
+
     suspend fun publishTextContent(content: String): Long = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
             .add("dynamic_id", "0")
@@ -84,10 +212,10 @@ object DynamicApi {
             .addHeader("User-Agent", USER_AGENT)
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext -1L
-        jsonObj.optJSONObject("data")?.optLong("dynamic_id", 0) ?: 0L
+        val json = HttpClient.client.newCall(request).execute().body?.string() ?: return@withContext -1L
+        val type = object : TypeToken<ApiResponse<DynamicIdData>>() {}.type
+        val resp: ApiResponse<DynamicIdData>? = GsonConfig.gson.fromJson(json, type)
+        if (resp == null || !resp.isSuccess || resp.data == null) -1L else resp.data.dynamic_id
     }
 
     suspend fun likeDynamic(dyid: String, up: Boolean): Int = withContext(Dispatchers.IO) {
@@ -128,15 +256,10 @@ object DynamicApi {
     suspend fun mentionAtFindUser(name: String): Long = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/mention/search?keyword=${java.net.URLEncoder.encode(name, "UTF-8")}"
         val json = httpGet(url)
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext 0L
-        val data = jsonObj.optJSONObject("data") ?: return@withContext 0L
-        val groups = data.optJSONArray("groups") ?: return@withContext 0L
-        if (groups.length() == 0) return@withContext 0L
-        val firstGroup = groups.optJSONObject(0) ?: return@withContext 0L
-        val items = firstGroup.optJSONArray("items") ?: return@withContext 0L
-        if (items.length() == 0) return@withContext 0L
-        items.optJSONObject(0)?.optLong("mid", 0) ?: 0L
+        val type = object : TypeToken<ApiResponse<MentionDataInner>>() {}.type
+        val resp: ApiResponse<MentionDataInner>? = GsonConfig.gson.fromJson(json, type)
+        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext 0L
+        resp.data.data?.groups?.firstOrNull()?.items?.firstOrNull()?.mid ?: 0L
     }
 
     suspend fun getDynamicList(
@@ -154,35 +277,29 @@ object DynamicApi {
         }
         val url = ConfInfoApi.signWBI(rawUrl)
         val json = httpGet(url)
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext Pair(0L, emptyList())
-        val data = jsonObj.optJSONObject("data") ?: return@withContext Pair(0L, emptyList())
-        val items = data.optJSONArray("items")
-        val hasMore = data.optBoolean("has_more", false)
-        val newOffset = data.optLong("offset", 0)
+        val respType = object : TypeToken<ApiResponse<DynamicListData>>() {}.type
+        val resp: ApiResponse<DynamicListData>? = GsonConfig.gson.fromJson(json, respType)
+        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(0L, emptyList())
+        val data = resp.data
         val dynamicList = mutableListOf<Dynamic>()
-        if (items != null) {
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                try {
-                    dynamicList.add(analyzeDynamic(item))
-                } catch (_: Exception) {
-                }
+        for (item in data.items ?: emptyList()) {
+            try {
+                dynamicList.add(analyzeDynamic(item))
+            } catch (_: Exception) {
             }
         }
-        Pair(if (hasMore) newOffset else 0L, dynamicList)
+        Pair(if (data.has_more) (data.offset?.toLongOrNull() ?: 0L) else 0L, dynamicList)
     }
 
     suspend fun getDynamic(id: String): Dynamic? = withContext(Dispatchers.IO) {
         val features = "itemOpusStyle,listOnlyfans,opusBigCover,onlyfansVote,forwardListHidden,decorationCard,commentsNewVersion,onlyfansAssetsV2,ugcDelete,onlyfansQaCard,avatarAutoTheme,sunflowerStyle,eva3CardOpus,eva3CardVideo,eva3CardComment"
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail?id=$id&features=$features"
         val json = httpGet(url)
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext null
-        val data = jsonObj.optJSONObject("data") ?: return@withContext null
-        val item = data.optJSONObject("item") ?: return@withContext null
+        val type = object : TypeToken<ApiResponse<DynamicDetailData>>() {}.type
+        val resp: ApiResponse<DynamicDetailData>? = GsonConfig.gson.fromJson(json, type)
+        if (resp == null || !resp.isSuccess || resp.data?.item == null) return@withContext null
         try {
-            analyzeDynamic(item)
+            analyzeDynamic(resp.data.item)
         } catch (_: Exception) {
             null
         }
@@ -192,61 +309,43 @@ object DynamicApi {
         val rawUrl = "https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all/update?type=$type&update_baseline=$updateBaseline"
         val url = ConfInfoApi.signWBI(rawUrl)
         val json = httpGet(url)
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext 0
-        jsonObj.optJSONObject("data")?.optInt("update_num", 0) ?: 0
+        val respType = object : TypeToken<ApiResponse<UpdateData>>() {}.type
+        val resp: ApiResponse<UpdateData>? = GsonConfig.gson.fromJson(json, respType)
+        resp?.data?.update_num ?: 0
     }
 
     suspend fun getRecentUpList(): List<UpInfo> = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/portal"
         val json = httpGet(url)
-        val jsonObj = JSONObject(json)
-        if (jsonObj.optInt("code") != 0) return@withContext emptyList()
-        val data = jsonObj.optJSONObject("data") ?: return@withContext emptyList()
-        val upList = data.optJSONArray("up_list") ?: return@withContext emptyList()
-        val result = mutableListOf<UpInfo>()
-        for (i in 0 until upList.length()) {
-            val obj = upList.optJSONObject(i) ?: continue
-            result.add(UpInfo(
-                mid = obj.optLong("mid", 0),
-                name = obj.optString("name", ""),
-                face = obj.optString("face", ""),
-                has_update = obj.optBoolean("has_update", false)
-            ))
-        }
-        result
+        val type = object : TypeToken<ApiResponse<PortalData>>() {}.type
+        val resp: ApiResponse<PortalData>? = GsonConfig.gson.fromJson(json, type)
+        resp?.data?.up_list ?: emptyList()
     }
 
-    private fun analyzeDynamic(json: JSONObject): Dynamic {
-        val dynamicId = json.optString("id_str", "")
-        val type = json.optString("type", "")
-        val modules = json.optJSONObject("modules") ?: JSONObject()
+    private fun analyzeDynamic(item: DynamicRawItem): Dynamic {
+        val dynamicId = item.id_str ?: ""
+        val dynType = item.type ?: ""
+        val modules = item.modules
 
-        val authorModule = modules.optJSONObject("module_author") ?: JSONObject()
-        val mid = authorModule.optLong("mid", 0)
-        val name = authorModule.optString("name", "")
-        val face = authorModule.optString("face", "")
-        val pubTs = authorModule.optLong("pub_ts", 0)
-        val pubTime = if (pubTs > 0) {
-            formatBiliTime(pubTs)
-        } else ""
-        val descText = authorModule.optString("desc", "")
-        val canDelete = authorModule.optBoolean("is_top", false)
+        val author = modules?.module_author
+        val mid = author?.mid ?: 0
+        val name = author?.name ?: ""
+        val face = author?.face ?: ""
+        val pubTs = author?.pub_ts ?: 0
+        val pubTime = if (pubTs > 0) formatBiliTime(pubTs) else ""
+        val canDelete = author?.is_top ?: false
 
-        val dynamicModule = modules.optJSONObject("module_dynamic") ?: JSONObject()
-        val majorObj = dynamicModule.optJSONObject("major")
-        val majorType = majorObj?.optString("type", "") ?: ""
-        val topic = dynamicModule.optJSONObject("topic")
-        val topicTitle = topic?.optString("name", "") ?: ""
+        val dynContent = modules?.module_dynamic
+        val majorObj = dynContent?.major
+        val majorType = majorObj?.type ?: ""
+        val topicTitle = dynContent?.topic?.name ?: ""
 
-        val desc = dynamicModule.optJSONObject("desc")
-        var content = desc?.optString("text", "") ?: ""
-        
+        var content = dynContent?.desc?.text ?: ""
+
         val emotes = mutableMapOf<String, Emote>()
         val members = mutableMapOf<String, Long>()
-        parseRichTextNodes(desc?.optJSONArray("rich_text_nodes"), emotes, members)
+        parseRichTextNodes(dynContent?.desc?.rich_text_nodes, emotes, members)
 
-        val majorObject: Any? = null
         val commentId: Long
         val commentType: Int
         val images = mutableListOf<String>()
@@ -256,57 +355,38 @@ object DynamicApi {
 
         when (majorType) {
             "MAJOR_TYPE_ARCHIVE" -> {
-                val archive = majorObj?.optJSONObject("archive")
-                commentId = archive?.optLong("aid", 0) ?: 0
+                val archive = majorObj?.archive
+                commentId = archive?.aid ?: 0
                 commentType = 1
-                val title = archive?.optString("title", "") ?: ""
-                archiveTitle = title
-                cover = archive?.optString("cover", "") ?: ""
-                bvid = archive?.optString("bvid", "") ?: ""
-                if (content.isEmpty()) content = title
+                archiveTitle = archive?.title ?: ""
+                cover = archive?.cover?.fixUrl() ?: ""
+                bvid = archive?.bvid ?: ""
+                if (content.isEmpty()) content = archiveTitle
             }
             "MAJOR_TYPE_DRAW" -> {
-                val draw = majorObj?.optJSONObject("draw")
                 commentId = 0
                 commentType = 11
-                val drawItems = draw?.optJSONArray("items")
-                if (drawItems != null && drawItems.length() > 0) {
-                    for (i in 0 until drawItems.length()) {
-                        val item = drawItems.optJSONObject(i)
-                        val src = item?.optString("src", "")
-                        if (!src.isNullOrEmpty()) {
-                            images.add(src)
-                        }
-                    }
-                    val drawDesc = draw?.optString("desc", "")
-                    if (content.isEmpty() && !drawDesc.isNullOrEmpty()) content = drawDesc
+                majorObj?.draw?.items?.forEach { drawItem ->
+                    drawItem.src?.fixUrl()?.takeIf { it.isNotEmpty() }?.let { images.add(it) }
                 }
+                if (content.isEmpty()) majorObj?.draw?.desc?.takeIf { it.isNotEmpty() }?.let { content = it }
             }
             "MAJOR_TYPE_OPUS" -> {
-                val opus = majorObj?.optJSONObject("opus")
                 commentId = 0
-                commentType = 11 // Just a default, not strictly used
-                val pics = opus?.optJSONArray("pics")
-                if (pics != null && pics.length() > 0) {
-                    for (i in 0 until pics.length()) {
-                        val pic = pics.optJSONObject(i)
-                        val url = pic?.optString("url", "")
-                        if (!url.isNullOrEmpty()) {
-                            images.add(url)
-                        }
-                    }
+                commentType = 11
+                majorObj?.opus?.pics?.forEach { pic ->
+                    pic.url?.fixUrl()?.takeIf { it.isNotEmpty() }?.let { images.add(it) }
                 }
-                val summaryObj = opus?.optJSONObject("summary")
-                val summary = summaryObj?.optString("text", "") ?: ""
-                parseRichTextNodes(summaryObj?.optJSONArray("rich_text_nodes"), emotes, members)
-                val title = opus?.optString("title", "") ?: ""
-                if (content.isEmpty()) content = summary.ifEmpty { title }
+                val summary = majorObj?.opus?.summary
+                parseRichTextNodes(summary?.rich_text_nodes, emotes, members)
+                val summaryText = summary?.text ?: ""
+                val opusTitle = majorObj?.opus?.title ?: ""
+                if (content.isEmpty()) content = summaryText.ifEmpty { opusTitle }
             }
             "MAJOR_TYPE_ARTICLE" -> {
-                val article = majorObj?.optJSONObject("article")
-                commentId = article?.optLong("id", 0) ?: 0
+                commentId = majorObj?.article?.id ?: 0
                 commentType = 12
-                val title = article?.optString("title", "") ?: ""
+                val title = majorObj?.article?.title ?: ""
                 if (content.isEmpty()) content = title
             }
             "MAJOR_TYPE_LIVE_RCMD" -> {
@@ -316,9 +396,7 @@ object DynamicApi {
             "MAJOR_TYPE_COMMON" -> {
                 commentId = 0
                 commentType = 17
-                val common = majorObj?.optJSONObject("common")
-                val commonTitle = common?.optString("title", "") ?: ""
-                if (content.isEmpty()) content = commonTitle
+                if (content.isEmpty()) content = majorObj?.common?.title ?: ""
             }
             else -> {
                 commentId = dynamicId.toLongOrNull() ?: 0L
@@ -326,17 +404,17 @@ object DynamicApi {
             }
         }
 
-        val officialVerify = authorModule.optJSONObject("official_verify")
-        val rawOfficial = officialVerify?.optInt("type", -1) ?: -1
+        val officialVerify = author?.official_verify
+        val rawOfficial = officialVerify?.type ?: -1
         val officialType = when (rawOfficial) {
             0 -> 1
             1 -> 2
             else -> 0
         }
-        val officialDesc = officialVerify?.optString("desc", "") ?: ""
-        
-        val vipObj = authorModule.optJSONObject("vip")
-        val vipStatus = if (vipObj != null && vipObj.has("status")) vipObj.optInt("status", 0) else vipObj?.optInt("vipStatus", 0) ?: 0
+        val officialDesc = officialVerify?.desc ?: ""
+
+        val vipObj = author?.vip
+        val vipStatus = if (vipObj != null && vipObj.status != 0) vipObj.status else vipObj?.vipStatus ?: 0
 
         val userInfo = UserInfo(
             mid = mid,
@@ -347,33 +425,21 @@ object DynamicApi {
             vip_role = vipStatus
         )
 
-        val statModule = modules.optJSONObject("module_stat") ?: JSONObject()
-        val commentStat = statModule.optJSONObject("comment") ?: JSONObject()
-        val likeStat = statModule.optJSONObject("like") ?: JSONObject()
-        val forwardStat = statModule.optJSONObject("forward") ?: JSONObject()
-
+        val stat = modules?.module_stat
         val stats = Stats(
-            reply = commentStat.optInt("count", 0),
-            like = likeStat.optInt("count", 0),
-            share = forwardStat.optInt("count", 0),
-            liked = likeStat.optBoolean("status", false)
+            reply = stat?.comment?.count ?: 0,
+            like = stat?.like?.count ?: 0,
+            share = stat?.forward?.count ?: 0,
+            liked = stat?.like?.status ?: false
         )
 
-        val moreModule = modules.optJSONObject("module_more") ?: JSONObject()
-        val dynIdStr = moreModule.optString("dyn_id_str", dynamicId)
-
-        val origDyn = json.optJSONObject("orig")
-        val dynamicForward = if (origDyn != null) {
-            try {
-                analyzeDynamic(origDyn)
-            } catch (_: Exception) {
-                null
-            }
-        } else null
+        val dynamicForward = item.orig?.let {
+            try { analyzeDynamic(it) } catch (_: Exception) { null }
+        }
 
         return Dynamic(
             dynamicId = dynamicId,
-            type = type,
+            type = dynType,
             comment_id = commentId,
             comment_type = commentType,
             title = topicTitle.ifEmpty { "" },
@@ -382,7 +448,7 @@ object DynamicApi {
             pubTime = pubTime,
             stats = stats,
             major_type = majorType,
-            major_object = majorObject,
+            major_object = null,
             dynamic_forward = dynamicForward,
             canDelete = canDelete,
             images = images,
@@ -394,16 +460,15 @@ object DynamicApi {
         )
     }
 
-    private fun parseRichTextNodes(nodes: JSONArray?, emotes: MutableMap<String, Emote>, members: MutableMap<String, Long>) {
+    private fun parseRichTextNodes(nodes: List<RichTextNode>?, emotes: MutableMap<String, Emote>, members: MutableMap<String, Long>) {
         if (nodes == null) return
-        for (i in 0 until nodes.length()) {
-            val node = nodes.optJSONObject(i) ?: continue
-            val type = node.optString("type", "")
-            val text = node.optString("text", "")
+        for (node in nodes) {
+            val type = node.type ?: ""
+            val text = node.text ?: ""
             if (type == "RICH_TEXT_NODE_TYPE_EMOJI") {
-                val emoji = node.optJSONObject("emoji")
-                val url = emoji?.optString("icon_url", "")
-                val size = emoji?.optInt("size", 1) ?: 1
+                val emoji = node.emoji
+                val url = emoji?.icon_url?.fixUrl()
+                val size = emoji?.size ?: 1
                 if (!url.isNullOrEmpty()) {
                     emotes[text] = Emote(
                         id = 0,
@@ -415,7 +480,7 @@ object DynamicApi {
                     )
                 }
             } else if (type == "RICH_TEXT_NODE_TYPE_AT") {
-                val rid = node.optString("rid", "")
+                val rid = node.rid ?: ""
                 val mid = rid.toLongOrNull()
                 if (mid != null) {
                     val name = text.removePrefix("@").trim()
@@ -432,6 +497,12 @@ object DynamicApi {
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
         return HttpClient.client.newCall(request).execute().body?.string() ?: ""
+    }
+
+    private fun String.fixUrl(): String = when {
+        startsWith("//") -> "https:$this"
+        startsWith("http://") -> replaceFirst("http://", "https://")
+        else -> this
     }
 
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
