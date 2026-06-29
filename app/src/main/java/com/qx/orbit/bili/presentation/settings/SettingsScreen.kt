@@ -45,6 +45,7 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import androidx.compose.ui.platform.LocalContext
 import com.google.gson.Gson
 import android.content.Intent
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.MainActivity
 
@@ -292,6 +293,63 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
                 Triple("player_danmaku_showsender", "显示直播弹幕发送者", true),
                 Triple("player_ui_showDanmakuBtn", "显示弹幕按钮", true)
             )
+            item {
+                val isLoggedIn = CookieManager.getCookie().contains("SESSDATA")
+                val qualityOptions = listOf(
+                    16 to "360p",
+                    32 to "480p",
+                    64 to "720p",
+                    80 to "1080p"
+                )
+                var currentQn by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("play_qn", 16)) }
+                val currentIndex = qualityOptions.indexOfFirst { it.first == currentQn }.coerceAtLeast(0)
+
+                Button(
+                    onClick = {
+                        val nextIndex = (currentIndex + 1) % qualityOptions.size
+                        val nextQn = qualityOptions[nextIndex].first
+                        if (nextQn >= 64 && !isLoggedIn) {
+                            return@Button
+                        }
+                        currentQn = nextQn
+                        SharedPreferencesUtil.putInt("play_qn", nextQn)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                ) {
+                    val label = qualityOptions[currentIndex].second
+                    Text(text = "视频清晰度: $label", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            item {
+                Button(
+                    onClick = { navController.navigate("settings_video_render") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                ) {
+                    Text(text = "视频渲染方式设置", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
 
             settings.forEach { (key, label, defaultValue) ->
                 item {
@@ -318,7 +376,7 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
             }
             
             item {
-                var maxLines by remember { mutableStateOf(SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)) }
+                var maxLines by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)) }
                 Button(
                     onClick = {
                         val nextLines = when (maxLines) {
@@ -347,68 +405,6 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
                     Text(text = "弹幕密度: $label", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-
-            item {
-                val isLoggedIn = CookieManager.getCookie().contains("SESSDATA")
-                val qualityOptions = listOf(
-                    16 to "360p",
-                    32 to "480p",
-                    64 to "720p",
-                    80 to "1080p"
-                )
-                var currentQn by remember { mutableStateOf(SharedPreferencesUtil.getInt("play_qn", 16)) }
-                val currentIndex = qualityOptions.indexOfFirst { it.first == currentQn }.coerceAtLeast(0)
-
-                Button(
-                    onClick = {
-                        val nextIndex = (currentIndex + 1) % qualityOptions.size
-                        val nextQn = qualityOptions[nextIndex].first
-                        if (nextQn >= 64 && !isLoggedIn) {
-                            return@Button
-                        }
-                        currentQn = nextQn
-                        SharedPreferencesUtil.putInt("play_qn", nextQn)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(transformationSpec) {
-                                applyContainerTransformation(scrollProgress)
-                            }
-                        }
-                ) {
-                    val label = qualityOptions[currentIndex].second
-                    val lockIcon = if (currentQn >= 64 && !isLoggedIn) " 🔒" else ""
-                    Text(text = "视频清晰度: $label$lockIcon", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-
-            item {
-                Button(
-                    onClick = { navController.navigate("settings_video_render") },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(transformationSpec) {
-                                applyContainerTransformation(scrollProgress)
-                            }
-                        }
-                ) {
-                    val currentRender = if (SharedPreferencesUtil.getBoolean("player_texture_view", false)) "TextureView" else "SurfaceView"
-                    Text(text = "视频渲染: $currentRender", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-
             item { Spacer(Modifier.height(20.dp)) }
         }
     }
@@ -610,6 +606,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
                         useTextureView = false
                         SharedPreferencesUtil.putBoolean("player_texture_view", false)
                     },
+                    transformation = SurfaceTransformation(transformationSpec),
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (!useTextureView) {
@@ -632,7 +629,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
                     } else CardDefaults.cardColors()
                 ) {
                     Text(
-                        "性能更好，但部分设备可能不支持缩放",
+                        "性能更好，但部分设备可能存在兼容性问题",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -644,6 +641,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
                         useTextureView = true
                         SharedPreferencesUtil.putBoolean("player_texture_view", true)
                     },
+                    transformation = SurfaceTransformation(transformationSpec),
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (useTextureView) {
@@ -666,7 +664,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
                     } else CardDefaults.cardColors()
                 ) {
                     Text(
-                        "兼容性较好，支持软件旋屏和缩放",
+                        "兼容性较好，但会带来额外性能开销",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -674,7 +672,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
 
             item {
                 Text(
-                    text = "如果视频播放异常/闪退/无法缩放，请尝试切换该选项",
+                    text = "如果视频播放异常/闪退/黑屏/绿屏/无法缩放，请尝试切换该选项",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier

@@ -61,13 +61,17 @@ class UserSpaceViewModel : ViewModel() {
         val currentFollowed = _isFollowed.value
         viewModelScope.launch {
             _isFollowed.value = !currentFollowed
+            val fansDelta = if (currentFollowed) -1 else 1
+            _userInfo.value = info.copy(fans = (info.fans + fansDelta).coerceAtLeast(0))
             try {
                 val result = UserInfoApi.followUser(info.mid, !currentFollowed)
                 if (result != 0) {
                     _isFollowed.value = currentFollowed
+                    _userInfo.value = info
                 }
             } catch (e: Exception) {
                 _isFollowed.value = currentFollowed
+                _userInfo.value = info
             }
         }
     }
