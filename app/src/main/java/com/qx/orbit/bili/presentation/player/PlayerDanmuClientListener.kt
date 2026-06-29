@@ -19,6 +19,8 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.zip.Inflater
 
+import java.util.UUID
+
 interface PlayerCallback {
     fun addDanmaku(
         text: String,
@@ -28,7 +30,8 @@ interface PlayerCallback {
         borderColor: Int = 0,
         senderName: String = "",
         emotes: Map<String, com.qx.orbit.bili.presentation.viewmodel.EmoteInline>? = null,
-        singleEmote: com.qx.orbit.bili.presentation.viewmodel.EmoteInline? = null
+        singleEmote: com.qx.orbit.bili.presentation.viewmodel.EmoteInline? = null,
+        id: String = ""
     )
     var onlineNumber: String
     fun updateTitle(title: String)
@@ -218,8 +221,9 @@ class PlayerDanmuClientListener(
                     }
                 } catch (_: Exception) { null }
 
+                val id = try { extraObj?.optString("id_str", "") ?: "" } catch (_: Exception) { "" }
                 val displayText = if (senderName.isNotEmpty()) "$senderName：$message" else message
-                callback.addDanmaku(displayText, 0xFFFFFF, senderName = senderName, emotes = emotes, singleEmote = singleEmote)
+                callback.addDanmaku(displayText, 0xFFFFFF, senderName = senderName, emotes = emotes, singleEmote = singleEmote, id = id)
             }
             cmd == "WATCHED_CHANGE" -> {
                 val data = json.optJSONObject("data")
@@ -232,7 +236,7 @@ class PlayerDanmuClientListener(
                 val data = json.optJSONObject("data")
                 val uname = data?.optString("uname", "") ?: ""
                 if (uname.isNotEmpty()) {
-                    callback.addDanmaku("$uname 进入直播间", 0xAAAAAA, textSize = 18, type = 1)
+                    callback.addDanmaku("$uname 进入直播间", 0xAAAAAA, textSize = 18, type = 1, id = UUID.randomUUID().toString())
                 }
             }
             cmd == "SEND_GIFT" -> {
@@ -241,21 +245,21 @@ class PlayerDanmuClientListener(
                 val action = data?.optString("action", "") ?: ""
                 val giftName = data?.optString("giftName", "") ?: ""
                 if (uname.isNotEmpty()) {
-                    callback.addDanmaku("$uname $action $giftName", 0xFFAA00, textSize = 20, type = 1)
+                    callback.addDanmaku("$uname $action $giftName", 0xFFAA00, textSize = 20, type = 1, id = UUID.randomUUID().toString())
                 }
             }
             cmd == "ENTRY_EFFECT" -> {
                 val data = json.optJSONObject("data")
                 val copyWriting = data?.optString("copy_writing", "")?.replace(Regex("<[^>]+>"), "") ?: ""
                 if (copyWriting.isNotEmpty()) {
-                    callback.addDanmaku(copyWriting, 0xFF6699, textSize = 20, type = 1)
+                    callback.addDanmaku(copyWriting, 0xFF6699, textSize = 20, type = 1, id = UUID.randomUUID().toString())
                 }
             }
             cmd.startsWith("NOTICE_MSG") -> {
                 val data = json.optJSONObject("data")
                 val msg = data?.optString("msg_common", "") ?: ""
                 if (msg.isNotEmpty()) {
-                    callback.addDanmaku(msg, 0xFF6699, textSize = 18, type = 1)
+                    callback.addDanmaku(msg, 0xFF6699, textSize = 18, type = 1, id = UUID.randomUUID().toString())
                 }
             }
             cmd == "ROOM_CHANGE" -> {

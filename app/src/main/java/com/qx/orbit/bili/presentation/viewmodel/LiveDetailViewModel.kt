@@ -20,6 +20,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+import java.util.UUID
+
 data class EmoteInline(
     val url: String,
     val width: Int,
@@ -27,6 +29,7 @@ data class EmoteInline(
 )
 
 data class DanmakuMessage(
+    val id: String,
     val text: String,
     val color: Int = 0xFFFFFF,
     val isSystem: Boolean = false,
@@ -61,11 +64,21 @@ class LiveDetailViewModel : ViewModel() {
 
     private var webSocket: okhttp3.WebSocket? = null
     private var danmuListener: PlayerDanmuClientListener? = null
+    private var connectJob: kotlinx.coroutines.Job? = null
 
     fun loadRoom(roomId: Long) {
         viewModelScope.launch {
             _error.value = null
             try {
+                // 避免重复连接导致弹幕重复
+                connectJob?.cancel()
+                try {
+                    danmuListener?.close()
+                    webSocket?.close(1000, "reload")
+                } catch (_: Exception) {}
+                danmuListener = null
+                webSocket = null
+
                 val roomInfo = LiveApi.getRoomInfo(roomId)
                 _room.value = roomInfo
                 if (roomInfo != null) {
@@ -107,7 +120,8 @@ class LiveDetailViewModel : ViewModel() {
     }
 
     private fun connectDanmaku(roomId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        if (webSocket != null || connectJob?.isActive == true) return
+        connectJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val danmuInfo = LiveApi.getDanmuInfo(roomId) ?: return@launch
                 val host = danmuInfo.host_list?.firstOrNull() ?: return@launch
@@ -121,9 +135,15 @@ class LiveDetailViewModel : ViewModel() {
                 val mid = CookieManager.getMid()
 
                 val callback = object : PlayerCallback {
-                    override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?) {
-                        val msg = DanmakuMessage(text = text, color = color, emotes = emotes, singleEmote = singleEmote)
-                        _danmakuList.value = (_danmakuList.value + msg).takeLast(200)
+                    override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?, id: String) {
+                        val msg = DanmakuMessage(
+                            id = id.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString(),
+                            text = text,
+                            color = color,
+                            emotes = emotes,
+                            singleEmote = singleEmote
+                        )
+                        _danmakuList.value = (_danmakuList.value + msg).distinctBy { it.id }.takeLast(200)
                         _danmakuCount.value++
                     }
 
