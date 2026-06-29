@@ -3,6 +3,7 @@ package com.qx.orbit.bili.presentation.player
 import android.annotation.SuppressLint
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.TextureView
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -133,6 +134,7 @@ fun PlayerScreen(
     var liveWebSocket by remember { mutableStateOf<okhttp3.WebSocket?>(null) }
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
     var surfaceReady by remember { mutableStateOf(false) }
+    var textureSurface by remember { mutableStateOf<android.view.Surface?>(null) }
     
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -140,6 +142,7 @@ fun PlayerScreen(
 
     var videoWidth by remember { mutableFloatStateOf(16f) }
     var videoHeight by remember { mutableFloatStateOf(9f) }
+    val useTextureView = remember { SharedPreferencesUtil.getBoolean("player_texture_view", false) }
 
     LaunchedEffect(interactionCounter) {
         showControls = true
@@ -254,8 +257,14 @@ fun PlayerScreen(
                     mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
                 }
                 mediaPlayer.dataSource = result.videoUrl
-                if (surfaceHolder != null) {
-                    mediaPlayer.setDisplay(surfaceHolder)
+                if (useTextureView) {
+                    if (textureSurface != null) {
+                        mediaPlayer.setSurface(textureSurface)
+                    }
+                } else {
+                    if (surfaceHolder != null) {
+                        mediaPlayer.setDisplay(surfaceHolder)
+                    }
                 }
                 if (SharedPreferencesUtil.getBoolean("player_loop", false)) {
                     mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "loop", 1)
@@ -541,26 +550,53 @@ fun PlayerScreen(
             Box(modifier = Modifier.fillMaxSize(0.865f)) {
                 AndroidView(
                     factory = { ctx ->
-                        SurfaceView(ctx).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT
-                            ).apply {
-                                gravity = android.view.Gravity.CENTER
+                        if (useTextureView) {
+                            TextureView(ctx).apply {
+                                layoutParams = FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                ).apply {
+                                    gravity = android.view.Gravity.CENTER
+                                }
+                                setSurfaceTextureListener(object : TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                                        surfaceReady = true
+                                        val s = android.view.Surface(surface)
+                                        textureSurface = s
+                                        mediaPlayer.setSurface(s)
+                                    }
+                                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                                        surfaceReady = false
+                                        textureSurface = null
+                                        mediaPlayer.setSurface(null)
+                                        return true
+                                    }
+                                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+                                })
                             }
-                            holder.addCallback(object : SurfaceHolder.Callback {
-                                override fun surfaceCreated(h: SurfaceHolder) {
-                                    surfaceHolder = h
-                                    surfaceReady = true
-                                    mediaPlayer.setDisplay(h)
+                        } else {
+                            SurfaceView(ctx).apply {
+                                layoutParams = FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                ).apply {
+                                    gravity = android.view.Gravity.CENTER
                                 }
-                                override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
-                                override fun surfaceDestroyed(h: SurfaceHolder) {
-                                    surfaceHolder = null
-                                    surfaceReady = false
-                                    mediaPlayer.setDisplay(null)
-                                }
-                            })
+                                holder.addCallback(object : SurfaceHolder.Callback {
+                                    override fun surfaceCreated(h: SurfaceHolder) {
+                                        surfaceHolder = h
+                                        surfaceReady = true
+                                        mediaPlayer.setDisplay(h)
+                                    }
+                                    override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
+                                    override fun surfaceDestroyed(h: SurfaceHolder) {
+                                        surfaceHolder = null
+                                        surfaceReady = false
+                                        mediaPlayer.setDisplay(null)
+                                    }
+                                })
+                            }
                         }
                     },
                     modifier = Modifier
@@ -571,12 +607,13 @@ fun PlayerScreen(
                         )
                 )
             }
-
-            AndroidView(
-                factory = { danmakuView },
-                modifier = Modifier.fillMaxSize()
-            )
         }
+
+        // DanmakuView outside scaling container to prevent scaling with video
+        AndroidView(
+            factory = { danmakuView },
+            modifier = Modifier.fillMaxSize()
+        )
 
         if (isLoading) {
             Column(
@@ -720,11 +757,24 @@ fun PlayerScreen(
                             if (isPlaying) {
                                 mediaPlayer.pause()
                                 danmakuView.pause()
+                                isPlaying = false
+                                scope.launch {
+                                    try {
+                                        val pos = mediaPlayer.currentPosition / 1000
+                                        HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                                        HeartbeatApi.reportHeartbeat(
+                                            aid = playerData.aid,
+                                            bvid = playerData.bvid,
+                                            cid = playerData.cid,
+                                            playedTime = pos
+                                        )
+                                    } catch (_: Exception) {}
+                                }
                             } else {
                                 mediaPlayer.start()
                                 danmakuView.resume()
+                                isPlaying = true
                             }
-                            isPlaying = !isPlaying
                         },
                         modifier = Modifier.align(Alignment.Center).size(48.dp)
                     ) {

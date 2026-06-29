@@ -1,6 +1,7 @@
 package com.qx.orbit.bili.presentation
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -84,6 +85,8 @@ import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.presentation.viewmodel.OpusDetailViewModel
 import com.qx.orbit.bili.util.formatCount
 import androidx.core.graphics.toColorInt
+import com.google.gson.Gson
+import java.net.URLEncoder
 
 @Composable
 fun OpusDetailScreen(
@@ -156,6 +159,11 @@ fun OpusDetailScreen(
                                 replyTarget = null
                                 viewModel.loadEmotes()
                                 showWriteReply = true
+                            },
+                            onClick = { reply ->
+                                val json = Gson().toJson(reply)
+                                val encoded = URLEncoder.encode(json, "UTF-8")
+                                navController.navigate("reply_detail/${reply.rpid}/$encoded")
                             }
                         )
                     }
@@ -430,7 +438,8 @@ fun OpusCommentsPage(
     navController: NavHostController,
     focusRequester: FocusRequester,
     onReplyClick: (Reply) -> Unit = {},
-    onSendCommentClick: () -> Unit = {}
+    onSendCommentClick: () -> Unit = {},
+    onClick: (Reply) -> Unit = {}
 ) {
     val replies by viewModel.replies.collectAsState()
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
@@ -468,6 +477,7 @@ fun OpusCommentsPage(
                 transformation = SurfaceTransformation(transformationSpec),
                 modifier = Modifier.transformedHeight(this, transformationSpec),
                 navController = navController,
+                onClick = { onClick(replies[index]) },
                 onLikeClick = { viewModel.likeReply(replies[index].rpid) },
                 onReplyClick = { onReplyClick(replies[index]) }
             )

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qx.orbit.bili.data.api.BiliApiService
 import com.qx.orbit.bili.data.api.DynamicApi
+import com.qx.orbit.bili.data.api.EmoteApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Dynamic
 import com.qx.orbit.bili.data.model.Reply
@@ -27,6 +28,9 @@ class DynamicDetailViewModel : ViewModel() {
 
     private val _isReplyLoading = MutableStateFlow(false)
     val isReplyLoading: StateFlow<Boolean> = _isReplyLoading.asStateFlow()
+
+    private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
+    val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
     private var replyNext: String? = null
     private var hasMoreReplies = true
@@ -144,6 +148,38 @@ class DynamicDetailViewModel : ViewModel() {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    fun loadEmotes() {
+        if (_emotes.value != null) return
+        viewModelScope.launch {
+            try {
+                _emotes.value = EmoteApi.getEmotes(EmoteApi.BUSINESS_REPLY)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun sendReply(text: String, root: Long = 0, parent: Long = 0, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        val dyn = _dynamic.value ?: return
+        viewModelScope.launch {
+            try {
+                val (code, _) = ReplyApi.sendReply(
+                    oid = dyn.comment_id,
+                    root = root,
+                    parent = parent,
+                    text = text,
+                    type = dyn.comment_type
+                )
+                if (code == 0) {
+                    onSuccess()
+                    loadReplies(reset = true)
+                } else {
+                    onError("发送失败: $code")
+                }
+            } catch (e: Exception) {
+                onError(e.localizedMessage ?: "发送失败")
             }
         }
     }

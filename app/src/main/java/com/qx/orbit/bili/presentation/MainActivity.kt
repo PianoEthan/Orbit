@@ -101,6 +101,7 @@ import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.component.WysTimeText
 import com.qx.orbit.bili.presentation.player.PlayerScreen
 import com.qx.orbit.bili.presentation.settings.SettingTerminalPlayerScreen
+import com.qx.orbit.bili.presentation.settings.SettingVideoRenderScreen
 import com.qx.orbit.bili.presentation.settings.SettingUIScreen
 import com.qx.orbit.bili.presentation.settings.SettingsScreen
 import com.qx.orbit.bili.presentation.theme.OrbitTheme
@@ -250,6 +251,9 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             }
             composable("settings_terminal_player") {
                 SettingTerminalPlayerScreen(navController = navController)
+            }
+            composable("settings_video_render") {
+                SettingVideoRenderScreen(navController = navController)
             }
             composable("settings_ui") {
                 SettingUIScreen(navController = navController)

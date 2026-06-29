@@ -23,6 +23,8 @@ class ReplyDetailViewModel : ViewModel() {
     private var page = 1
     private var oid: Long = 0
     private var rpid: Long = 0
+    private var replyType: Int = ReplyApi.REPLY_TYPE_VIDEO
+    private var childReplyType: Int = ReplyApi.REPLY_TYPE_VIDEO_CHILD
 
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
@@ -34,6 +36,13 @@ class ReplyDetailViewModel : ViewModel() {
         _rootReply.value = root
         this.oid = root.oid
         this.rpid = root.rpid
+        if (root.isDynamic) {
+            replyType = ReplyApi.REPLY_TYPE_DYNAMIC
+            childReplyType = ReplyApi.REPLY_TYPE_DYNAMIC_CHILD
+        } else {
+            replyType = ReplyApi.REPLY_TYPE_VIDEO
+            childReplyType = ReplyApi.REPLY_TYPE_VIDEO
+        }
         page = 1
         _childReplies.value = emptyList()
         loadMore()
@@ -44,7 +53,7 @@ class ReplyDetailViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val newReplies = ReplyApi.getReplies(oid = oid, rpid = rpid, pageNumber = page)
+                val newReplies = ReplyApi.getReplies(oid = oid, rpid = rpid, pageNumber = page, type = childReplyType)
                 _childReplies.value = _childReplies.value + newReplies
                 if (newReplies.isNotEmpty()) page++
             } catch (e: Exception) {
@@ -121,7 +130,7 @@ class ReplyDetailViewModel : ViewModel() {
                     root = rpid,
                     parent = parentId,
                     text = text,
-                    type = ReplyApi.REPLY_TYPE_VIDEO
+                    type = replyType
                 )
                 if (code == 0) {
                     page = 1

@@ -60,6 +60,7 @@ fun DynamicDetailScreen(
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val emotes by viewModel.emotes.collectAsState()
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -71,6 +72,7 @@ fun DynamicDetailScreen(
     
     val context = LocalContext.current
     var showImageDialog by remember { mutableStateOf<String?>(null) }
+    var showWriteReply by remember { mutableStateOf(false) }
 
     LaunchedEffect(dynamicId) {
         viewModel.loadDynamic(dynamicId)
@@ -222,9 +224,114 @@ fun DynamicDetailScreen(
                                         )
                                     }
                                 }
-                                
+
+                                item.dynamic_forward?.let { forward ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color.DarkGray.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                if (forward.major_type == "MAJOR_TYPE_ARCHIVE" && (forward.bvid.isNotEmpty() || forward.comment_id > 0)) {
+                                                    navController.navigate("detail/${forward.bvid}/${forward.comment_id}")
+                                                } else if (forward.dynamicId.isNotEmpty()) {
+                                                    navController.navigate("dynamic_detail/${forward.dynamicId}")
+                                                }
+                                            }
+                                            .padding(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "@${forward.userInfo?.name ?: "已失效动态"}",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF64B5F6),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        if (forward.content.isNotEmpty() && forward.content != forward.archiveTitle) {
+                                            val (fwdRichText, fwdInlineContent) = parseRichText(forward.content, forward.emotes, forward.members, emptyMap())
+                                            Text(
+                                                text = fwdRichText,
+                                                inlineContent = fwdInlineContent,
+                                                fontSize = 11.sp,
+                                                color = Color.LightGray,
+                                                maxLines = 3,
+                                                overflow = TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.bodySmall.copy(lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified)
+                                            )
+                                        }
+                                        if (forward.major_type == "MAJOR_TYPE_ARCHIVE" && forward.cover.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val fwdCoverUrl = when {
+                                                    forward.cover.startsWith("//") -> "https:${forward.cover}"
+                                                    forward.cover.startsWith("http://") -> forward.cover.replaceFirst("http://", "https://")
+                                                    else -> forward.cover
+                                                }
+                                                val fwdFinalUrl = if (!fwdCoverUrl.contains("@")) "$fwdCoverUrl@240w_135h_1c.webp" else fwdCoverUrl
+                                                AsyncImage(
+                                                    model = ImageRequest.Builder(context).data(fwdFinalUrl).crossfade(true).build(),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.width(60.dp).height(36.dp).clip(RoundedCornerShape(4.dp)),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = forward.archiveTitle,
+                                                    fontSize = 11.sp,
+                                                    color = Color.LightGray,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                        if (forward.images.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                forward.images.take(3).forEach { imgUrl ->
+                                                    val fixedImgUrl = when {
+                                                        imgUrl.startsWith("//") -> "https:$imgUrl"
+                                                        imgUrl.startsWith("http://") -> imgUrl.replaceFirst("http://", "https://")
+                                                        else -> imgUrl
+                                                    }
+                                                    AsyncImage(
+                                                        model = ImageRequest.Builder(context).data(fixedImgUrl).crossfade(true).build(),
+                                                        contentDescription = null,
+                                                        modifier = Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(4.dp)).clickable { showImageDialog = fixedImgUrl },
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    val isLiked = item.stats?.liked == true
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable { viewModel.toggleLike() }.padding(4.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.icon_like_0),
+                                            contentDescription = "Like",
+                                            modifier = Modifier.size(14.dp),
+                                            tint = if (isLiked) BiliPink else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        val likeCount = item.stats?.like ?: 0
+                                        Text(
+                                            text = formatCount(likeCount),
+                                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                            color = if (isLiked) BiliPink else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.clickable { /* Share */ }.padding(4.dp)
@@ -244,10 +351,13 @@ fun DynamicDetailScreen(
                                             fontSize = 10.sp
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable { /* TODO: Open send comment dialog */ }.padding(4.dp)
+                                        modifier = Modifier.clickable {
+                                            viewModel.loadEmotes()
+                                            showWriteReply = true
+                                        }.padding(4.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Edit,
@@ -261,27 +371,6 @@ fun DynamicDetailScreen(
                                             text = formatCount(replyCount),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    val isLiked = item.stats?.liked == true
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable { viewModel.toggleLike() }.padding(4.dp)
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.icon_like_0),
-                                            contentDescription = "Like",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = if (isLiked) BiliPink else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        val likeCount = item.stats?.like ?: 0
-                                        Text(
-                                            text = formatCount(likeCount),
-                                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                                            color = if (isLiked) BiliPink else MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 10.sp
                                         )
                                     }
@@ -329,4 +418,21 @@ fun DynamicDetailScreen(
             }
         }
     }
+
+    WriteReplyScreen(
+        visible = showWriteReply,
+        targetName = null,
+        emotes = emotes,
+        onSend = { text ->
+            viewModel.sendReply(
+                text = text,
+                onSuccess = { showWriteReply = false },
+                onError = { error ->
+                    showWriteReply = false
+                    com.qx.orbit.bili.presentation.ui.components.RoundToast.show(context, error)
+                }
+            )
+        },
+        onClose = { showWriteReply = false }
+    )
 }

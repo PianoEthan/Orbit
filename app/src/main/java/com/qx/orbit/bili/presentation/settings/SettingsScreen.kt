@@ -1,9 +1,14 @@
 package com.qx.orbit.bili.presentation.settings
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,9 +24,12 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CardDefaults
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.TitleCard
 import com.qx.orbit.bili.presentation.component.WysTimeText
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
@@ -37,6 +45,7 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import androidx.compose.ui.platform.LocalContext
 import com.google.gson.Gson
 import android.content.Intent
+import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.MainActivity
 
 @Composable
@@ -378,6 +387,28 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
                     Text(text = "视频清晰度: $label$lockIcon", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+
+            item {
+                Button(
+                    onClick = { navController.navigate("settings_video_render") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                ) {
+                    val currentRender = if (SharedPreferencesUtil.getBoolean("player_texture_view", false)) "TextureView" else "SurfaceView"
+                    Text(text = "视频渲染: $currentRender", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+
             item { Spacer(Modifier.height(20.dp)) }
         }
     }
@@ -541,3 +572,122 @@ private data class CookieExportItem(
     val name: String = "",
     val value: String = "",
 )
+
+@Composable
+fun SettingVideoRenderScreen(navController: NavController) {
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    var useTextureView by remember { mutableStateOf(SharedPreferencesUtil.getBoolean("player_texture_view", false)) }
+
+    ScreenScaffold(
+        scrollState = listState,
+        timeText = { WysTimeText() }
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            item {
+                ListHeader(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                ) {
+                    Text(text = "视频渲染")
+                }
+            }
+
+            item {
+                TitleCard(
+                    onClick = {
+                        useTextureView = false
+                        SharedPreferencesUtil.putBoolean("player_texture_view", false)
+                    },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (!useTextureView) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "已选择",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("SurfaceView")
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    colors = if (!useTextureView) {
+                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    } else CardDefaults.cardColors()
+                ) {
+                    Text(
+                        "性能更好，但部分设备可能不支持缩放",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            item {
+                TitleCard(
+                    onClick = {
+                        useTextureView = true
+                        SharedPreferencesUtil.putBoolean("player_texture_view", true)
+                    },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (useTextureView) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "已选择",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("TextureView")
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    colors = if (useTextureView) {
+                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    } else CardDefaults.cardColors()
+                ) {
+                    Text(
+                        "兼容性较好，支持软件旋屏和缩放",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    text = "如果视频播放异常/闪退/无法缩放，请尝试切换该选项",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                )
+            }
+        }
+    }
+}
