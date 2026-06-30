@@ -349,16 +349,12 @@ fun WriteReplyScreen(
                                                                     .height(40.dp)
                                                                     .clip(RoundedCornerShape(4.dp))
                                                                     .clickable {
-                                                                        if (isLive && emote.emoticonUnique.isNotBlank()) {
-                                                                            onSendEmote(emote.emoticonUnique)
-                                                                        } else {
-                                                                            val char = EmoteMapper.getCharForName(emote.name).toString()
-                                                                            val currentText = text.text
-                                                                            val selection = text.selection
-                                                                            val newText = currentText.substring(0, selection.min) + char + currentText.substring(selection.max)
-                                                                            val newCursor = selection.min + char.length
-                                                                            text = TextFieldValue(newText, TextRange(newCursor))
-                                                                        }
+                                                                        val char = EmoteMapper.getCharForName(emote.name).toString()
+                                                                        val currentText = text.text
+                                                                        val selection = text.selection
+                                                                        val newText = currentText.substring(0, selection.min) + char + currentText.substring(selection.max)
+                                                                        val newCursor = selection.min + char.length
+                                                                        text = TextFieldValue(newText, TextRange(newCursor))
                                                                     }
                                                                     .padding(4.dp),
                                                                 textAlign = TextAlign.Center
@@ -372,16 +368,12 @@ fun WriteReplyScreen(
                                                                     .size(40.dp)
                                                                     .clip(RoundedCornerShape(4.dp))
                                                                     .clickable {
-                                                                        if (isLive && emote.emoticonUnique.isNotBlank()) {
-                                                                            onSendEmote(emote.emoticonUnique)
-                                                                        } else {
-                                                                            val char = EmoteMapper.getCharForName(emote.name).toString()
-                                                                            val currentText = text.text
-                                                                            val selection = text.selection
-                                                                            val newText = currentText.substring(0, selection.min) + char + currentText.substring(selection.max)
-                                                                            val newCursor = selection.min + char.length
-                                                                            text = TextFieldValue(newText, TextRange(newCursor))
-                                                                        }
+                                                                        val char = EmoteMapper.getCharForName(emote.name).toString()
+                                                                        val currentText = text.text
+                                                                        val selection = text.selection
+                                                                        val newText = currentText.substring(0, selection.min) + char + currentText.substring(selection.max)
+                                                                        val newCursor = selection.min + char.length
+                                                                        text = TextFieldValue(newText, TextRange(newCursor))
                                                                     }
                                                                     .padding(4.dp)
                                                             )
