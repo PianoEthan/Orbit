@@ -1,8 +1,18 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="MainActivityTheme.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@android:color/black</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
-        <item name="postSplashScreenTheme">@android:style/Theme.DeviceDefault</item>
+        <item name="postSplashScreenTheme">@style/MainActivityTheme</item>
+    </style>
+    <style name="MainActivityTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowSwipeToDismiss" tools:ignore="WearBackNavigation">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

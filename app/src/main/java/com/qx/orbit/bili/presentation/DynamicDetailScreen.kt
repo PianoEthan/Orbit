@@ -84,7 +84,11 @@ fun DynamicDetailScreen(
     }
 
     if (showImageDialog != null) {
-        ImageViewerDialog(imageUrl = showImageDialog!!, onDismiss = { showImageDialog = null })
+        var dialogUrl = showImageDialog!!
+        if (!dialogUrl.contains("@")) {
+            dialogUrl = "$dialogUrl@1024w.webp"
+        }
+        ImageViewerDialog(imageUrl = dialogUrl, onDismiss = { showImageDialog = null })
     }
 
     ScreenScaffold(
@@ -201,8 +205,9 @@ fun DynamicDetailScreen(
                                             imgUrl.startsWith("http://") -> imgUrl.replaceFirst("http://", "https://")
                                             else -> imgUrl
                                         }
+                                        val finalUrl = if (!fixedUrl.contains("@")) "$fixedUrl@400w.webp" else fixedUrl
                                         AsyncImage(
-                                            model = ImageRequest.Builder(context).data(fixedUrl).crossfade(true).build(),
+                                            model = ImageRequest.Builder(context).data(finalUrl).crossfade(true).build(),
                                             contentDescription = null,
                                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)).clickable { showImageDialog = fixedUrl },
                                             contentScale = ContentScale.FillWidth
@@ -232,13 +237,13 @@ fun DynamicDetailScreen(
                                     Spacer(modifier = Modifier.height(8.dp))
                                     RecommendVideoCard(
                                         item = VideoCard(
-                                            title = item.content,
+                                            title = item.archiveTitle,
                                             cover = item.cover,
                                             upName = item.userInfo?.name ?: "",
-                                            view = "直播中"
+                                            view = if (item.liveState == 1) "直播中" else if (item.liveState == 2) "轮播中" else "已结束"
                                         ),
                                         onClick = {
-                                            val roomId = item.archiveTitle.toLongOrNull() ?: 0L
+                                            val roomId = item.bvid.toLongOrNull() ?: 0L
                                             if (roomId > 0) {
                                                 navController.navigate("live_room/$roomId")
                                             }
@@ -315,8 +320,9 @@ fun DynamicDetailScreen(
                                                         imgUrl.startsWith("http://") -> imgUrl.replaceFirst("http://", "https://")
                                                         else -> imgUrl
                                                     }
+                                                    val finalImgUrl = if (!fixedImgUrl.contains("@")) "$fixedImgUrl@360w_360h_1e_1c.webp" else fixedImgUrl
                                                     AsyncImage(
-                                                        model = ImageRequest.Builder(context).data(fixedImgUrl).crossfade(true).build(),
+                                                        model = ImageRequest.Builder(context).data(finalImgUrl).crossfade(true).build(),
                                                         contentDescription = null,
                                                         modifier = Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(4.dp)).clickable { showImageDialog = fixedImgUrl },
                                                         contentScale = ContentScale.Crop

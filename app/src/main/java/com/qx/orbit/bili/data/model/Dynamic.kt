@@ -19,7 +19,8 @@ data class Dynamic(
     val bvid: String = "",
     val archiveTitle: String = "",
     val emotes: Map<String, Emote> = emptyMap(),
-    val members: Map<String, Long> = emptyMap()
+    val members: Map<String, Long> = emptyMap(),
+    val liveState: Int = 0
 ) {
     companion object {
         const val DYNAMIC_TYPE_UGC_SEASON = "DYNAMIC_TYPE_UGC_SEASON"

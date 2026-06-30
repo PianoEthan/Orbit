@@ -365,6 +365,9 @@ object DynamicApi {
 
         var content = dynContent?.desc?.text ?: ""
 
+        var bvid = ""
+        var archiveTitle = ""
+        var liveState = 0
         val emotes = mutableMapOf<String, Emote>()
         val members = mutableMapOf<String, Long>()
         parseRichTextNodes(dynContent?.desc?.rich_text_nodes, emotes, members)
@@ -373,8 +376,6 @@ object DynamicApi {
         var commentType = item.basic?.comment_type ?: 0
         val images = mutableListOf<String>()
         var cover = ""
-        var bvid = ""
-        var archiveTitle = ""
 
         when (majorType) {
             "MAJOR_TYPE_ARCHIVE" -> {
@@ -421,11 +422,14 @@ object DynamicApi {
                             val cov = livePlayInfo.get("cover")?.asString ?: ""
                             if (content.isEmpty()) content = title
                             cover = cov.fixUrl()
-                            val link = livePlayInfo.get("link")?.asString ?: ""
-                            val uriObj = Uri.parse(link)
-                            val roomId = uriObj.pathSegments?.lastOrNull() ?: ""
+                            val roomId = livePlayInfo.get("room_id")?.asString ?: ""
                             bvid = roomId
                             if (archiveTitle.isEmpty()) archiveTitle = title
+                            
+                            val status = livePlayInfo.get("live_status")?.asInt
+                            if (status != null) {
+                                liveState = status
+                            }
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -494,7 +498,8 @@ object DynamicApi {
             bvid = bvid,
             archiveTitle = archiveTitle,
             emotes = emotes,
-            members = members
+            members = members,
+            liveState = liveState
         )
     }
 

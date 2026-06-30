@@ -55,7 +55,9 @@ fun DynamicCard(
             url.startsWith("http://") -> url.replaceFirst("http://", "https://")
             else -> url
         }
-        val finalUrl = if (isCover && !fixedUrl.contains("@")) "$fixedUrl@480w_270h_1c.webp" else fixedUrl
+        val finalUrl = if (!fixedUrl.contains("@")) {
+            if (isCover) "$fixedUrl@480w_270h_1c.webp" else "$fixedUrl@400w.webp"
+        } else fixedUrl
         ImageRequest.Builder(context)
             .data(finalUrl)
             .crossfade(true)
@@ -175,13 +177,13 @@ fun DynamicCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 RecommendVideoCard(
                     item = VideoCard(
-                        title = item.content,
+                        title = item.archiveTitle,
                         cover = item.cover,
                         upName = item.userInfo?.name ?: "",
-                        view = "直播中"
+                        view = if (item.liveState == 1) "直播中" else if (item.liveState == 2) "轮播中" else "已结束"
                     ),
                     onClick = {
-                        val roomId = item.archiveTitle.toLongOrNull() ?: 0L
+                        val roomId = item.bvid.toLongOrNull() ?: 0L
                         if (roomId > 0) {
                             onLiveClick(roomId)
                         }
