@@ -24,6 +24,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.presentation.ui.components.ReplyCard
 import com.qx.orbit.bili.presentation.viewmodel.ReplyDetailViewModel
@@ -78,10 +79,14 @@ fun ReplyDetailScreen(
                     ReplyCard(
                         reply = root,
                         transformation = SurfaceTransformation(transformationSpec),
-                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        modifier = Modifier.transformedHeight(this, transformationSpec), // Don't animateItem for root as it might mess up header
                         navController = navController,
                         showReplyPreview = false,
                         isDetail = true,
+                        replyType = if (root.isDynamic) ReplyApi.REPLY_TYPE_DYNAMIC else ReplyApi.REPLY_TYPE_VIDEO,
+                        onRemove = { 
+                            navController.popBackStack() 
+                        },
                         onLikeClick = { viewModel.likeRootReply(root.liked) },
                         onReplyClick = { 
                             replyTarget = root
@@ -113,9 +118,11 @@ fun ReplyDetailScreen(
                     ReplyCard(
                         reply = childReplies[index],
                         transformation = SurfaceTransformation(transformationSpec),
-                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        modifier = Modifier.animateItem().transformedHeight(this, transformationSpec),
                         navController = navController,
                         showReplyPreview = false,
+                        replyType = if (rootReply?.isDynamic == true) ReplyApi.REPLY_TYPE_DYNAMIC_CHILD else ReplyApi.REPLY_TYPE_VIDEO_CHILD,
+                        onRemove = { viewModel.removeReplyLocally(childReplies[index]) },
                         onLikeClick = { viewModel.likeChildReply(childReplies[index].rpid, childReplies[index].liked) },
                         onReplyClick = { 
                             replyTarget = childReplies[index]

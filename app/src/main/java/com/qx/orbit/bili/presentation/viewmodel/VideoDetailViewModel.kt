@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 class VideoDetailViewModel : ViewModel() {
     private val _videoInfo = MutableStateFlow<VideoInfo?>(null)
@@ -152,7 +154,7 @@ class VideoDetailViewModel : ViewModel() {
         }
     }
 
-    fun toggleLike() {
+    fun toggleLike(onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val info = _videoInfo.value ?: return
         viewModelScope.launch {
             try {
@@ -166,19 +168,26 @@ class VideoDetailViewModel : ViewModel() {
                         like = info.stats.like + (if (isLiked) -1 else 1)
                     )
                     _videoInfo.value = info.copy(stats = newStats)
+                    withContext(Dispatchers.Main) { onResult(true, if (isLiked) "已取消点赞" else "点赞成功") }
+                } else {
+                    withContext(Dispatchers.Main) { onResult(false, "点赞失败: 错误码 $result") }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: "操作异常") }
             }
         }
     }
     
-    fun doCoin(multiply: Int) {
+    fun doCoin(multiply: Int, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val info = _videoInfo.value ?: return
         viewModelScope.launch {
             try {
                 val isCoined = (info.stats?.coined ?: 0) > 0
-                if (isCoined) return@launch // Bilibili cannot cancel coin easily via simple API
+                if (isCoined) {
+                    withContext(Dispatchers.Main) { onResult(false, "已经投过币了") }
+                    return@launch
+                }
                 val result = LikeCoinFavApi.coin(aid, multiply)
                 if (result == 0) {
                     val newStats = info.stats?.copy(
@@ -186,9 +195,13 @@ class VideoDetailViewModel : ViewModel() {
                         coin = info.stats.coin + multiply
                     )
                     _videoInfo.value = info.copy(stats = newStats)
+                    withContext(Dispatchers.Main) { onResult(true, "投币成功") }
+                } else {
+                    withContext(Dispatchers.Main) { onResult(false, "投币失败: 错误码 $result") }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: "操作异常") }
             }
         }
     }
@@ -204,7 +217,7 @@ class VideoDetailViewModel : ViewModel() {
         }
     }
 
-    fun doFavorite(fid: Long) {
+    fun doFavorite(fid: Long, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val info = _videoInfo.value ?: return
         viewModelScope.launch {
             try {
@@ -217,9 +230,13 @@ class VideoDetailViewModel : ViewModel() {
                     _videoInfo.value = info.copy(stats = newStats)
                     // Optionally reload folders
                     loadFavoriteFolders()
+                    withContext(Dispatchers.Main) { onResult(true, "收藏成功") }
+                } else {
+                    withContext(Dispatchers.Main) { onResult(false, "收藏失败: 错误码 $result") }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.Main) { onResult(false, e.message ?: "操作异常") }
             }
         }
     }
@@ -264,5 +281,9 @@ class VideoDetailViewModel : ViewModel() {
                 onError(e.localizedMessage ?: "网络异常，发送失败")
             }
         }
+    }
+
+    fun removeReplyLocally(reply: Reply) {
+        _replies.value = _replies.value.filter { it.rpid != reply.rpid }
     }
 }

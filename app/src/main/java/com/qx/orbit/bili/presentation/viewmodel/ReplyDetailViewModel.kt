@@ -142,4 +142,8 @@ class ReplyDetailViewModel : ViewModel() {
             }
         }
     }
+
+    fun removeReplyLocally(reply: Reply) {
+        _childReplies.value = _childReplies.value.filter { it.rpid != reply.rpid }
+    }
 }

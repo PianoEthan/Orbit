@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -92,6 +93,7 @@ import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ButtonGroup
+import androidx.wear.compose.material3.ButtonGroupDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
@@ -112,6 +114,7 @@ import coil.request.ImageRequest
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.BilibiliIDConverter
+import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.api.UserInfoApi
 import com.qx.orbit.bili.data.model.Emote
 import com.qx.orbit.bili.data.model.PlayerData
@@ -188,10 +191,15 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
             }
         } else {
             val listState = rememberTransformingLazyColumnState()
-            TransformingLazyColumn(state = listState, horizontalAlignment = Alignment.CenterHorizontally, contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp)) {
+            val transformationSpec = rememberTransformationSpec()
+            TransformingLazyColumn(state = listState, horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp)) {
                 item {
-                    Text("选择缓存清晰度", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(8.dp))
+                    ListHeader(
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    ) {
+                        Text("选择清晰度", color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 items(cacheQualities) { (name, qn) ->
                     Button(
@@ -215,7 +223,9 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 showCacheDialog = false
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
                     ) {
                         Text(name)
                     }
@@ -242,12 +252,14 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 showCacheDialog = false
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
                     ) {
                         Text("仅音频+字幕")
                     }
                 }
+                item { Spacer(Modifier.height(20.dp)) }
             }
         }
     }
@@ -290,7 +302,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 val encodedJson = URLEncoder.encode(jsonStr, StandardCharsets.UTF_8.toString())
                                 navController.navigate("player/$encodedJson")
                             },
-                            onLikeClick = { viewModel.toggleLike() },
+                            onLikeClick = { viewModel.toggleLike { success, msg -> RoundToast.show(context, msg) } },
                             onCoinClick = { showCoinDialog = true },
                             onFavClick = { 
                                 viewModel.loadFavoriteFolders()
@@ -337,7 +349,8 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 replyTarget = null
                                 viewModel.loadEmotes()
                                 showWriteReply = true
-                            }
+                            },
+                            onRemove = { reply -> viewModel.removeReplyLocally(reply) }
                         )
                         2 -> VideoRelatedPage(
                             relatedVideos = relatedVideos, 
@@ -474,7 +487,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                     isHit = true
                                     coroutineScope.launch {
                                         dragYDpAnim.animateTo(-30f, tween(150))
-                                        viewModel.doCoin(selectedCoinIndex + 1)
+                                        viewModel.doCoin(selectedCoinIndex + 1) { success, msg -> RoundToast.show(context, msg) }
                                         dragYDpAnim.animateTo(0f, tween(150))
                                         delay(100.milliseconds)
                                         showCoinDialog = false
@@ -499,7 +512,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                             if (nextY <= -30f && dragYDpAnim.value > -30f) {
                                                 isHit = true
                                                 dragYDpAnim.snapTo(-30f)
-                                                viewModel.doCoin(selectedCoinIndex + 1)
+                                                viewModel.doCoin(selectedCoinIndex + 1) { success, msg -> RoundToast.show(context, msg) }
                                                 dragYDpAnim.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
                                                 delay(100.milliseconds)
                                                 showCoinDialog = false
@@ -548,7 +561,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 val folder = folders!![index]
                                 Button(
                                     onClick = { 
-                                        viewModel.doFavorite(folder.id)
+                                        viewModel.doFavorite(folder.id) { success, msg -> RoundToast.show(context, msg) }
                                         showFavDialog = false 
                                     },
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -798,8 +811,6 @@ fun VideoInfoPage(
                 // 5.5 Description
                 item {
                     if (videoInfo.description.isNotEmpty() || tags.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        
                         val fullDesc = buildAnnotatedString {
                             if (videoInfo.description.isNotEmpty()) {
                                 append(videoInfo.description)
@@ -844,34 +855,37 @@ fun VideoInfoPage(
                         onClick = onPlayClick,
                         modifier = Modifier
                             .transformedHeight(this, transformationSpec)
-                            .graphicsLayer {
-                                if (isRound) {
-                                    with(transformationSpec) {
-                                        applyContainerTransformation(scrollProgress)
-                                    }
-                                }
-                            }
-                            .fillMaxWidth(),
+                            .fillMaxWidth().padding(horizontal = 8.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = {Icon(imageVector = Icons.Filled.PlayCircleOutline, contentDescription = null)},
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text("播放视频")
                     }
                 }
-                item { Spacer(modifier = Modifier.height(4.dp)) }
+                item { Spacer(modifier = Modifier.height(1.dp)) }
                 // 7. Triple Actions
                 item {
                     val isLiked = videoInfo.stats?.liked == true
                     val isCoined = (videoInfo.stats?.coined ?: 0) > 0
                     val isFav = videoInfo.stats?.favoured == true
                     
-                    val activeColor = BiliPink
-                    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    
                     val likeInteractionSource = remember { MutableInteractionSource() }
                     val coinInteractionSource = remember { MutableInteractionSource() }
                     val favInteractionSource = remember { MutableInteractionSource() }
-                    
+
+                    val likeCornerRadius by animateDpAsState(if (isLiked) 16.dp else 26.dp, label = "likeShape")
+                    val coinCornerRadius by animateDpAsState(if (isCoined) 16.dp else 26.dp, label = "coinShape")
+                    val favCornerRadius by animateDpAsState(if (isFav) 16.dp else 26.dp, label = "favShape")
+
+                    val likeContainerColor by animateColorAsState(if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer, label = "likeColor")
+                    val coinContainerColor by animateColorAsState(if (isCoined) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer, label = "coinColor")
+                    val favContainerColor by animateColorAsState(if (isFav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer, label = "favColor")
+
+                    val likeContentColor by animateColorAsState(if (isLiked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "likeContentColor")
+                    val coinContentColor by animateColorAsState(if (isCoined) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "coinContentColor")
+                    val favContentColor by animateColorAsState(if (isFav) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "favContentColor")
+
                     ButtonGroup(
                         modifier = Modifier
                             .transformedHeight(this, transformationSpec)
@@ -882,15 +896,16 @@ fun VideoInfoPage(
                                     }
                                 }
                             }
-                            .fillMaxWidth()
+                            .fillMaxWidth(),
                     ) {
                         FilledIconButton(
                             onClick = onLikeClick,
                             interactionSource = likeInteractionSource,
-                            modifier = Modifier.animateWidth(likeInteractionSource),
+                            modifier = Modifier.animateWidth(likeInteractionSource).size(52.dp),
+                            shapes = IconButtonDefaults.animatedShapes(shape = RoundedCornerShape(likeCornerRadius)),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                contentColor = if (isLiked) activeColor else inactiveColor
+                                containerColor = likeContainerColor,
+                                contentColor = likeContentColor
                             )
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -905,10 +920,11 @@ fun VideoInfoPage(
                         FilledIconButton(
                             onClick = onCoinClick,
                             interactionSource = coinInteractionSource,
-                            modifier = Modifier.animateWidth(coinInteractionSource),
+                            modifier = Modifier.animateWidth(coinInteractionSource).size(52.dp),
+                            shapes = IconButtonDefaults.animatedShapes(shape = RoundedCornerShape(coinCornerRadius)),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                contentColor = if (isCoined) activeColor else inactiveColor
+                                containerColor = coinContainerColor,
+                                contentColor = coinContentColor
                             )
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -923,10 +939,11 @@ fun VideoInfoPage(
                         FilledIconButton(
                             onClick = onFavClick,
                             interactionSource = favInteractionSource,
-                            modifier = Modifier.animateWidth(favInteractionSource),
+                            modifier = Modifier.animateWidth(favInteractionSource).size(52.dp),
+                            shapes = IconButtonDefaults.animatedShapes(shape = RoundedCornerShape(favCornerRadius)),
                             colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                contentColor = if (isFav) activeColor else inactiveColor
+                                containerColor = favContainerColor,
+                                contentColor = favContentColor
                             )
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -939,7 +956,7 @@ fun VideoInfoPage(
                         }
                     }
                 }
-                item { Spacer(modifier = Modifier.height(4.dp)) }
+                item { Spacer(modifier = Modifier.height(1.dp)) }
                 
                 // Cache Button
                 item {
@@ -947,15 +964,9 @@ fun VideoInfoPage(
                         onClick = onCacheClick,
                         modifier = Modifier
                             .transformedHeight(this, transformationSpec)
-                            .graphicsLayer {
-                                if (isRound) {
-                                    with(transformationSpec) {
-                                        applyContainerTransformation(scrollProgress)
-                                    }
-                                }
-                            }
-                            .fillMaxWidth(),
-                        icon = { Icon(Icons.Default.Download, contentDescription = "Cache", modifier = Modifier.size(24.dp)) },
+                            .fillMaxWidth().padding(horizontal = 8.dp),
+                        icon = { Icon(Icons.Default.Download, contentDescription = "Cache", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface) },
+                        transformation = SurfaceTransformation(transformationSpec),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                             contentColor = MaterialTheme.colorScheme.onSurface
@@ -981,7 +992,8 @@ fun VideoCommentsPage(
     onClick: (Reply) -> Unit,
     onLikeClick: (Reply) -> Unit,
     onReplyClick: (Reply) -> Unit,
-    onSendCommentClick: () -> Unit
+    onSendCommentClick: () -> Unit,
+    onRemove: (Reply) -> Unit
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -1019,8 +1031,10 @@ fun VideoCommentsPage(
                 ReplyCard(
                     reply = replies[index],
                     transformation = SurfaceTransformation(transformationSpec),
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    modifier = Modifier.animateItem().transformedHeight(this, transformationSpec),
                     navController = navController,
+                    replyType = ReplyApi.REPLY_TYPE_VIDEO,
+                    onRemove = { onRemove(replies[index]) },
                     onLikeClick = { onLikeClick(replies[index]) },
                     onClick = { onClick(replies[index]) },
                     onReplyClick = { onReplyClick(replies[index]) }

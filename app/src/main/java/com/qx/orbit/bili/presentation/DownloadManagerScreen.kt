@@ -155,13 +155,6 @@ fun DownloadManagerScreen(navController: NavController) {
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .graphicsLayer {
-                                        if (isRound) {
-                                            with(transformationSpec) {
-                                                applyContentTransformation(scrollProgress)
-                                            }
-                                        }
-                                    }
                             )
 
                             if (download.status == DownloadManager.STATUS_FAILED) {
@@ -246,13 +239,6 @@ fun DownloadManagerScreen(navController: NavController) {
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .graphicsLayer {
-                                        if (isRound) {
-                                            with(transformationSpec) {
-                                                applyContentTransformation(scrollProgress)
-                                            }
-                                        }
-                                    }
                             )
                         }
                     }

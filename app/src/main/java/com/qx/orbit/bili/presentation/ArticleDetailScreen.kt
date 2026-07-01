@@ -51,6 +51,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import com.google.gson.Gson
+import com.qx.orbit.bili.data.api.ReplyApi
 import coil.compose.AsyncImage
 import com.qx.orbit.bili.data.model.ArticleInfo
 import com.qx.orbit.bili.data.model.Reply
@@ -341,8 +343,10 @@ fun ArticleCommentsPage(
             ReplyCard(
                 reply = replies[index],
                 transformation = SurfaceTransformation(transformationSpec),
-                modifier = Modifier.transformedHeight(this, transformationSpec),
+                modifier = Modifier.animateItem().transformedHeight(this, transformationSpec),
                 navController = navController,
+                replyType = ReplyApi.REPLY_TYPE_ARTICLE,
+                onRemove = { viewModel.removeReplyLocally(replies[index]) },
                 onLikeClick = { viewModel.likeReply(replies[index].rpid) },
                 onReplyClick = { onReplyClick(replies[index]) }
             )

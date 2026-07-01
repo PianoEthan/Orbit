@@ -37,6 +37,7 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.R
@@ -424,8 +425,10 @@ fun DynamicDetailScreen(
                             ReplyCard(
                                 reply = replies[index],
                                 transformation = SurfaceTransformation(transformationSpec),
-                                modifier = Modifier.transformedHeight(this, transformationSpec),
+                                modifier = Modifier.animateItem().transformedHeight(this, transformationSpec),
                                 navController = navController,
+                                replyType = ReplyApi.REPLY_TYPE_DYNAMIC,
+                                onRemove = { viewModel.removeReplyLocally(replies[index]) },
                                 onLikeClick = { viewModel.likeReply(replies[index].rpid, replies[index].liked) }
                             )
                         }

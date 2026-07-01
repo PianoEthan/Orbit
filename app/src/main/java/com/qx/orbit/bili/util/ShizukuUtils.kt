@@ -8,7 +8,12 @@ import android.util.Log
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuRemoteProcess
 
+import android.os.Environment
+
 object ShizukuUtils {
+    fun hasManageExternalStoragePermission(): Boolean {
+        return Environment.isExternalStorageManager()
+    }
     
     fun getShizukuVersionName(context: Context): String? {
         return try {

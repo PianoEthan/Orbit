@@ -129,6 +129,7 @@ import com.qx.orbit.bili.presentation.ui.components.ShizukuPermissionDialog
 import com.qx.orbit.bili.presentation.ui.components.ShizukuNotInstalledDialog
 import com.qx.orbit.bili.presentation.ui.components.ShizukuActivationDialog
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -158,7 +159,7 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
 
         LaunchedEffect(Unit) {
             val hasDeclined = SharedPreferencesUtil.getBoolean("shizuku_declined", false)
-            if (!hasDeclined && !ShizukuUtils.isShizukuAuthorized()) {
+            if (!ShizukuUtils.hasManageExternalStoragePermission() && !hasDeclined && !ShizukuUtils.isShizukuAuthorized()) {
                 showShizukuDialog = true
             }
         }
@@ -431,224 +432,180 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                             modifier = Modifier.fillMaxSize()
                         ) {
                             item {
-                                Box(
+                                ListHeader(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
+                                        .clickable { showTabMenu = false }
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
                                 ) {
-                                    ListHeader(
-                                        modifier = Modifier.fillMaxWidth().clickable { showTabMenu = false }
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(imageVector = Icons.Default.KeyboardArrowUp, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
-                                            Spacer(modifier = Modifier.width(1.dp))
-                                            Text(text = "菜单", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                        }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Default.KeyboardArrowUp, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.width(1.dp))
+                                        Text(text = "菜单", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
                             item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
-                                ) {
-                                    if (navInfo != null && navInfo!!.isLogin) {
-                                        Button(
-                                            onClick = {
-                                                showTabMenu = false
-                                                navController.navigate("user_space/${navInfo!!.mid}")
-                                            },
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                                contentColor = MaterialTheme.colorScheme.onSurface
-                                            ),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 14.dp)
-                                        ) {
-                                            UserAvatar(
-                                                avatarUrl = navInfo!!.face ?: "",
-                                                officialRole = 0,
-                                                modifier = Modifier.size(36.dp),
-                                                isVip = (navInfo!!.vip?.vipType ?: 0) > 0
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Column(verticalArrangement = Arrangement.Center) {
-                                                UserNameText(
-                                                    name = navInfo!!.uname ?: "",
-                                                    isVip = (navInfo!!.vip?.vipType ?: 0) > 0,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                val level = navInfo!!.level_info?.current_level ?: 0
-                                                LevelIcon(
-                                                    level = level,
-                                                    isSenior = navInfo!!.is_senior_member == 1,
-                                                    modifier = Modifier.height(16.dp)
-                                                )
-                                            }
-                                        }
-                                    } else {
-                                        Button(
-                                            onClick = {
-                                                showTabMenu = false
-                                                navController.navigate("login")
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                        ) {
-                                            Icon(imageVector = Icons.Default.AccountCircle, contentDescription = "登录")
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("登录")
-                                        }
-                                    }
-                                }
-                            }
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
-                                ) {
+                                if (navInfo != null && navInfo!!.isLogin) {
                                     Button(
                                         onClick = {
                                             showTabMenu = false
-                                            navController.navigate("search")
+                                            navController.navigate("user_space/${navInfo!!.mid}")
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
                                             contentColor = MaterialTheme.colorScheme.onSurface
                                         ),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .transformedHeight(this, menuTransformationSpec),
+                                        contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp, end = 14.dp),
+                                        transformation = SurfaceTransformation(menuTransformationSpec)
                                     ) {
-                                        Icon(imageVector = Icons.Default.Search, modifier = Modifier.size(20.dp), contentDescription = "搜索")
+                                        UserAvatar(
+                                            avatarUrl = navInfo!!.face ?: "",
+                                            officialRole = 0,
+                                            modifier = Modifier.size(36.dp),
+                                            isVip = (navInfo!!.vip?.vipType ?: 0) > 0
+                                        )
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text("搜索")
+                                        Column(verticalArrangement = Arrangement.Center) {
+                                            UserNameText(
+                                                name = navInfo!!.uname ?: "",
+                                                isVip = (navInfo!!.vip?.vipType ?: 0) > 0,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val level = navInfo!!.level_info?.current_level ?: 0
+                                            LevelIcon(
+                                                level = level,
+                                                isSenior = navInfo!!.is_senior_member == 1,
+                                                modifier = Modifier.height(16.dp)
+                                            )
+                                        }
                                     }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            showTabMenu = false
+                                            navController.navigate("login")
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .transformedHeight(this, menuTransformationSpec),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                        transformation = SurfaceTransformation(menuTransformationSpec)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.AccountCircle, contentDescription = "登录")
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("登录")
+                                    }
+                                }
+                            }
+                            item {
+                                Button(
+                                    onClick = {
+                                        showTabMenu = false
+                                        navController.navigate("search")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Search, modifier = Modifier.size(20.dp), contentDescription = "搜索")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("搜索")
                                 }
                             }
                             items(TabMode.entries.size) { index ->
                                 val tab = TabMode.entries[index]
-                                Box(
+                                Button(
+                                    onClick = {
+                                        viewModel.switchTab(tab)
+                                        showTabMenu = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            viewModel.switchTab(tab)
-                                            showTabMenu = false
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                            contentColor = MaterialTheme.colorScheme.onSurface
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        when (tab) {
-                                            TabMode.RECOMMEND -> {
-                                                Icon(
-                                                    imageVector = Icons.Default.Favorite,
-                                                    modifier = Modifier.size(20.dp),
-                                                    contentDescription = tab.title
-                                                )
-                                            }
-                                            TabMode.POPULAR -> {
-                                                Icon(
-                                                    imageVector = Icons.Default.Star,
-                                                    modifier = Modifier.size(20.dp),
-                                                    contentDescription = tab.title
-                                                )
-                                            }
-                                            else -> {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.Article,
-                                                    modifier = Modifier.size(20.dp),
-                                                    contentDescription = tab.title
-                                                )
-                                            }
+                                    when (tab) {
+                                        TabMode.RECOMMEND -> {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                modifier = Modifier.size(20.dp),
+                                                contentDescription = tab.title
+                                            )
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(tab.title)
+                                        TabMode.POPULAR -> {
+                                            Icon(
+                                                imageVector = Icons.Default.Star,
+                                                modifier = Modifier.size(20.dp),
+                                                contentDescription = tab.title
+                                            )
+                                        }
+                                        else -> {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Article,
+                                                modifier = Modifier.size(20.dp),
+                                                contentDescription = tab.title
+                                            )
+                                        }
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(tab.title)
                                 }
                             }
                             item {
-                                Box(
+                                Button(
+                                    onClick = {
+                                        showTabMenu = false
+                                        navController.navigate("download_manager")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            showTabMenu = false
-                                            navController.navigate("download_manager")
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                            contentColor = MaterialTheme.colorScheme.onSurface
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Icon(Icons.Default.Download, modifier = Modifier.size(20.dp), contentDescription = "缓存管理")
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("缓存")
-                                    }
+                                    Icon(Icons.Default.Download, modifier = Modifier.size(20.dp), contentDescription = "缓存管理")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("缓存")
                                 }
                             }
                             item {
-                                Box(
+                                Button(
+                                    onClick = {
+                                        showTabMenu = false
+                                        navController.navigate("settings_main")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .transformedHeight(this, menuTransformationSpec)
-                                        .graphicsLayer {
-                                            with(menuTransformationSpec) {
-                                                applyContainerTransformation(scrollProgress)
-                                            }
-                                        }
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
                                 ) {
-                                    Button(
-                                        onClick = {
-                                            showTabMenu = false
-                                            navController.navigate("settings_main")
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                            contentColor = MaterialTheme.colorScheme.onSurface
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Settings, modifier = Modifier.size(20.dp), contentDescription = "设置")
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("设置")
-                                    }
+                                    Icon(imageVector = Icons.Default.Settings, modifier = Modifier.size(20.dp), contentDescription = "设置")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("设置")
                                 }
                             }
                             item {
@@ -826,10 +783,10 @@ fun RecommendScreen(
 
     WysAlertDialog(
         show = videoToDelete != null,
-        title = "确认拉黑",
+        title = "确认操作",
         content = {
             Text(
-                text = "是否不感兴趣并拉黑该UP主？",
+                text = stringResource(R.string.clear_video_warning),
                 textAlign = TextAlign.Center
             )
         },

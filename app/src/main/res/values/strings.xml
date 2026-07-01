@@ -5,4 +5,6 @@
     <string name="software_intro">应用简介</string>
     <string name="about_description">玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的玩原神玩的</string>
     <string name="developer_list_title">开发者</string>
+    <string name="clear_video_warning">当您遇到让您厌恶的视频时，您可以通过左滑该卡片来净化您的主页。Orbit 将执行以下行为：\n\n• 将此视频从列表项移除\n• 将此视频报告为不感兴趣\n• 拉黑该UP主\n\n是否确认操作？</string>
+    <string name="clear_reply_warning">当您遇到让您厌恶的评论时，您可以通过长按该卡片来净化评论区。Orbit 将执行以下行为：\n\n• 将此评论从列表项移除\n• 拉黑该发送者\n\n是否确认操作？</string>
 </resources>

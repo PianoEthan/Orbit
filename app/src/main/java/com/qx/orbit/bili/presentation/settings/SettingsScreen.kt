@@ -1,6 +1,7 @@
 package com.qx.orbit.bili.presentation.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,60 +63,6 @@ fun SettingsScreen(navController: NavController) {
     val transformationSpec = rememberTransformationSpec()
     val context = LocalContext.current
     val isLoggedIn = remember { CookieManager.getCookie().isNotEmpty() }
-    
-    var showShizukuDialog by remember { mutableStateOf(false) }
-    var showShizukuNotInstalled by remember { mutableStateOf(false) }
-    var showShizukuActivation by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(ShizukuUtils.isShizukuAuthorized()) }
-
-    // Shizuku permission listener
-    LaunchedEffect(Unit) {
-        val listener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-            if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                if (ShizukuUtils.grantManageExternalStorage(context)) {
-                    hasPermission = true
-                }
-            }
-        }
-        Shizuku.addRequestPermissionResultListener(listener)
-    }
-
-    if (showShizukuDialog) {
-        ShizukuPermissionDialog(
-            show = true,
-            onDismissRequest = { showShizukuDialog = false },
-            context = context,
-            onConfirmAuth = {
-                showShizukuDialog = false
-                if (!ShizukuUtils.isShizukuAvailable()) {
-                    if (ShizukuUtils.getShizukuVersionName(context) != null) {
-                        showShizukuActivation = true
-                    } else {
-                        showShizukuNotInstalled = true
-                    }
-                } else {
-                    try {
-                        Shizuku.requestPermission(0)
-                    } catch (e: Exception) {
-                        ShizukuUtils.openShizukuManager(context)
-                    }
-                }
-            }
-        )
-    }
-
-    if (showShizukuNotInstalled) {
-        ShizukuNotInstalledDialog(show = true, onDismissRequest = { showShizukuNotInstalled = false })
-    }
-
-    if (showShizukuActivation) {
-        ShizukuActivationDialog(
-            show = true,
-            onDismissRequest = { showShizukuActivation = false },
-            context = context,
-            onShowNotInstalled = { showShizukuNotInstalled = true }
-        )
-    }
 
     ScreenScaffold(
         timeText = { WysTimeText() },
@@ -131,12 +78,8 @@ fun SettingsScreen(navController: NavController) {
                 ListHeader(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(transformationSpec) {
-                                applyContainerTransformation(scrollProgress)
-                            }
-                        }
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec)
                 ) {
                     Text(text = "设置", color = MaterialTheme.colorScheme.primary)
                 }
@@ -152,12 +95,8 @@ fun SettingsScreen(navController: NavController) {
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .graphicsLayer {
-                                with(transformationSpec) {
-                                    applyContainerTransformation(scrollProgress)
-                                }
-                            }
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec)
                     ) {
                         Text(text = "登录状态管理", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -226,39 +165,6 @@ fun SettingsScreen(navController: NavController) {
 
             item {
                 Button(
-                    onClick = {
-                        if (!hasPermission) {
-                            showShizukuDialog = true
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        contentColor = if (hasPermission) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(transformationSpec) {
-                                applyContainerTransformation(scrollProgress)
-                            }
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "全文件访问权限", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (hasPermission) {
-                            Icon(Icons.Default.Check, contentDescription = "Granted", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-
-            item {
-                Button(
                     onClick = { navController.navigate("about") },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -285,6 +191,61 @@ fun SettingsScreen(navController: NavController) {
 fun SettingPreferenceScreen(navController: NavController) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
+    val context = LocalContext.current
+
+    var showShizukuDialog by remember { mutableStateOf(false) }
+    var showShizukuNotInstalled by remember { mutableStateOf(false) }
+    var showShizukuActivation by remember { mutableStateOf(false) }
+    var hasPermission by remember { mutableStateOf(ShizukuUtils.hasManageExternalStoragePermission()) }
+
+    // Shizuku permission listener
+    LaunchedEffect(Unit) {
+        val listener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (ShizukuUtils.grantManageExternalStorage(context)) {
+                    hasPermission = true
+                }
+            }
+        }
+        Shizuku.addRequestPermissionResultListener(listener)
+    }
+
+    if (showShizukuDialog) {
+        ShizukuPermissionDialog(
+            show = true,
+            onDismissRequest = { showShizukuDialog = false },
+            context = context,
+            onConfirmAuth = {
+                showShizukuDialog = false
+                if (!ShizukuUtils.isShizukuAvailable()) {
+                    if (ShizukuUtils.getShizukuVersionName(context) != null) {
+                        showShizukuActivation = true
+                    } else {
+                        showShizukuNotInstalled = true
+                    }
+                } else {
+                    try {
+                        Shizuku.requestPermission(0)
+                    } catch (e: Exception) {
+                        ShizukuUtils.openShizukuManager(context)
+                    }
+                }
+            }
+        )
+    }
+
+    if (showShizukuNotInstalled) {
+        ShizukuNotInstalledDialog(show = true, onDismissRequest = { showShizukuNotInstalled = false })
+    }
+
+    if (showShizukuActivation) {
+        ShizukuActivationDialog(
+            show = true,
+            onDismissRequest = { showShizukuActivation = false },
+            context = context,
+            onShowNotInstalled = { showShizukuNotInstalled = true }
+        )
+    }
 
     ScreenScaffold(
         scrollState = listState,
@@ -366,6 +327,49 @@ fun SettingPreferenceScreen(navController: NavController) {
                             }
                         }
                 )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        if (!hasPermission) {
+                            showShizukuDialog = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = if (hasPermission) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "所有文件访问权限", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                text = "缓存弹幕和字幕的必要权限",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        if (hasPermission) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(Icons.Default.Check, contentDescription = "Granted", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
             }
         }
     }

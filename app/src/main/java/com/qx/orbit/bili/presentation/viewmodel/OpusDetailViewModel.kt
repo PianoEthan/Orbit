@@ -146,4 +146,8 @@ class OpusDetailViewModel : ViewModel() {
             } catch (_: Exception) {}
         }
     }
+
+    fun removeReplyLocally(reply: Reply) {
+        _replies.value = _replies.value.filter { it.rpid != reply.rpid }
+    }
 }

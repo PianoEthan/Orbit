@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -56,16 +57,29 @@ import com.qx.orbit.bili.presentation.theme.BiliPink
 import com.qx.orbit.bili.util.LinkResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.wear.compose.material3.*
+import androidx.compose.material.icons.filled.Delete
+import com.qx.orbit.bili.util.SharedPreferencesUtil
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
+import com.qx.orbit.bili.presentation.ui.components.RoundToast
+import com.qx.orbit.bili.data.api.ReplyApi
+import com.qx.orbit.bili.data.api.UserInfoApi
+import androidx.compose.ui.res.stringResource
+import com.qx.orbit.bili.data.remote.CookieManager
 
 
 @Composable
 fun ReplyCard(
     reply: Reply,
     modifier: Modifier = Modifier,
-    transformation: SurfaceTransformation,
+    transformation: SurfaceTransformation? = null,
     navController: NavHostController,
     showReplyPreview: Boolean = true,
     isDetail: Boolean = false,
+    replyType: Int = ReplyApi.REPLY_TYPE_VIDEO,
+    onRemove: (Reply) -> Unit = {},
     onClick: () -> Unit = {},
     onLikeClick: () -> Unit = {},
     onReplyClick: () -> Unit = {}
@@ -98,8 +112,47 @@ fun ReplyCard(
             resolvedB23Links = resolved
         }
     }
+    val coroutineScope = rememberCoroutineScope()
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    val currentMid = remember { CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0 }
+    val isOwnComment = reply.sender?.mid != null && reply.sender.mid == currentMid
+
+    val performAction = {
+        coroutineScope.launch {
+            if (isOwnComment) {
+                try {
+                    ReplyApi.deleteReply(reply.oid, reply.rpid, replyType)
+                    withContext(Dispatchers.Main) {
+                        RoundToast.show(context, "已删除评论")
+                        onRemove(reply)
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        RoundToast.show(context, "删除失败: ${e.message}")
+                    }
+                }
+            } else {
+                try {
+                    reply.sender?.mid?.let { UserInfoApi.blockUser(it) }
+                    withContext(Dispatchers.Main) {
+                        RoundToast.show(context, "已拉黑该用户")
+                        onRemove(reply)
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        RoundToast.show(context, "拉黑失败: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
     Card(
         onClick = { if (!linkClicked) onClick() else linkClicked = false },
+        onLongClick = {
+            showDeleteConfirmDialog = true
+        },
         modifier = modifier.fillMaxWidth(),
         transformation = transformation,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
@@ -308,4 +361,20 @@ fun ReplyCard(
             }
         }
     }
+
+    WysAlertDialog(
+        show = showDeleteConfirmDialog,
+        title = "确认操作",
+        content = {
+            Text(
+                text = if (isOwnComment) "确定要删除这条评论吗？" else stringResource(R.string.clear_reply_warning),
+                textAlign = TextAlign.Center
+            )
+        },
+        onDismissRequest = { showDeleteConfirmDialog = false },
+        onConfirm = {
+            showDeleteConfirmDialog = false
+            performAction()
+        }
+    )
 }

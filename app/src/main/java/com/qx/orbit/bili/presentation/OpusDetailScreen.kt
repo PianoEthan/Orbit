@@ -74,6 +74,7 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.qx.orbit.bili.R
+import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Opus
 import com.qx.orbit.bili.data.model.OpusParagraph
 import com.qx.orbit.bili.data.model.Reply
@@ -468,6 +469,7 @@ fun OpusCommentsPage(
     onClick: (Reply) -> Unit = {}
 ) {
     val replies by viewModel.replies.collectAsState()
+    val opus by viewModel.opus.collectAsState()
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -501,8 +503,10 @@ fun OpusCommentsPage(
             ReplyCard(
                 reply = replies[index],
                 transformation = SurfaceTransformation(transformationSpec),
-                modifier = Modifier.transformedHeight(this, transformationSpec),
+                modifier = Modifier.animateItem().transformedHeight(this, transformationSpec),
                 navController = navController,
+                replyType = opus?.commentType ?: ReplyApi.REPLY_TYPE_DYNAMIC,
+                onRemove = { viewModel.removeReplyLocally(replies[index]) },
                 onClick = { onClick(replies[index]) },
                 onLikeClick = { viewModel.likeReply(replies[index].rpid) },
                 onReplyClick = { onReplyClick(replies[index]) }
