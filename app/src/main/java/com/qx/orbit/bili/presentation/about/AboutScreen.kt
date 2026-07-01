@@ -1,23 +1,17 @@
 package com.qx.orbit.bili.presentation.about
 
-import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Coffee
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,17 +26,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
@@ -104,21 +95,35 @@ fun AboutScreen(navController: NavController) {
                         painter = painterResource(id = R.drawable.orbit),
                         contentDescription = "App Icon",
                         modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(80.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            item {
+                Column(
+                    modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        if (isRound) {
+                            with(transformationSpec) {
+                                applyContainerTransformation(scrollProgress)
+                            }
+                        }
+                    }
+                    .transformedHeight(this, transformationSpec),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(text = stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.W700)
                     Text(text = stringResource(R.string.app_version), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.secondary)
                     Text(
-                        text = "设备型号:${Build.MODEL}",
+                        text = Build.MODEL,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
             }
-
             item { Spacer(modifier = Modifier.height(8.dp).transformedHeight(this, transformationSpec)) }
 
             // 简介

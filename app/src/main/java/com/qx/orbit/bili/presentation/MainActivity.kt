@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,12 +30,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -53,21 +53,19 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -82,55 +80,54 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.RevealValue
 import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.SwipeToReveal
-import androidx.wear.compose.material3.SwipeToRevealScope
-import androidx.wear.compose.material3.*
 import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.SwipeToReveal
 import androidx.wear.compose.material3.Text
-import com.qx.orbit.bili.presentation.about.AboutScreen
-import com.qx.orbit.bili.presentation.ui.components.UserAvatar
-import com.qx.orbit.bili.presentation.ui.components.UserNameText
-import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import androidx.wear.compose.material3.rememberRevealState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
 import com.google.gson.Gson
+import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.remote.CookieManager
-import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.about.AboutScreen
 import com.qx.orbit.bili.presentation.player.PlayerScreen
+import com.qx.orbit.bili.presentation.settings.SettingLoginStatusScreen
+import com.qx.orbit.bili.presentation.settings.SettingPreferenceScreen
 import com.qx.orbit.bili.presentation.settings.SettingTerminalPlayerScreen
-import com.qx.orbit.bili.presentation.DownloadManagerScreen
-import com.qx.orbit.bili.presentation.settings.SettingVideoRenderScreen
 import com.qx.orbit.bili.presentation.settings.SettingUIScreen
+import com.qx.orbit.bili.presentation.settings.SettingVideoRenderScreen
 import com.qx.orbit.bili.presentation.settings.SettingsScreen
 import com.qx.orbit.bili.presentation.theme.OrbitTheme
-import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.presentation.ui.components.LevelIcon
+import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
+import com.qx.orbit.bili.presentation.ui.components.ShizukuActivationDialog
+import com.qx.orbit.bili.presentation.ui.components.ShizukuNotInstalledDialog
+import com.qx.orbit.bili.presentation.ui.components.ShizukuPermissionDialog
+import com.qx.orbit.bili.presentation.ui.components.UserAvatar
+import com.qx.orbit.bili.presentation.ui.components.UserNameText
+import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
+import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.viewmodel.DynamicFeedViewModel
 import com.qx.orbit.bili.presentation.viewmodel.MainViewModel
+import com.qx.orbit.bili.presentation.viewmodel.ReplyDetailViewModel
 import com.qx.orbit.bili.presentation.viewmodel.SearchViewModel
 import com.qx.orbit.bili.presentation.viewmodel.TabMode
-import com.qx.orbit.bili.util.SharedPreferencesUtil
-import com.qx.orbit.bili.presentation.viewmodel.ReplyDetailViewModel
 import com.qx.orbit.bili.presentation.viewmodel.UserSpaceViewModel
-import com.qx.orbit.bili.presentation.settings.SettingPreferenceScreen
-import com.qx.orbit.bili.presentation.settings.SettingLoginStatusScreen
-import com.qx.orbit.bili.R
-import kotlin.math.roundToInt
+import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.ShizukuUtils
-import com.qx.orbit.bili.presentation.ui.components.ShizukuPermissionDialog
-import com.qx.orbit.bili.presentation.ui.components.ShizukuNotInstalledDialog
-import com.qx.orbit.bili.presentation.ui.components.ShizukuActivationDialog
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import com.qx.orbit.bili.utils.VideoDownloadManager
 import rikka.shizuku.Shizuku
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -142,7 +139,7 @@ class MainActivity : ComponentActivity() {
         )
         CookieManager.init(this)
         SharedPreferencesUtil.init(this)
-        com.qx.orbit.bili.utils.VideoDownloadManager.init(this)
+        VideoDownloadManager.init(this)
         setContent {
             WearApp()
         }
@@ -164,45 +161,40 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             }
         }
 
-        if (showShizukuDialog) {
-            ShizukuPermissionDialog(
-                show = true,
-                onDismissRequest = {
+        ShizukuPermissionDialog(
+            show = showShizukuDialog,
+            onDismissRequest = {
                     showShizukuDialog = false
                     SharedPreferencesUtil.putBoolean("shizuku_declined", true)
-                },
-                context = context,
-                onConfirmAuth = {
-                    showShizukuDialog = false
-                    if (!ShizukuUtils.isShizukuAvailable()) {
-                        if (ShizukuUtils.getShizukuVersionName(context) != null) {
-                            showShizukuActivation = true
-                        } else {
-                            showShizukuNotInstalled = true
-                        }
+            },
+            context = context,
+            onConfirmAuth = {
+                showShizukuDialog = false
+                if (!ShizukuUtils.isShizukuAvailable()) {
+                    if (ShizukuUtils.getShizukuVersionName(context) != null) {
+                        showShizukuActivation = true
                     } else {
-                        try {
-                            Shizuku.requestPermission(0)
-                        } catch (e: Exception) {
-                            ShizukuUtils.openShizukuManager(context)
-                        }
+                        showShizukuNotInstalled = true
+                    }
+                } else {
+                    try {
+                        Shizuku.requestPermission(0)
+                    } catch (e: Exception) {
+                        ShizukuUtils.openShizukuManager(context)
                     }
                 }
-            )
-        }
+            }
+        )
 
-        if (showShizukuNotInstalled) {
-            ShizukuNotInstalledDialog(show = true, onDismissRequest = { showShizukuNotInstalled = false })
-        }
+        ShizukuNotInstalledDialog(show = showShizukuNotInstalled, onDismissRequest = { showShizukuNotInstalled = false })
 
-        if (showShizukuActivation) {
-            ShizukuActivationDialog(
-                show = true,
-                onDismissRequest = { showShizukuActivation = false },
-                context = context,
-                onShowNotInstalled = { showShizukuNotInstalled = true }
-            )
-        }
+
+        ShizukuActivationDialog(
+            show = showShizukuActivation,
+            onDismissRequest = { showShizukuActivation = false },
+            context = context,
+            onShowNotInstalled = { showShizukuNotInstalled = true }
+        )
 
         // Shizuku permission listener
         LaunchedEffect(Unit) {
@@ -380,7 +372,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (currentTab == TabMode.DYNAMIC) {
-            val dynamicViewModel: com.qx.orbit.bili.presentation.viewmodel.DynamicFeedViewModel = viewModel()
+            val dynamicViewModel: DynamicFeedViewModel = viewModel()
             DynamicFeedScreen(
                 viewModel = dynamicViewModel,
                 focusRequester = focusRequester,
@@ -740,13 +732,14 @@ fun RecommendScreen(
                                 Image(
                                     painter = painterResource(R.drawable.bili_2233_fail),
                                     contentDescription = "Error",
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth().offset(y = (-15).dp)
                                 )
                                 Text(
                                     text = "加载失败，点击重试",
+                                    modifier = Modifier.fillMaxWidth().offset(y = (-10).dp),
                                     textAlign = TextAlign.Center,
                                     color = MaterialTheme.colorScheme.error,
-                                    fontSize = 12.sp
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
                             }
                         }

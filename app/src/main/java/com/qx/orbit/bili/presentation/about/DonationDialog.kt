@@ -52,47 +52,45 @@ fun DonationDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                // Labels Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Text(
-                        text = "微信",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Text(
-                        text = "支付宝",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-                
                 // Images Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.qrcode_wx),
-                        contentDescription = "WeChat QR",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .padding(2.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { zoomedImageRes = R.drawable.qrcode_wx }
-                    )
-                    Image(
-                        painter = painterResource(id = R.drawable.qrcode_zfb),
-                        contentDescription = "Alipay QR",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .padding(2.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { zoomedImageRes = R.drawable.qrcode_zfb }
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "微信",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Image(
+                            painter = painterResource(id = R.drawable.qrcode_wx),
+                            contentDescription = "WeChat QR",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { zoomedImageRes = R.drawable.qrcode_wx }
+                        )
+                    }
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "支付宝",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Image(
+                            painter = painterResource(id = R.drawable.qrcode_zfb),
+                            contentDescription = "Alipay QR",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { zoomedImageRes = R.drawable.qrcode_zfb }
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -108,7 +106,7 @@ fun DonationDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Text(
-                    text = "捐赠请务必带上您的QQ号，以便我们联系您",
+                    text = "捐赠请带上您的QQ号，我们可能会邀请您抢先参与内测体验",
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.labelSmall,
                     textAlign = TextAlign.Center,
@@ -137,7 +135,9 @@ fun DonationDialog(
                         painter = painterResource(id = resId),
                         contentDescription = "放大二维码",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().padding(28.dp)
+                        modifier = Modifier.fillMaxSize().padding(
+                            if(resId == R.drawable.qrcode_wx) 5.24.dp else 28.dp
+                        )
                     )
                 }
             }

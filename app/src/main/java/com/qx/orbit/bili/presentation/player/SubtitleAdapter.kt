@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.graphics.toColorInt
 
 class SubtitleAdapter(
     private val subtitleNames: List<String>,
@@ -37,7 +38,7 @@ class SubtitleAdapter(
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         holder.button.text = subtitleNames[position]
         holder.button.setTextColor(
-            if (position == selectedIndex) Color.parseColor("#ffff6699")
+            if (position == selectedIndex) "#ffff6699".toColorInt()
             else Color.WHITE
         )
         holder.button.setOnClickListener { onItemClickListener.onItemClick(position) }

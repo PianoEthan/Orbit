@@ -111,7 +111,7 @@ fun RecommendVideoCard(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleSmall.copy(
-                                shadow = androidx.compose.ui.graphics.Shadow(
+                                shadow = Shadow(
                                     color = Color.Black,
                                     offset = Offset(2f, 2f),
                                     blurRadius = 4f
@@ -133,7 +133,7 @@ fun RecommendVideoCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodySmall.copy(
-                            shadow = androidx.compose.ui.graphics.Shadow(
+                            shadow = Shadow(
                                 color = Color.Black,
                                 offset = Offset(2f, 2f),
                                 blurRadius = 4f
@@ -164,7 +164,7 @@ fun RecommendVideoCard(
                         Text(
                             text = item.view,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                shadow = androidx.compose.ui.graphics.Shadow(
+                                shadow = Shadow(
                                     color = Color.Black,
                                     offset = Offset(2f, 2f),
                                     blurRadius = 4f

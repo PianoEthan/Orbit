@@ -13,10 +13,10 @@ android {
 
     defaultConfig {
         applicationId = "com.qx.orbit.bili"
-        minSdk = 30
+        minSdk = 23
         targetSdk = 36
         versionCode = 4
-        versionName = "0.4-Alpha"
+        versionName = "0.4.1-Alpha"
         resValue("string", "app_verCode", versionCode.toString())
         resValue("string", "app_version", versionName.toString())
     }

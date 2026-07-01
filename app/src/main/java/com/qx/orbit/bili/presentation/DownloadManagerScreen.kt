@@ -3,10 +3,12 @@ package com.qx.orbit.bili.presentation
 import android.app.DownloadManager
 import android.net.Uri
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -37,13 +39,22 @@ import com.qx.orbit.bili.presentation.ui.components.CacheVideoCard
 import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
 import com.qx.orbit.bili.utils.VideoDownloadManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import java.net.URLEncoder
 
 @Composable
 fun DownloadManagerScreen(navController: NavController) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var allDownloads by remember { mutableStateOf(VideoDownloadManager.getAllDownloads()) }
     var downloadToDelete by remember { mutableStateOf<Long?>(null) }
+    val handleDelete: (Long) -> Unit = { id ->
+        allDownloads = allDownloads.filter { it.id != id }
+        coroutineScope.launch(Dispatchers.IO) {
+            VideoDownloadManager.remove(context, id)
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -66,8 +77,7 @@ fun DownloadManagerScreen(navController: NavController) {
     val isRound = context.resources.configuration.isScreenRound
 
     ScreenScaffold(
-        scrollState = listState,
-        timeText = { TimeText() }
+        scrollState = listState
     ) { it ->
         Box(modifier = Modifier.fillMaxSize()) {
             TransformingLazyColumn(
@@ -82,7 +92,7 @@ fun DownloadManagerScreen(navController: NavController) {
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
                     ) {
                         Text(
-                            text = "缓存管理",
+                            text = "离线缓存",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.W700
@@ -91,7 +101,7 @@ fun DownloadManagerScreen(navController: NavController) {
                 }
 
                 if (activeDownloads.isNotEmpty()) {
-                    item {
+                    /*item {
                         Text(
                             "当前任务",
                             modifier = Modifier
@@ -107,6 +117,7 @@ fun DownloadManagerScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                    */
 
                     items(activeDownloads, key = { it.id }) { download ->
                         val revealState = rememberRevealState()
@@ -135,7 +146,7 @@ fun DownloadManagerScreen(navController: NavController) {
                             primaryAction = {
                                 PrimaryActionButton(
                                     onClick = { downloadToDelete = download.id },
-                                    icon = { Icon(Icons.Default.Delete, "Cancel") },
+                                    icon = { Icon(Icons.Default.Close, "Cancel") },
                                     text = { Text("取消") },
                                     modifier = Modifier.fillMaxHeight()
                                 )
@@ -246,41 +257,44 @@ fun DownloadManagerScreen(navController: NavController) {
 
                 if (activeDownloads.isEmpty() && completedDownloads.isEmpty()) {
                     item {
-                        Text(
-                            text = "暂无缓存视频",
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 20.dp)
-                                .graphicsLayer {
-                                    if (isRound) {
-                                        with(transformationSpec) {
-                                            applyContainerTransformation(scrollProgress)
-                                        }
-                                    }
-                                }
-                                .transformedHeight(this, transformationSpec),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                                .fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_empty22),
+                                contentDescription = "Error",
+                                modifier = Modifier.height(96.dp)
+                            )
+                            Text(
+                                text = "暂无缓存视频",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 5.dp),
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(20.dp))
+                } else {
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
                 }
             }
         }
 
-            WysAlertDialog(
-                show = (downloadToDelete != null),
-                onDismissRequest = { downloadToDelete = null },
-                title = "确认删除",
-                content = { Text("确定要删除该缓存视频吗？", textAlign = TextAlign.Center) },
-                onConfirm = {
-                    VideoDownloadManager.remove(context, downloadToDelete!!)
-                    downloadToDelete = null
-                }
-            )
+        WysAlertDialog(
+            show = (downloadToDelete != null),
+            onDismissRequest = { downloadToDelete = null },
+            title = "确认删除",
+            content = { Text("确定要删除该缓存视频吗？", textAlign = TextAlign.Center) },
+            onConfirm = {
+                downloadToDelete?.let { handleDelete(it) }
+                downloadToDelete = null
+            }
+        )
     }
 }

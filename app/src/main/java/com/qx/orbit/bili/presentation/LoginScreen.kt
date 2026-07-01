@@ -3,6 +3,7 @@ package com.qx.orbit.bili.presentation
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
@@ -34,6 +35,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.ProgressIndicatorDefaults
@@ -45,18 +47,17 @@ import com.qx.orbit.bili.presentation.viewmodel.LoginViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import androidx.wear.compose.material3.HorizontalPageIndicator
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListHeader
 import com.google.gson.Gson
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.viewmodel.HdQrCodeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
+import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.UserInfoApi
+import com.qx.orbit.bili.presentation.theme.BiliPink
 import kotlin.time.Duration.Companion.seconds
-
-private val BiliPink = Color(0xFFFB7299)
-private val TextPrimary = Color(0xFFEEEEEE)
-private val TextSecondary = Color(0xFFAAAAAA)
 
 /**
  * 统一登录页：HD 扫码 | Cookie 导入
@@ -140,9 +141,9 @@ private fun WebQrPage(state: LoginState, vm: LoginViewModel, onLoginSuccess: () 
         ) {
             when (state) {
                 is LoginState.Initial, is LoginState.LoadingQRCode -> {
-                    CircularProgressIndicator(modifier = Modifier.size(36.dp), colors = ProgressIndicatorDefaults.colors(indicatorColor = BiliPink), strokeWidth = 3.dp)
+                    CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("正在获取二维码", fontSize = 13.sp, color = TextSecondary)
+                    Text("正在获取二维码", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 is LoginState.QRCodeReady -> {
                     QrContent(state.qrImage, state.message)
@@ -177,9 +178,9 @@ private fun HdQrPage(state: HdQrCodeState, vm: HdQrCodeLoginViewModel, onLoginSu
         ) {
             when (state.status) {
                 HdQrStatus.REQUESTING -> {
-                    CircularProgressIndicator(modifier = Modifier.size(36.dp), colors = ProgressIndicatorDefaults.colors(indicatorColor = BiliPink), strokeWidth = 3.dp)
+                    CircularProgressIndicator()
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("正在获取二维码", fontSize = 13.sp, color = TextSecondary)
+                    Text("正在获取二维码", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
                 HdQrStatus.WAITING -> {
                     QrContent(
@@ -256,16 +257,14 @@ private fun CookieImportPage(onLoginSuccess: () -> Unit) {
             if (isSuccess) {
                 SuccessContent(onDone = { onLoginSuccess() })
             } else {
-                Text(
-                    text = "Cookie 导入",
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary,
-                )
+                ListHeader() {
+                    Text(text = "Cookie 导入", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
                 if (error != null) {
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(error!!, fontSize = 11.sp, color = Color(0xFFFF6B6B), textAlign = TextAlign.Center)
+                    Text(error!!, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
-                
+
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it; error = null },
@@ -298,7 +297,7 @@ private fun CookieImportPage(onLoginSuccess: () -> Unit) {
                     )
                 ) {
                     if (isChecking) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), colors = ProgressIndicatorDefaults.colors(indicatorColor = MaterialTheme.colorScheme.onPrimary), strokeWidth = 2.dp)
+                        CircularProgressIndicator()
                     } else {
                         Icon(imageVector = Icons.Default.Check, contentDescription = "导入")
                     }
@@ -314,7 +313,7 @@ private fun CookieImportPage(onLoginSuccess: () -> Unit) {
 private fun QrContent(qrImage: android.graphics.Bitmap?, message: String) {
     val isScanned = message.contains("已扫码") || message.contains("手机上")
 
-    Text("扫码登录", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+    Text("扫码登录", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     Spacer(modifier = Modifier.height(6.dp))
 
     if (isScanned) {
@@ -335,19 +334,33 @@ private fun QrContent(qrImage: android.graphics.Bitmap?, message: String) {
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
-        Text(message, fontSize = 12.sp, color = TextSecondary, textAlign = TextAlign.Center)
+        Text(message, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
 private fun ErrorContent(error: String, onRetry: () -> Unit) {
-    Text(error, color = Color(0xFFFF6B6B), fontSize = 13.sp, textAlign = TextAlign.Center)
-    Spacer(modifier = Modifier.height(16.dp))
-    Button(
-        onClick = onRetry,
-        colors = ButtonDefaults.buttonColors(containerColor = BiliPink),
-        modifier = Modifier.height(36.dp).widthIn(min = 80.dp),
-    ) { Text("重试", fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onRetry() },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = painterResource(R.drawable.bili_2233_fail),
+                contentDescription = "Error",
+                modifier = Modifier.fillMaxWidth().offset(y = (-15).dp)
+            )
+            Text(
+                text = "加载失败，点击重试",
+                modifier = Modifier.fillMaxWidth().offset(y = (-10).dp),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+    }
 }
 
 @Composable
@@ -369,9 +382,9 @@ private fun SuccessContent(onDone: () -> Unit) {
     }
 
     if (navInfo == null) {
-        CircularProgressIndicator(modifier = Modifier.size(36.dp), colors = ProgressIndicatorDefaults.colors(indicatorColor = BiliPink), strokeWidth = 3.dp)
+        CircularProgressIndicator()
         Spacer(modifier = Modifier.height(16.dp))
-        Text("正在加载信息...", fontSize = 13.sp, color = TextSecondary)
+        Text("正在加载信息", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
     } else {
         if (navInfo?.face != null) {
             AsyncImage(
@@ -389,12 +402,12 @@ private fun SuccessContent(onDone: () -> Unit) {
         }
         Spacer(modifier = Modifier.height(12.dp))
         if (navInfo?.uname != null) {
-            Text("欢迎回来，\n${navInfo!!.uname}", color = BiliPink, fontSize = 16.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("欢迎回来，\n${navInfo!!.uname}", color = BiliPink, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         } else {
-            Text("登录成功", color = BiliPink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("登录成功", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Text("正在跳转...", fontSize = 12.sp, color = TextSecondary)
+        Text("将自动跳转主页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.graphics.toColorInt
 
 class PageSelectorAdapter(
     private val pageNames: List<String>,
@@ -34,7 +35,7 @@ class PageSelectorAdapter(
         val label = "P${position + 1} ${pageNames[position]}"
         holder.textView.text = label
         holder.textView.setTextColor(
-            if (position == selectedIndex) Color.parseColor("#ffff6699")
+            if (position == selectedIndex) "#ffff6699".toColorInt()
             else Color.WHITE
         )
         holder.itemView.setOnClickListener { onItemClickListener.onItemClick(position) }

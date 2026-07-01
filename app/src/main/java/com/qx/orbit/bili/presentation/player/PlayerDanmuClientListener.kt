@@ -100,7 +100,7 @@ class PlayerDanmuClientListener(
 
     private fun startHeartbeat() {
         stopHeartbeat()
-        heartbeatFuture = scheduler.scheduleAtFixedRate({
+        heartbeatFuture = scheduler.scheduleWithFixedDelay({
             try {
                 webSocket?.send(MessageData(ByteArray(0), actionCode = 2).toByteString())
             } catch (e: Exception) {

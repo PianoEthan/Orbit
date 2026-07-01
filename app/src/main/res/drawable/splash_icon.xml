@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-</adaptive-icon>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+<item android:drawable="@drawable/orbit"
+    android:width="50dp"
+    android:height="50dp"
+    android:gravity="center" />
+</layer-list>

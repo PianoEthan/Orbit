@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Calendar.getInstance
 import java.util.Locale.getDefault
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun WysTimeText() {
@@ -35,13 +36,12 @@ fun WysTimeText() {
     var timeString by remember { 
         mutableStateOf(SimpleDateFormat("HH:mm", getDefault()).format(getInstance().time)) 
     }
-
+    isImmersive = SharedPreferencesUtil.getBoolean("ui_immersive_time", true)
     LaunchedEffect(Unit) {
         val dateFormat = SimpleDateFormat("HH:mm", getDefault())
         while (true) {
             timeString = dateFormat.format(getInstance().time)
-            isImmersive = SharedPreferencesUtil.getBoolean("ui_immersive_time", true)
-            delay(1000)
+            delay(1.seconds)
         }
     }
 

@@ -1,6 +1,10 @@
 package com.qx.orbit.bili.presentation.player
 
 import android.annotation.SuppressLint
+import android.graphics.SurfaceTexture
+import android.util.Log
+import android.view.Gravity
+import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.TextureView
@@ -81,12 +85,22 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import master.flame.danmaku.danmaku.model.android.DanmakuContext
-import master.flame.danmaku.danmaku.parser.android.BiliProtobufDanmakuParser
+import master.flame.danmaku.danmaku.loader.android.*
+import master.flame.danmaku.danmaku.model.android.*
+import master.flame.danmaku.danmaku.parser.android.*
+import master.flame.danmaku.danmaku.parser.*
 import master.flame.danmaku.ui.widget.DanmakuView
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import kotlin.time.Duration.Companion.seconds
+import androidx.core.net.toUri
+import androidx.wear.compose.material3.MaterialTheme
+import com.qx.orbit.bili.presentation.viewmodel.EmoteInline
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.WebSocket
+import java.io.File
 
+@Suppress("unused")
 @OptIn(DelicateCoroutinesApi::class)
 @Composable
 fun PlayerScreen(
@@ -132,10 +146,10 @@ fun PlayerScreen(
     val mediaPlayer = remember { IjkMediaPlayer() }
     val danmakuView = remember { DanmakuView(context) }
     var danmakuContext by remember { mutableStateOf<DanmakuContext?>(null) }
-    var liveWebSocket by remember { mutableStateOf<okhttp3.WebSocket?>(null) }
+    var liveWebSocket by remember { mutableStateOf<WebSocket?>(null) }
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
     var surfaceReady by remember { mutableStateOf(false) }
-    var textureSurface by remember { mutableStateOf<android.view.Surface?>(null) }
+    var textureSurface by remember { mutableStateOf<Surface?>(null) }
     
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -231,21 +245,21 @@ fun PlayerScreen(
                     setDanmakuTransparency(0.4f)
                 }
                 danmakuContext = ctx
-                var xmlFile = java.io.File("${playerData.videoUrl}.danmaku.xml")
+                var xmlFile = File("${playerData.videoUrl}.danmaku.xml")
                 if (!xmlFile.exists()) {
                     val fallbackPath = playerData.videoUrl.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
-                    xmlFile = java.io.File(android.net.Uri.parse(fallbackPath).path ?: "")
+                    xmlFile = File(fallbackPath.toUri().path ?: "")
                 }
                 if (xmlFile.exists()) {
-                    val loader = master.flame.danmaku.danmaku.loader.android.DanmakuLoaderFactory.create(master.flame.danmaku.danmaku.loader.android.DanmakuLoaderFactory.TAG_BILI)
+                    val loader = DanmakuLoaderFactory.create(DanmakuLoaderFactory.TAG_BILI)
                     loader.load(xmlFile.inputStream())
-                    val parser = master.flame.danmaku.danmaku.parser.android.BiliDanmukuParser()
+                    val parser = BiliDanmukuParser()
                     parser.load(loader.dataSource)
                     danmakuView.prepare(parser, ctx)
                 } else {
-                    danmakuView.prepare(object : master.flame.danmaku.danmaku.parser.BaseDanmakuParser() {
-                        override fun parse(): master.flame.danmaku.danmaku.model.android.Danmakus {
-                            return master.flame.danmaku.danmaku.model.android.Danmakus()
+                    danmakuView.prepare(object : BaseDanmakuParser() {
+                        override fun parse(): Danmakus {
+                            return Danmakus()
                         }
                     }, ctx)
                 }
@@ -257,9 +271,9 @@ fun PlayerScreen(
                     setDanmakuTransparency(0.4f)
                 }
                 danmakuContext = ctx
-                danmakuView.prepare(object : master.flame.danmaku.danmaku.parser.BaseDanmakuParser() {
-                    override fun parse(): master.flame.danmaku.danmaku.model.android.Danmakus {
-                        return master.flame.danmaku.danmaku.model.android.Danmakus()
+                danmakuView.prepare(object : BaseDanmakuParser() {
+                    override fun parse(): Danmakus {
+                        return Danmakus()
                     }
                 }, ctx)
                 danmakuView.enableDanmakuDrawingCache(true)
@@ -369,7 +383,7 @@ fun PlayerScreen(
 
                     val callback = object : PlayerCallback {
                         @SuppressLint("LocalContextResourcesRead")
-                        override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, com.qx.orbit.bili.presentation.viewmodel.EmoteInline>?, singleEmote: com.qx.orbit.bili.presentation.viewmodel.EmoteInline?, id: String) {
+                        override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?, id: String) {
                             try {
                                 val ctx = danmakuContext ?: return
                                 val item = ctx.mDanmakuFactory.createDanmaku(type) ?: return
@@ -398,15 +412,15 @@ fun PlayerScreen(
                         callback = callback
                     )
 
-                    val client = okhttp3.OkHttpClient()
-                    val request = okhttp3.Request.Builder()
+                    val client = OkHttpClient()
+                    val request = Request.Builder()
                         .url(url)
                         .header("Cookie", CookieManager.getCookie())
                         .header("Origin", "https://live.bilibili.com")
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
                         .build()
                     liveWebSocket = client.newWebSocket(request, listener)
-                    android.util.Log.d("BiliApi", "PlayerScreen danmaku WS connecting to $url, uid=$mid, roomid=${playerData.aid}")
+                    Log.d("BiliApi", "PlayerScreen danmaku WS connecting to $url, uid=$mid, roomid=${playerData.aid}")
                 }
             } catch (_: Exception) {}
         }
@@ -481,7 +495,7 @@ fun PlayerScreen(
                 }
             }
             .pointerInput(Unit) {
-                var wasLongPress = false
+                var wasLongPress: Boolean
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val timeout = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
@@ -575,7 +589,7 @@ fun PlayerScreen(
             contentAlignment = Alignment.Center
         ) {
             // Video Surface - fit within round screen safe area by default
-            Box(modifier = Modifier.fillMaxSize(0.865f)) {
+            Box(modifier = Modifier.fillMaxSize(0.86524f)) {
                 AndroidView(
                     factory = { ctx ->
                         if (useTextureView) {
@@ -584,24 +598,26 @@ fun PlayerScreen(
                                     FrameLayout.LayoutParams.MATCH_PARENT,
                                     FrameLayout.LayoutParams.MATCH_PARENT
                                 ).apply {
-                                    gravity = android.view.Gravity.CENTER
+                                    gravity = Gravity.CENTER
                                 }
-                                setSurfaceTextureListener(object : TextureView.SurfaceTextureListener {
-                                    override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                                         surfaceReady = true
-                                        val s = android.view.Surface(surface)
+                                        val s = Surface(surface)
                                         textureSurface = s
                                         mediaPlayer.setSurface(s)
                                     }
-                                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
-                                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+
+                                    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+                                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                                         surfaceReady = false
                                         textureSurface = null
                                         mediaPlayer.setSurface(null)
                                         return true
                                     }
-                                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
-                                })
+
+                                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+                                }
                             }
                         } else {
                             SurfaceView(ctx).apply {
@@ -609,7 +625,7 @@ fun PlayerScreen(
                                     FrameLayout.LayoutParams.MATCH_PARENT,
                                     FrameLayout.LayoutParams.MATCH_PARENT
                                 ).apply {
-                                    gravity = android.view.Gravity.CENTER
+                                    gravity = Gravity.CENTER
                                 }
                                 holder.addCallback(object : SurfaceHolder.Callback {
                                     override fun surfaceCreated(h: SurfaceHolder) {
@@ -654,7 +670,7 @@ fun PlayerScreen(
                     Text(
                         text = bufferSpeed,
                         color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 12.sp
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -881,12 +897,4 @@ fun PlayerScreen(
             }
         }
     }
-}
-
-@SuppressLint("DefaultLocale")
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val m = totalSeconds / 60
-    val s = totalSeconds % 60
-    return String.format("%02d:%02d", m, s)
 }

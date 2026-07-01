@@ -27,9 +27,9 @@ import com.qx.orbit.bili.R
 
 @Composable
 fun UserAvatar(
+    modifier: Modifier = Modifier,
     avatarUrl: String,
     officialRole: Int,
-    modifier: Modifier = Modifier.size(28.dp),
     isVip: Boolean = false,
     isLive: Boolean = false,
     onClick: (() -> Unit)? = null

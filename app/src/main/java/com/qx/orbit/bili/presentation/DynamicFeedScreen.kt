@@ -108,7 +108,6 @@ fun DynamicFeedScreen(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).nestedScroll(nestedScrollConnection)) {
         ScreenScaffold(
             scrollState = listState,
-            timeText = { WysTimeText() },
             modifier = Modifier.focusRequester(focusRequester)
         ) { contentPadding ->
             TransformingLazyColumn(
@@ -225,7 +224,6 @@ fun DynamicFeedScreen(
                         }
                     }
                 }
-                
                 item {
                     LaunchedEffect(Unit) {
                         viewModel.loadMore()
