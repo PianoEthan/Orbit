@@ -12,7 +12,11 @@ import android.os.Environment
 
 object ShizukuUtils {
     fun hasManageExternalStoragePermission(): Boolean {
-        return Environment.isExternalStorageManager()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            false // On older versions, this permission doesn't exist
+        }
     }
     
     fun getShizukuVersionName(context: Context): String? {
