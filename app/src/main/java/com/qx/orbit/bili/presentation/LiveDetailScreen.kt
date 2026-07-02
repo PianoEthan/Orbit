@@ -46,7 +46,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,8 +54,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
@@ -241,7 +240,7 @@ fun LiveInfoPage(
             state = listState,
             horizontalAlignment = Alignment.CenterHorizontally,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 Spacer(modifier = Modifier.height(20.dp))
             }
@@ -462,7 +461,7 @@ fun LiveDanmakuPage(
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val behavior = RotaryScrollableDefaults.behavior(listState)
+    val behavior = rememberSafeRotaryScrollableBehavior(listState)
     val isRound = LocalConfiguration.current.isScreenRound
 
     ScreenScaffold(scrollState = listState, modifier = Modifier.focusRequester(focusRequester)) { contentPadding ->
@@ -470,7 +469,7 @@ fun LiveDanmakuPage(
             state = listState,
             modifier = Modifier.rotaryScrollable(behavior, focusRequester),
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader {
                     Text(
@@ -683,7 +682,7 @@ fun LiveRecommendPage(
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader {
                     Text(

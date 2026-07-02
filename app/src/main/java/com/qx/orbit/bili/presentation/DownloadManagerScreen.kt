@@ -1,37 +1,29 @@
 package com.qx.orbit.bili.presentation
 
 import android.app.DownloadManager
-import android.net.Uri
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.*
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import coil.compose.AsyncImage
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.PlayerData
@@ -83,7 +75,7 @@ fun DownloadManagerScreen(navController: NavController) {
             TransformingLazyColumn(
                 state = listState,
                 contentPadding = it
-            ) {
+            , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                 item {
                     ListHeader(
                         modifier = Modifier

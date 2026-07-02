@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.CircularProgressIndicator
@@ -64,7 +65,6 @@ import com.qx.orbit.bili.R
 import com.qx.orbit.bili.presentation.theme.BiliPink
 import com.qx.orbit.bili.presentation.ui.components.DynamicCard
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
-import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import com.qx.orbit.bili.presentation.viewmodel.DynamicFeedViewModel
 import kotlin.math.roundToInt
 
@@ -121,7 +121,7 @@ fun DynamicFeedScreen(
                 ),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxSize()
-            ) {
+            , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
 
             if (upList.isNotEmpty()) {
                 item {

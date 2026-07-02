@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -132,7 +133,7 @@ fun SearchInputScreen(navController: NavHostController) {
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 Spacer(modifier = Modifier.height(24.dp))
             }
@@ -338,7 +339,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                     state = listState,
                     contentPadding = contentPadding,
                     modifier = Modifier.fillMaxSize()
-                ) {
+                , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                     item {
                         Spacer(modifier = Modifier.height(36.dp))
                     }
@@ -502,7 +503,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                         contentPadding = contentPadding,
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.fillMaxSize()
-                    ) {
+                    , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(menuListState)) {
                         item {
                             Spacer(modifier = Modifier.height(36.dp))
                         }

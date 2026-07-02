@@ -18,13 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
@@ -75,7 +75,7 @@ fun SettingsScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier
@@ -181,7 +181,7 @@ fun SettingsScreen(navController: NavController) {
                             }
                         }
                 ) {
-                    Text(text = "关于", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(text = "关于软件", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             item { Spacer(Modifier.height(20.dp)) }
@@ -258,7 +258,7 @@ fun SettingPreferenceScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier
@@ -391,7 +391,7 @@ fun SettingTerminalPlayerScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier
@@ -552,7 +552,7 @@ fun SettingUIScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier
@@ -609,7 +609,7 @@ fun SettingLoginStatusScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier
@@ -739,7 +739,7 @@ fun SettingVideoRenderScreen(navController: NavController) {
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
                     modifier = Modifier

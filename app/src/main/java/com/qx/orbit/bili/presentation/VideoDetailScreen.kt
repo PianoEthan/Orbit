@@ -1,16 +1,15 @@
 package com.qx.orbit.bili.presentation
 
-import android.content.Intent
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -24,7 +23,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -42,10 +40,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Download
@@ -75,20 +70,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.Placeholder
-import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -100,9 +89,6 @@ import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ButtonGroup
-import androidx.wear.compose.material3.ButtonGroupDefaults
-import androidx.wear.compose.material3.Card
-import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Dialog
 import androidx.wear.compose.material3.FilledIconButton
@@ -120,34 +106,28 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
-import com.qx.orbit.bili.data.api.BilibiliIDConverter
+import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.api.UserInfoApi
-import com.qx.orbit.bili.data.model.Emote
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
-import com.qx.orbit.bili.presentation.theme.BiliPink
-import com.qx.orbit.bili.presentation.ui.components.LevelIcon
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.presentation.ui.components.ReplyCard
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.presentation.viewmodel.VideoDetailViewModel
-import com.qx.orbit.bili.util.LinkResolver
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.formatCount
-import kotlinx.coroutines.Dispatchers
+import com.qx.orbit.bili.utils.VideoDownloadManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import kotlin.time.Duration.Companion.milliseconds
-import com.qx.orbit.bili.utils.VideoDownloadManager
-import com.qx.orbit.bili.data.api.PlayerApi
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -202,7 +182,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
         } else {
             val listState = rememberTransformingLazyColumnState()
             val transformationSpec = rememberTransformationSpec()
-            TransformingLazyColumn(state = listState, horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp)) {
+            TransformingLazyColumn(state = listState, horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp), rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                 item {
                     ListHeader(
                         modifier = Modifier.transformedHeight(this, transformationSpec),
@@ -597,7 +577,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                     } else if (folders!!.isEmpty()) {
                         Text("暂无收藏夹", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.error)
                     } else {
-                        TransformingLazyColumn(state = listState, contentPadding = PaddingValues(16.dp)) {
+                        TransformingLazyColumn(state = listState, contentPadding = PaddingValues(16.dp), rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                             item { ListHeader { Text("选择收藏夹", color = MaterialTheme.colorScheme.primary) } }
                             items(folders!!.size) { index ->
                                 val folder = folders!![index]
@@ -696,7 +676,7 @@ fun VideoInfoPage(
             state = listState,
             horizontalAlignment = Alignment.CenterHorizontally,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 Spacer(modifier = Modifier.height(20.dp))
             }
@@ -1143,7 +1123,7 @@ fun VideoCommentsPage(
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader{
                     Text(
@@ -1226,7 +1206,7 @@ fun VideoRelatedPage(
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader {
                     Text(

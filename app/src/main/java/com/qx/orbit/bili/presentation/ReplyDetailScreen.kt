@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
@@ -74,7 +75,7 @@ fun ReplyDetailScreen(
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             if (rootReply != null) {
                 val root = rootReply!!
                 item {

@@ -12,37 +12,24 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.wear.compose.material3.HorizontalPageIndicator
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.text.TextLayoutResult
-import com.qx.orbit.bili.R
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.qx.orbit.bili.presentation.ui.components.LevelIcon
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
@@ -51,12 +38,8 @@ import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import androidx.wear.compose.material3.Text
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.qx.orbit.bili.data.model.Dynamic
 import com.qx.orbit.bili.data.model.UserInfo
-import com.qx.orbit.bili.util.formatCount
-import com.qx.orbit.bili.presentation.theme.BiliPink
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.presentation.ui.components.DynamicCard
 import com.qx.orbit.bili.data.model.ArticleCard
@@ -67,7 +50,6 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
@@ -157,7 +139,7 @@ fun UserDynamicsPage(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 userInfo?.let { info ->
                     Column(
@@ -178,7 +160,7 @@ fun UserDynamicsPage(
                             .let {
                                 if (isLive) {
                                     it.clickable {
-                                        navController.navigate("live_room/${info.live_room?.roomid}")
+                                        navController.navigate("live_room/${info.live_room.roomid}")
                                     }
                                 } else {
                                     it
@@ -273,7 +255,7 @@ fun UserVideosPage(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader {
                     Text(text = "发布的视频")
@@ -317,7 +299,7 @@ fun UserArticlesPage(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize()
-        ) {
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader {
                     Text(text = "发布的图文")

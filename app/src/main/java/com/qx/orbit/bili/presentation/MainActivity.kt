@@ -72,6 +72,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
@@ -422,7 +423,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                             contentPadding = contentPadding,
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxSize()
-                        ) {
+                        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(menuListState)) {
                             item {
                                 ListHeader(
                                     modifier = Modifier
@@ -660,7 +661,7 @@ fun RecommendScreen(
                     end = contentPadding.calculateEndPadding(layoutDirection)
                 ),
                 state = listState
-            ) {
+            , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                 items(videoList.size, key = { index -> videoList[index].bvid }) { index ->
                     if (index == videoList.size - 1 && !isLoading) {
                         LaunchedEffect(index) {

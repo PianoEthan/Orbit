@@ -35,10 +35,10 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
-import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
@@ -51,7 +51,6 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import com.google.gson.Gson
 import com.qx.orbit.bili.data.api.ReplyApi
 import coil.compose.AsyncImage
 import com.qx.orbit.bili.data.model.ArticleInfo
@@ -165,7 +164,7 @@ fun ArticleContentPage(
     focusRequester: FocusRequester
 ) {
     val listState = rememberTransformingLazyColumnState()
-    val behavior = RotaryScrollableDefaults.behavior(listState)
+    val behavior = rememberSafeRotaryScrollableBehavior(listState)
     var showImageDialog by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     val segments = remember(item.content) { parseArticleHtml(item.content) }
     val context = LocalContext.current
@@ -189,7 +188,7 @@ fun ArticleContentPage(
         state = listState,
         modifier = Modifier.fillMaxSize().rotaryScrollable(behavior, focusRequester),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 32.dp)
-    ) {
+    , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
         if (item.title.isNotEmpty()) {
             item {
                 Text(
@@ -319,13 +318,13 @@ fun ArticleCommentsPage(
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val behavior = RotaryScrollableDefaults.behavior(listState)
+    val behavior = rememberSafeRotaryScrollableBehavior(listState)
 
     TransformingLazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().rotaryScrollable(behavior, focusRequester),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 32.dp)
-    ) {
+    , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
         item { ListHeader { Text("评论区") } }
         item {
             Button(

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -23,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
@@ -36,17 +36,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import com.qx.orbit.bili.data.api.EmoteApi
 import kotlinx.coroutines.delay
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.rotary.onPreRotaryScrollEvent
 import androidx.compose.ui.focus.onFocusChanged
@@ -152,7 +149,7 @@ fun WriteReplyScreen(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp, start = 16.dp, end = 16.dp)
-                ) {
+                , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
                     item {
                         ListHeader {
                             Text(if (targetName.isNullOrEmpty()) "发布评论" else "回复 @$targetName", color = MaterialTheme.colorScheme.primary)
@@ -260,7 +257,7 @@ fun WriteReplyScreen(
                                             val sendLiveEmote = onlyEmote != null && isSpecialLiveEmote(onlyEmote.emoticonUnique)
                                             android.util.Log.d("WriteReplySend", "text=${text.text} decoded=$decoded allPanel=$allPanel sendLiveEmote=$sendLiveEmote")
                                             if (sendLiveEmote) {
-                                                onSendEmote(onlyEmote!!.emoticonUnique)
+                                                onSendEmote(onlyEmote.emoticonUnique)
                                             } else {
                                                 onSend(decoded)
                                             }
