@@ -1,7 +1,13 @@
 package com.qx.orbit.bili.presentation
 
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -155,10 +161,30 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
         var showShizukuNotInstalled by remember { mutableStateOf(false) }
         var showShizukuActivation by remember { mutableStateOf(false) }
 
+        val storagePermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val granted = permissions.entries.all { it.value }
+            if (granted) {
+                // Permissions granted
+            }
+        }
+
         LaunchedEffect(Unit) {
             val hasDeclined = SharedPreferencesUtil.getBoolean("shizuku_declined", false)
-            if (!ShizukuUtils.hasManageExternalStoragePermission() && !hasDeclined && !ShizukuUtils.isShizukuAuthorized()) {
-                showShizukuDialog = true
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    storagePermissionLauncher.launch(
+                        arrayOf(
+                            android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        )
+                    )
+                }
+            } else {
+                if (!ShizukuUtils.hasManageExternalStoragePermission(context) && !hasDeclined && !ShizukuUtils.isShizukuAuthorized()) {
+                    showShizukuDialog = true
+                }
             }
         }
 
@@ -200,7 +226,7 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
         // Shizuku permission listener
         LaunchedEffect(Unit) {
             val listener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-                if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (grantResult == PackageManager.PERMISSION_GRANTED) {
                     ShizukuUtils.grantManageExternalStorage(context)
                 }
             }
@@ -210,7 +236,18 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
         val navController = rememberSwipeDismissableNavController()
         val currentBackStackEntry by navController.currentBackStackEntryFlow.collectAsState(initial = navController.currentBackStackEntry)
         val currentRoute = currentBackStackEntry?.destination?.route
-        val isSwipeEnabled = currentRoute?.startsWith("player/") != true
+        
+        val isMiWatch5 = Build.MODEL == "M2505W1" || Build.MODEL == "M2501W1"
+        val isSwipeEnabled = (currentRoute?.startsWith("player/") != true) && !isMiWatch5
+        
+        val canGoBack = remember(currentBackStackEntry) {
+            navController.previousBackStackEntry != null
+        }
+        val backHandlerEnabled = canGoBack && isMiWatch5
+        
+        BackHandler(enabled = backHandlerEnabled) {
+            navController.popBackStack()
+        }
         
         AppScaffold(timeText = { WysTimeText() }) {
             SwipeDismissableNavHost(
@@ -269,6 +306,15 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                 val bvid = backStackEntry.arguments?.getString("bvid") ?: ""
                 val aid = backStackEntry.arguments?.getLong("aid") ?: 0L
                 VideoDetailScreen(navController = navController, bvid = bvid, aid = aid)
+            }
+            composable(
+                "bangumi_detail/{media_id}",
+                arguments = listOf(
+                    navArgument("media_id") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val mediaId = backStackEntry.arguments?.getLong("media_id") ?: 0L
+                BangumiDetailScreen(navController = navController, mediaId = mediaId)
             }
                 composable("search") {
                     SearchInputScreen(navController = navController)

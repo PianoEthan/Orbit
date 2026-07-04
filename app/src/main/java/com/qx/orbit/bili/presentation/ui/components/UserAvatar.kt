@@ -55,13 +55,18 @@ fun UserAvatar(
             .clip(CircleShape)
 
         if (avatarUrl.isNotEmpty()) {
-            val fixedAvatarUrl = when {
+            val baseAvatarUrl = when {
                 avatarUrl.startsWith("//") -> "https:$avatarUrl"
                 avatarUrl.startsWith("http://") -> avatarUrl.replaceFirst("http://", "https://")
                 else -> avatarUrl
             }
+            val fixedAvatarUrl = if (baseAvatarUrl.contains("@")) baseAvatarUrl else "${baseAvatarUrl}@150w_150h_1c.webp"
+            
             AsyncImage(
-                model = fixedAvatarUrl,
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(fixedAvatarUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = "Avatar",
                 contentScale = ContentScale.Crop,
                 modifier = imageModifier

@@ -11,13 +11,7 @@ object ConfInfoApi {
     private val api by lazy { BiliApiService.create() }
 
     suspend fun signWBI(url: String): String = withContext(Dispatchers.IO) {
-        val key = getWbiKey()
-        val separator = if (url.contains("?")) "&" else "?"
-        val ts = System.currentTimeMillis() / 1000
-        val params = Regex("[?&]([^&]+)").findAll(url).map { it.groupValues[1] }.toList()
-        val sortedParams = (params + "wts=$ts").sorted().joinToString("&")
-        val wrid = md5(sortedParams + key)
-        "$url${separator}w_rid=$wrid&wts=$ts"
+        WbiSigner.signUrl(url)
     }
 
     suspend fun getWbiKey(): String {

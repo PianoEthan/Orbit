@@ -64,6 +64,9 @@ import androidx.wear.compose.material3.HorizontalPageIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
+import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
+import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
@@ -71,6 +74,7 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.imageLoader
 import androidx.compose.ui.res.painterResource
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
@@ -112,7 +116,35 @@ fun LiveDetailScreen(
             focusRequesters[pagerState.currentPage].requestFocus()
         } catch (_: Exception) {}
     }
+    
+    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
+    val defaultColorScheme = MaterialTheme.colorScheme
+    
+    LaunchedEffect(room) {
+        val rawCover = room?.cover ?: ""
+        if (rawCover.isNotEmpty()) {
+            val secureCover = rawCover.replace("http://", "https://")
+            val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@128w_128h_1c.webp"
+            val request = ImageRequest.Builder(context)
+                .data(coverUrl)
+                .size(128)
+                .allowHardware(false)
+                .build()
+            val result = context.imageLoader.execute(request)
+            if (result is coil.request.SuccessResult) {
+                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    val seedColor = extractSeedColorFromBitmap(bitmap)
+                    if (seedColor != null) {
+                        dynamicColorScheme = generateWearColorSchemeFromSeed(seedColor, defaultColorScheme)
+                        ActiveDynamicTheme.colorScheme = dynamicColorScheme
+                    }
+                }
+            }
+        }
+    }
 
+    MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         when (room) {
             null if error == null -> {
@@ -148,6 +180,7 @@ fun LiveDetailScreen(
                             0 -> LiveInfoPage(
                                 room = room!!,
                                 focusRequester = focusRequesters[0],
+                                onBackClick = { navController.popBackStack() },
                                 onPlayClick = {
                                     val streamUrl = viewModel.getStreamUrl() ?: return@LiveInfoPage
                                     val liveStartTime = viewModel.getLiveStartTime()
@@ -221,12 +254,14 @@ fun LiveDetailScreen(
             },
             onClose = { showWriteReply = false }
     )
+    }
 }
 
 @Composable
 fun LiveInfoPage(
     room: LiveRoom,
     focusRequester: FocusRequester,
+    onBackClick: () -> Unit,
     onPlayClick: () -> Unit,
     onUpClick: (Long) -> Unit
 ) {
@@ -242,7 +277,12 @@ fun LiveInfoPage(
             contentPadding = contentPadding
         , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .clickable { onBackClick() }
+                )
             }
 
             // 1. Cover Image

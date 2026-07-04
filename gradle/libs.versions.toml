@@ -25,6 +25,7 @@ okhttp = "5.4.0"
 gson = "2.14.0"
 coroutines = "1.11.0"
 shizuku = "13.1.5"
+materialColorUtilities = "4.1.1"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -62,6 +63,7 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
+material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

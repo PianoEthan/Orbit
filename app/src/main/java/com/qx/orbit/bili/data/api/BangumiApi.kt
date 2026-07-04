@@ -171,8 +171,13 @@ object BangumiApi {
         @SerializedName("badge") val badge: String? = null
     )
 
+    internal data class MainSectionData(
+        @SerializedName("episodes") val episodes: List<EpisodeData>? = null
+    )
+
     internal data class SectionData(
-        @SerializedName("section_list") val section_list: List<SectionResult>? = null
+        @SerializedName("main_section") val main_section: MainSectionData? = null,
+        @SerializedName("section") val section: List<SectionResult>? = null
     )
 
     internal data class SectionResult(
@@ -270,108 +275,107 @@ object BangumiApi {
         }
     }
 
-    suspend fun getInfo(mediaId: Long): Bangumi.Info? = withContext(Dispatchers.IO) {
-        val reviewJson = when (val r = api.getBangumiReview(mediaId)) {
-            is Result.Success -> r.data
-            is Result.Error -> return@withContext null
-        }
-        val reviewType = object : TypeToken<ApiResponse<ReviewData>>() {}.type
-        val reviewResp: ApiResponse<ReviewData>? = GsonConfig.gson.fromJson(reviewJson, reviewType)
-        if (reviewResp == null || !reviewResp.isSuccess || reviewResp.data == null) return@withContext null
-        val media = reviewResp.data.media ?: return@withContext null
-        val score = reviewResp.data.review?.score ?: media.rating?.score ?: 0f
-
-        val seasonId = media.season_id
-        if (seasonId <= 0L) {
-            return@withContext Bangumi.Info(
-                media_id = media.media_id,
-                season_id = 0,
-                type = media.type,
-                count = media.new_ep?.index_show?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() } ?: 0,
-                score = score,
-                title = media.title ?: "",
-                cover = "",
-                cover_horizontal = media.horizontal_picture ?: "",
-                type_name = "",
-                area_name = media.areas?.firstOrNull()?.name ?: "",
-                indexShow = media.new_ep?.index_show ?: "",
-                evaluate = "",
-                staff = "",
-                record = "",
-                subtitle = "",
-                publish = media.publish?.let {
-                    Bangumi.Publish(
-                        is_finish = it.is_finish,
-                        is_started = it.is_started,
-                        pub_time = it.pub_time ?: "",
-                        pub_time_show = it.pub_time_show ?: ""
-                    )
-                },
-                styles = emptyList(),
-                stat = media.stat?.let {
-                    Bangumi.Stat(
-                        favorites = it.favorites,
-                        series_follow = it.series_follow,
-                        views = it.views,
-                        vt = it.vt
-                    )
-                },
-                up_info = media.up_info?.let {
-                    Bangumi.UpInfo(mid = it.mid, name = it.name ?: "", avatar = it.avatar ?: "")
-                },
-                series = null,
-                seasons = emptyList()
-            )
-        }
-
-        val seasonJson = when (val r = api.getSeasonInfo(seasonId = seasonId)) {
+    suspend fun getInfo(id: Long): Bangumi.Info? = withContext(Dispatchers.IO) {
+        // Assume id is season_id first, which is what SearchApi will pass.
+        // If the ID was actually media_id, we can try to get review first to find season_id.
+        var seasonId = id
+        var mediaId = 0L
+        var score = 0f
+        
+        // Try as season_id
+        var seasonJson = when (val r = api.getSeasonInfo(seasonId = seasonId)) {
             is Result.Success -> r.data
             is Result.Error -> null
         }
-        val seasonType = object : TypeToken<ApiResponse<SeasonDetailData>>() {}.type
-        val seasonResp: ApiResponse<SeasonDetailData>? = GsonConfig.gson.fromJson(seasonJson, seasonType)
+        var seasonType = object : TypeToken<ApiResponse<SeasonDetailData>>() {}.type
+        var seasonResp: ApiResponse<SeasonDetailData>? = GsonConfig.gson.fromJson(seasonJson, seasonType)
+        
+        // If it failed, maybe the id is media_id?
         if (seasonResp == null || !seasonResp.isSuccess || seasonResp.data == null) {
-            return@withContext Bangumi.Info(
-                media_id = media.media_id,
-                season_id = seasonId,
-                type = media.type,
-                count = media.new_ep?.index_show?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() } ?: 0,
-                score = score,
-                title = media.title ?: "",
-                cover = "",
-                cover_horizontal = media.horizontal_picture ?: "",
-                type_name = "",
-                area_name = media.areas?.firstOrNull()?.name ?: "",
-                indexShow = media.new_ep?.index_show ?: "",
-                evaluate = "",
-                staff = "",
-                record = "",
-                subtitle = "",
-                publish = media.publish?.let {
-                    Bangumi.Publish(
-                        is_finish = it.is_finish,
-                        is_started = it.is_started,
-                        pub_time = it.pub_time ?: "",
-                        pub_time_show = it.pub_time_show ?: ""
+            mediaId = id
+            val reviewJson = when (val r = api.getBangumiReview(mediaId)) {
+                is Result.Success -> r.data
+                is Result.Error -> null
+            }
+            val reviewType = object : TypeToken<ApiResponse<ReviewData>>() {}.type
+            val reviewResp: ApiResponse<ReviewData>? = GsonConfig.gson.fromJson(reviewJson, reviewType)
+            if (reviewResp != null && reviewResp.isSuccess && reviewResp.data?.media != null) {
+                seasonId = reviewResp.data.media.season_id
+                score = reviewResp.data.review?.score ?: reviewResp.data.media.rating?.score ?: 0f
+                if (seasonId > 0) {
+                    seasonJson = when (val r = api.getSeasonInfo(seasonId = seasonId)) {
+                        is Result.Success -> r.data
+                        is Result.Error -> null
+                    }
+                    seasonResp = GsonConfig.gson.fromJson(seasonJson, seasonType)
+                } else {
+                    // It doesn't have a season_id (e.g. only media info exists)
+                    val media = reviewResp.data.media
+                    return@withContext Bangumi.Info(
+                        media_id = media.media_id,
+                        season_id = 0,
+                        type = media.type,
+                        count = media.new_ep?.index_show?.let { Regex("\\d+").find(it)?.value?.toIntOrNull() } ?: 0,
+                        score = score,
+                        title = media.title ?: "",
+                        cover = media.horizontal_picture ?: "", // fallback
+                        cover_horizontal = media.horizontal_picture ?: "",
+                        type_name = "",
+                        area_name = media.areas?.firstOrNull()?.name ?: "",
+                        indexShow = media.new_ep?.index_show ?: "",
+                        evaluate = "",
+                        staff = "",
+                        record = "",
+                        subtitle = "",
+                        publish = media.publish?.let {
+                            Bangumi.Publish(
+                                is_finish = it.is_finish,
+                                is_started = it.is_started,
+                                pub_time = it.pub_time ?: "",
+                                pub_time_show = it.pub_time_show ?: ""
+                            )
+                        },
+                        styles = emptyList(),
+                        stat = media.stat?.let {
+                            Bangumi.Stat(
+                                favorites = it.favorites,
+                                series_follow = it.series_follow,
+                                views = it.views,
+                                vt = it.vt
+                            )
+                        },
+                        up_info = media.up_info?.let {
+                            Bangumi.UpInfo(mid = it.mid, name = it.name ?: "", avatar = it.avatar ?: "")
+                        },
+                        series = null,
+                        seasons = emptyList()
                     )
-                },
-                styles = emptyList(),
-                stat = media.stat?.let {
-                    Bangumi.Stat(
-                        favorites = it.favorites,
-                        series_follow = it.series_follow,
-                        views = it.views,
-                        vt = it.vt
-                    )
-                },
-                up_info = media.up_info?.let {
-                    Bangumi.UpInfo(mid = it.mid, name = it.name ?: "", avatar = it.avatar ?: "")
-                },
-                series = null,
-                seasons = emptyList()
-            )
+                }
+            } else {
+                return@withContext null
+            }
         }
-        val result = seasonResp.data
+        
+        val result = seasonResp?.data ?: return@withContext null
+        mediaId = result.media_id
+        
+        // Try to fetch review score if we haven't already
+        if (score == 0f && mediaId > 0) {
+            val reviewJson = when (val r = api.getBangumiReview(mediaId)) {
+                is Result.Success -> r.data
+                is Result.Error -> null
+            }
+            val reviewType = object : TypeToken<ApiResponse<ReviewData>>() {}.type
+            val reviewResp: ApiResponse<ReviewData>? = GsonConfig.gson.fromJson(reviewJson, reviewType)
+            if (reviewResp != null && reviewResp.isSuccess && reviewResp.data != null) {
+                score = reviewResp.data.review?.score ?: reviewResp.data.media?.rating?.score ?: result.rating?.score ?: 0f
+            } else {
+                score = result.rating?.score ?: 0f
+            }
+        } else if (score == 0f) {
+            score = result.rating?.score ?: 0f
+        }
+
         Bangumi.Info(
             media_id = result.media_id,
             season_id = result.season_id,
@@ -431,24 +435,53 @@ object BangumiApi {
         val type = object : TypeToken<ApiResponse<SectionData>>() {}.type
         val resp: ApiResponse<SectionData>? = GsonConfig.gson.fromJson(json, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.section_list?.map { section ->
-            Bangumi.Section(
-                id = section.id,
-                type = section.type,
-                title = section.title ?: "",
-                episodes = section.episodes?.map { ep ->
-                    Bangumi.Episode(
-                        id = ep.id,
-                        aid = ep.aid,
-                        cid = ep.cid,
-                        title = ep.title ?: "",
-                        title_long = ep.title_long ?: "",
-                        cover = ep.cover ?: "",
-                        badge = ep.badge ?: ""
+        val sections = mutableListOf<Bangumi.Section>()
+        
+        resp.data.main_section?.episodes?.let { eps ->
+            if (eps.isNotEmpty()) {
+                sections.add(
+                    Bangumi.Section(
+                        id = 0,
+                        type = 0,
+                        title = "正片",
+                        episodes = eps.map { ep ->
+                            Bangumi.Episode(
+                                id = ep.id,
+                                aid = ep.aid,
+                                cid = ep.cid,
+                                title = ep.title ?: "",
+                                title_long = ep.title_long ?: "",
+                                cover = ep.cover ?: "",
+                                badge = ep.badge ?: ""
+                            )
+                        }
                     )
-                } ?: emptyList()
+                )
+            }
+        }
+        
+        resp.data.section?.forEach { section ->
+            sections.add(
+                Bangumi.Section(
+                    id = section.id,
+                    type = section.type,
+                    title = section.title ?: "",
+                    episodes = section.episodes?.map { ep ->
+                        Bangumi.Episode(
+                            id = ep.id,
+                            aid = ep.aid,
+                            cid = ep.cid,
+                            title = ep.title ?: "",
+                            title_long = ep.title_long ?: "",
+                            cover = ep.cover ?: "",
+                            badge = ep.badge ?: ""
+                        )
+                    } ?: emptyList()
+                )
             )
-        } ?: emptyList()
+        }
+        
+        sections
     }
 
     private fun httpGet(url: String): String {

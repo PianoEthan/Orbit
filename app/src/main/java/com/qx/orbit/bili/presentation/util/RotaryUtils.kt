@@ -29,7 +29,7 @@ fun rememberSafeRotaryScrollableBehavior(
     scrollableState: TransformingLazyColumnState,
     hapticFeedbackEnabled: Boolean = true
 ): RotaryScrollableBehavior {
-    Log.d("WearHapticsUtil","ENABLE WEAR HAPTICS:${RotaryUtils.isWearHapticsAvailable}")
+    //Log.d("WearHapticsUtil","ENABLE WEAR HAPTICS:${RotaryUtils.isWearHapticsAvailable}")
     return RotaryScrollableDefaults.behavior(
         scrollableState = scrollableState,
         hapticFeedbackEnabled = hapticFeedbackEnabled && RotaryUtils.isWearHapticsAvailable

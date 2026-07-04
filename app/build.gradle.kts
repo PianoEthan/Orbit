@@ -15,8 +15,8 @@ android {
         applicationId = "com.qx.orbit.bili"
         minSdk = 23
         targetSdk = 36
-        versionCode = 403
-        versionName = "0.4.3-Alpha"
+        versionCode = 500
+        versionName = "0.5.0-Alpha"
         resValue("string", "app_verCode", versionCode.toString())
         resValue("string", "app_version", versionName.toString())
     }
@@ -107,6 +107,9 @@ dependencies {
     // Coil for Compose
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
+
+    // Material Color Utilities (Monet)
+    implementation(libs.material.color.utilities)
 
     // AppCompat + RecyclerView
     implementation(libs.appcompat)

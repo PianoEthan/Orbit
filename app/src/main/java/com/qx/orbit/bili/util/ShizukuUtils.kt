@@ -11,11 +11,15 @@ import rikka.shizuku.ShizukuRemoteProcess
 import android.os.Environment
 
 object ShizukuUtils {
-    fun hasManageExternalStoragePermission(): Boolean {
+    fun hasManageExternalStoragePermission(context: Context? = null): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
-            false // On older versions, this permission doesn't exist
+            if (context != null) {
+                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            } else {
+                false
+            }
         }
     }
     

@@ -12,7 +12,8 @@ enum class SearchTab(val title: String, val type: String) {
     VIDEO("视频", "video"),
     LIVE("直播", "live"),
     USER("用户", "bili_user"),
-    ARTICLE("图文", "article")
+    ARTICLE("图文", "article"),
+    BANGUMI("番剧", "media_bangumi")
 }
 
 class SearchViewModel : ViewModel() {
@@ -72,7 +73,7 @@ class SearchViewModel : ViewModel() {
                 if (tab == SearchTab.VIDEO) {
                     val res = SearchApi.search(query, page)
                     if (res != null) {
-                        val items = SearchApi.getVideosFromSearchResult(res, page == 1)
+                        val items = SearchApi.getVideosFromSearchResult(res, false)
                         if (items.isEmpty()) isEnds[tab] = true
                         
                         val filteredItems = items.filter { it.bvid.isNotEmpty() || it.aid > 0 }
@@ -97,6 +98,7 @@ class SearchViewModel : ViewModel() {
                                 SearchTab.LIVE -> SearchApi.getLiveFromSearchResult(arrList)
                                 SearchTab.USER -> SearchApi.getUsersFromSearchResult(arrList)
                                 SearchTab.ARTICLE -> SearchApi.getArticlesFromSearchResult(arrList)
+                                SearchTab.BANGUMI -> SearchApi.getBangumisFromSearchResult(arrList)
                                 else -> emptyList()
                             }
                             if (items.isEmpty()) isEnds[tab] = true

@@ -61,6 +61,19 @@ object SearchApi {
         @SerializedName("live_status") val live_status: Int = 0
     )
 
+    internal data class SearchBangumiItem(
+        @SerializedName("media_id") val media_id: Long = 0,
+        @SerializedName("season_id") val season_id: Long = 0,
+        @SerializedName("ep_id") val ep_id: Long = 0,
+        @SerializedName("title") val title: String? = null,
+        @SerializedName("cover") val cover: String? = null,
+        @SerializedName("pic") val pic: String? = null,
+        @SerializedName("areas") val areas: JsonElement? = null,
+        @SerializedName("styles") val styles: JsonElement? = null,
+        @SerializedName("index_show") val index_show: String? = null,
+        @SerializedName("type") val type: String? = null
+    )
+
     internal data class SearchTypeData(
         @SerializedName("seid") val seid: String? = null,
         @SerializedName("page") val page: Int = 0,
@@ -137,11 +150,31 @@ object SearchApi {
             val obj = el.asJsonObject
             val type = obj.get("type")?.asString
             if (type != "video") continue
-            val item = GsonConfig.gson.fromJson(obj, SearchVideoItem::class.java) ?: continue
+            
+            val item = try { 
+                GsonConfig.gson.fromJson(obj, SearchVideoItem::class.java) 
+            } catch (e: Exception) { 
+                null 
+            } ?: continue
+            
+            // For play count, try to handle string/int safely
+            val playCountStr = try {
+                val playEl = obj.get("play")
+                if (playEl != null && playEl.isJsonPrimitive) {
+                    if (playEl.asJsonPrimitive.isNumber) {
+                        StringUtil.toWan(playEl.asLong)
+                    } else {
+                        playEl.asString
+                    }
+                } else {
+                    ""
+                }
+            } catch (e: Exception) { "" }
+            
             result.add(VideoCard(
                 title = htmlToString(item.title ?: ""),
                 upName = item.author ?: "",
-                view = StringUtil.toWan(item.play.toLong()),
+                view = playCountStr.ifEmpty { StringUtil.toWan(item.play.toLong()) },
                 cover = fixCoverUrl(item.pic ?: ""),
                 aid = item.aid,
                 bvid = item.bvid ?: "",
@@ -223,6 +256,31 @@ object SearchApi {
         result
     }
 
+    suspend fun getBangumisFromSearchResult(input: List<JsonElement>?): List<VideoCard> = withContext(Dispatchers.IO) {
+        if (input == null) return@withContext emptyList()
+        val result = mutableListOf<VideoCard>()
+        for (el in input) {
+            if (!el.isJsonObject) continue
+            val item = try { GsonConfig.gson.fromJson(el, SearchBangumiItem::class.java) } catch (e: Exception) { null } ?: continue
+            
+            val areaStr = if (item.areas != null && item.areas.isJsonPrimitive) item.areas.asString else ""
+            val idToUse = if (item.season_id > 0) item.season_id else if (item.media_id > 0) item.media_id else item.ep_id
+            if (idToUse <= 0) continue
+
+            result.add(VideoCard(
+                title = htmlToString(item.title ?: ""),
+                upName = item.index_show ?: areaStr,
+                view = "",
+                cover = fixCoverUrl(item.cover ?: item.pic ?: ""),
+                aid = idToUse,
+                bvid = "",
+                cid = item.season_id,
+                type = "bangumi"
+            ))
+        }
+        result
+    }
+
     internal data class SuggestData(
         @SerializedName("tag") val tag: List<SuggestTag>? = null
     )
@@ -256,6 +314,7 @@ object SearchApi {
 
     private fun fixCoverUrl(url: String): String {
         if (url.startsWith("//")) return "https:$url"
+        if (url.startsWith("http://")) return url.replaceFirst("http://", "https://")
         return url
     }
 }

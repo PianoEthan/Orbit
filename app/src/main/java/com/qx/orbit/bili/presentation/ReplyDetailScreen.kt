@@ -34,6 +34,7 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Reply
@@ -67,11 +68,13 @@ fun ReplyDetailScreen(
         focusRequester.requestFocus()
     }
 
-    ScreenScaffold(
-        timeText = { WysTimeText() },
-        scrollState = listState,
-        modifier = Modifier.focusRequester(focusRequester)
-    ) { contentPadding ->
+    val defaultColorScheme = MaterialTheme.colorScheme
+    MaterialTheme(colorScheme = ActiveDynamicTheme.colorScheme ?: defaultColorScheme) {
+        ScreenScaffold(
+            timeText = { WysTimeText() },
+            scrollState = listState,
+            modifier = Modifier.focusRequester(focusRequester)
+        ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding
@@ -190,4 +193,5 @@ fun ReplyDetailScreen(
             onClose = { showWriteReply = false }
         )
     }
+}
 }

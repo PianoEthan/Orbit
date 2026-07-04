@@ -240,7 +240,7 @@ object PlayerApi {
     }
 
     suspend fun getBangumi(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=16&fourk=1"
+        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=1"
         val json = httpGet(url)
         val type = object : TypeToken<ApiResponse<PlayUrlData>>() {}.type
         val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(json, type)

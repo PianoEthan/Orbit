@@ -263,7 +263,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
         }
     }
 
-    val focusRequesters = remember { List(4) { FocusRequester() } }
+    val focusRequesters = remember { List(SearchTab.entries.size) { FocusRequester() } }
     LaunchedEffect(showTabMenu, currentTab) {
         if (!showTabMenu) {
             val tabIndex = SearchTab.entries.indexOf(currentTab)
@@ -357,7 +357,9 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                                 is VideoCard -> RecommendVideoCard(
                                     item = item, 
                                     onClick = {
-                                        if (item.bvid.isNotEmpty() || item.aid > 0) {
+                                        if (item.type == "bangumi") {
+                                            navController.navigate("bangumi_detail/${item.aid}")
+                                        } else if (item.bvid.isNotEmpty() || item.aid > 0) {
                                             navController.navigate("detail/${item.bvid}/${item.aid}")
                                         }
                                     },

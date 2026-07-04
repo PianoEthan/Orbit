@@ -177,21 +177,18 @@ fun PlayerScreen(
 
     LaunchedEffect(isLoading) {
         if (isLoading) {
-            if (!isPrepared) {
-                bufferSpeed = "加载中..."
-            } else {
-                var lastProgress = currentProgress
-                while (isLoading) {
-                    delay(1.seconds)
-                    val current = mediaPlayer.currentPosition
-                    val speed = (current - lastProgress) / 1000
-                    bufferSpeed = if (speed > 0) {
-                        "+${speed}s/s"
-                    } else {
-                        "缓冲中..."
+            while (isLoading) {
+                val speedBytes = mediaPlayer.tcpSpeed
+                bufferSpeed = if (speedBytes > 0) {
+                    when {
+                        speedBytes >= 1024 * 1024 -> String.format("%.1f MB/s", speedBytes / (1024f * 1024f))
+                        speedBytes >= 1024 -> String.format("%.1f KB/s", speedBytes / 1024f)
+                        else -> "$speedBytes B/s"
                     }
-                    lastProgress = current
+                } else {
+                    if (!isPrepared) "加载中..." else "缓冲中..."
                 }
+                delay(1.seconds)
             }
         } else {
             bufferSpeed = ""
@@ -279,7 +276,9 @@ fun PlayerScreen(
                 danmakuView.enableDanmakuDrawingCache(true)
             }
 
-            val result = if (isLive || isLocal) playerData else PlayerApi.getVideo(playerData)
+            val result = if (isLive || isLocal) playerData 
+                         else if (playerData.type == PlayerData.TYPE_BANGUMI) PlayerApi.getBangumi(playerData)
+                         else PlayerApi.getVideo(playerData)
             if (!isLive && !isLocal) playerData = result
             if (result.videoUrl.isNotEmpty()) {
                 mediaPlayer.reset()

@@ -97,6 +97,9 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
+import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
+import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
@@ -104,6 +107,7 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.imageLoader
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.PlayerApi
@@ -171,6 +175,34 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
         }
     }
     
+    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
+    val defaultColorScheme = MaterialTheme.colorScheme
+    
+    LaunchedEffect(videoInfo) {
+        val rawCover = videoInfo?.cover ?: ""
+        if (rawCover.isNotEmpty()) {
+            val secureCover = rawCover.replace("http://", "https://")
+            val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@128w_128h_1c.webp"
+            val request = ImageRequest.Builder(context)
+                .data(coverUrl)
+                .size(128)
+                .allowHardware(false)
+                .build()
+            val result = context.imageLoader.execute(request)
+            if (result is coil.request.SuccessResult) {
+                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    val seedColor = extractSeedColorFromBitmap(bitmap)
+                    if (seedColor != null) {
+                        dynamicColorScheme = generateWearColorSchemeFromSeed(seedColor, defaultColorScheme)
+                        ActiveDynamicTheme.colorScheme = dynamicColorScheme
+                    }
+                }
+            }
+        }
+    }
+    
+    MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
     // Cache Dialog
     Dialog(
         visible = showCacheDialog,
@@ -299,6 +331,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                             videoInfo = videoInfo, 
                             tags = tags, 
                             focusRequester = focusRequesters[0],
+                            onBackClick = { navController.popBackStack() },
                             onPlayClick = {
                                 val info = videoInfo ?: return@VideoInfoPage
                                 val qn = SharedPreferencesUtil.getInt("play_qn", 16)
@@ -653,12 +686,14 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                 }
             }
         }
+        }
 }
 @Composable
 fun VideoInfoPage(
     videoInfo: VideoInfo?, 
     tags: String, 
     focusRequester: FocusRequester,
+    onBackClick: () -> Unit,
     onPlayClick: () -> Unit,
     onLikeClick: () -> Unit,
     onTripleClick: () -> Unit,
@@ -679,7 +714,12 @@ fun VideoInfoPage(
             contentPadding = contentPadding
         , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .clickable { onBackClick() }
+                )
             }
             if (videoInfo != null) {
                 // 1. Cover Image

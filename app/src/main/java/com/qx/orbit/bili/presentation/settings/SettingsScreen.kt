@@ -198,7 +198,16 @@ fun SettingPreferenceScreen(navController: NavController) {
     var showShizukuDialog by remember { mutableStateOf(false) }
     var showShizukuNotInstalled by remember { mutableStateOf(false) }
     var showShizukuActivation by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(ShizukuUtils.hasManageExternalStoragePermission()) }
+    var hasPermission by remember { mutableStateOf(ShizukuUtils.hasManageExternalStoragePermission(context)) }
+
+    val storagePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.entries.all { it.value }
+        if (granted) {
+            hasPermission = true
+        }
+    }
 
     // Shizuku permission listener
     LaunchedEffect(Unit) {
@@ -335,7 +344,16 @@ fun SettingPreferenceScreen(navController: NavController) {
                 Button(
                     onClick = {
                         if (!hasPermission) {
-                            showShizukuDialog = true
+                            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+                                storagePermissionLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                    )
+                                )
+                            } else {
+                                showShizukuDialog = true
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
