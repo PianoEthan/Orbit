@@ -258,27 +258,52 @@ object SearchApi {
 
     suspend fun getBangumisFromSearchResult(input: List<JsonElement>?): List<VideoCard> = withContext(Dispatchers.IO) {
         if (input == null) return@withContext emptyList()
-        val result = mutableListOf<VideoCard>()
+        val deferreds = mutableListOf<Deferred<VideoCard?>>()
         for (el in input) {
             if (!el.isJsonObject) continue
             val item = try { GsonConfig.gson.fromJson(el, SearchBangumiItem::class.java) } catch (e: Exception) { null } ?: continue
+            val obj = el.asJsonObject
             
             val areaStr = if (item.areas != null && item.areas.isJsonPrimitive) item.areas.asString else ""
             val idToUse = if (item.season_id > 0) item.season_id else if (item.media_id > 0) item.media_id else item.ep_id
             if (idToUse <= 0) continue
 
-            result.add(VideoCard(
-                title = htmlToString(item.title ?: ""),
-                upName = item.index_show ?: areaStr,
-                view = "",
-                cover = fixCoverUrl(item.cover ?: item.pic ?: ""),
-                aid = idToUse,
-                bvid = "",
-                cid = item.season_id,
-                type = "bangumi"
-            ))
+            deferreds.add(async {
+                var progressStr = "从未看过"
+                try {
+                    val fullInfo = BangumiApi.getInfo(idToUse)
+                    if (fullInfo != null) {
+                        val progress = fullInfo.user_status?.progress
+                        val count = fullInfo.count
+                        if (progress != null && progress.last_ep_index.isNotEmpty()) {
+                            val lastEp = progress.last_ep_index
+                            if (count > 0 && lastEp == count.toString()) {
+                                progressStr = "已看完"
+                            } else {
+                                val isNumeric = lastEp.toIntOrNull() != null
+                                if (isNumeric) {
+                                    progressStr = "看到第${lastEp}话"
+                                } else {
+                                    progressStr = "看到 $lastEp"
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {}
+
+                VideoCard(
+                    title = htmlToString(item.title ?: ""),
+                    upName = item.index_show ?: areaStr,
+                    view = progressStr,
+                    cover = fixCoverUrl(item.cover ?: item.pic ?: ""),
+                    aid = idToUse,
+                    bvid = "",
+                    cid = item.season_id,
+                    type = "bangumi"
+                )
+            })
         }
-        result
+        deferreds.awaitAll().filterNotNull()
     }
 
     internal data class SuggestData(

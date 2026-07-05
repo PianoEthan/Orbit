@@ -233,7 +233,6 @@ object PlayerApi {
         val videoUrl = data.durl?.firstOrNull()?.url ?: ""
         playerData.copy(
             videoUrl = videoUrl,
-            progress = data.quality,
             qnStrList = data.accept_description?.toTypedArray(),
             qnValueList = data.accept_quality?.toIntArray()
         )
@@ -282,7 +281,6 @@ object PlayerApi {
                 dashData = dashData,
                 videoUrl = videoStreams.firstOrNull()?.baseUrl ?: "",
                 audioUrl = audioStreams.firstOrNull()?.baseUrl ?: "",
-                progress = data.quality,
                 qnStrList = data.accept_description?.toTypedArray(),
                 qnValueList = data.accept_quality?.toIntArray()
             )
@@ -290,7 +288,6 @@ object PlayerApi {
             val videoUrl = data.durl?.firstOrNull()?.url ?: ""
             playerData.copy(
                 videoUrl = videoUrl,
-                progress = data.quality,
                 qnStrList = data.accept_description?.toTypedArray(),
                 qnValueList = data.accept_quality?.toIntArray()
             )

@@ -89,7 +89,7 @@ class BangumiDetailViewModel : ViewModel() {
                 if (reset) {
                     _replies.value = newReplies
                 } else {
-                    _replies.value = _replies.value + newReplies
+                    _replies.value += newReplies
                 }
                 replyPage++
             } catch (e: Exception) {
@@ -196,5 +196,51 @@ class BangumiDetailViewModel : ViewModel() {
 
     fun removeReplyLocally(reply: Reply) {
         _replies.value = _replies.value.filter { it.rpid != reply.rpid }
+    }
+
+    fun updateProgress(epid: Long, progress: Long) {
+        val currentBangumi = _bangumiInfo.value ?: return
+        val currentStatus = currentBangumi.info?.user_status ?: Bangumi.UserStatus(Bangumi.Progress(0, "", 0))
+        val episodes = currentBangumi.sectionList.flatMap { it.episodes }
+        val ep = episodes.find { it.id == epid }
+        
+        val updatedStatus = currentStatus.copy(
+            progress = Bangumi.Progress(
+                last_ep_id = epid,
+                last_ep_index = ep?.title ?: currentStatus.progress?.last_ep_index ?: "",
+                last_time = progress
+            )
+        )
+        
+        val updatedInfo = currentBangumi.info?.copy(user_status = updatedStatus)
+        _bangumiInfo.value = currentBangumi.copy(info = updatedInfo)
+    }
+
+    fun toggleFollow() {
+        val currentBangumi = _bangumiInfo.value ?: return
+        val isFollowed = (currentBangumi.info?.user_status?.follow ?: 0) > 0
+        val seasonId = currentBangumi.info?.season_id ?: return
+        if (seasonId <= 0) return
+
+        viewModelScope.launch {
+            try {
+                val success = if (isFollowed) {
+                    BangumiApi.unfollowBangumi(seasonId)
+                } else {
+                    BangumiApi.followBangumi(seasonId)
+                }
+                if (success) {
+                    val updatedUserStatus = currentBangumi.info.user_status?.copy(
+                        follow = if (isFollowed) 0 else 1
+                    ) ?: Bangumi.UserStatus(follow = if (isFollowed) 0 else 1)
+                    
+                    _bangumiInfo.value = currentBangumi.copy(
+                        info = currentBangumi.info.copy(user_status = updatedUserStatus)
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

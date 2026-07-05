@@ -246,6 +246,20 @@ interface BiliApiService {
 
     // ===== Search =====
 
+    @FormUrlEncoded
+    @POST("https://api.bilibili.com/pgc/web/follow/add")
+    suspend fun addBangumiFollow(
+        @Field("season_id") seasonId: Long,
+        @Field("csrf") csrf: String
+    ): Result<JsonElement>
+
+    @FormUrlEncoded
+    @POST("https://api.bilibili.com/pgc/web/follow/del")
+    suspend fun deleteBangumiFollow(
+        @Field("season_id") seasonId: Long,
+        @Field("csrf") csrf: String
+    ): Result<JsonElement>
+
     @GET("https://api.bilibili.com/x/web-interface/wbi/search/all/v2")
     suspend fun searchAll(@QueryMap params: Map<String, String>): Result<JsonElement>
 
@@ -314,6 +328,12 @@ interface BiliApiService {
 
     @GET("https://api.bilibili.com/pgc/view/web/season")
     suspend fun getSeasonInfo(
+        @Query("season_id") seasonId: Long? = null,
+        @Query("ep_id") epId: Long? = null
+    ): Result<JsonElement>
+
+    @GET("https://api.bilibili.com/pgc/view/web/season/user/status")
+    suspend fun getSeasonUserStatus(
         @Query("season_id") seasonId: Long? = null,
         @Query("ep_id") epId: Long? = null
     ): Result<JsonElement>
@@ -489,8 +509,9 @@ interface BiliApiService {
     // ===== Heartbeat =====
 
     @FormUrlEncoded
-    @POST("https://api.bilibili.com/x/click-interface/web/heartbeat")
+    @POST
     suspend fun reportHeartbeat(
+        @Url url: String,
         @Field("aid") aid: Long,
         @Field("bvid") bvid: String,
         @Field("cid") cid: Long,
@@ -500,6 +521,11 @@ interface BiliApiService {
         @Field("realtime") realtime: Long,
         @Field("start_ts") startTs: Long,
         @Field("type") type: String = "3",
+        @Field("sub_type") subType: String? = null,
+        @Field("epid") epid: Long? = null,
+        @Field("sid") sid: Long? = null,
+        @Field("video_duration") videoDuration: Long = 0,
+        @Field("last_play_progress_time") lastPlayProgressTime: Long = 0,
         @Field("dt") dt: String = "2",
         @Field("play_type") playType: String = "0"
     ): Result<JsonElement>

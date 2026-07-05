@@ -39,7 +39,8 @@ data class VideoCard(
     val aid: Long = 0,
     val bvid: String = "",
     val cid: Long = 0,
-    val mid: Long = 0
+    val mid: Long = 0,
+    val seasonId: Long = 0
 )
 
 data class Stats(

@@ -143,36 +143,40 @@ fun RecommendVideoCard(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.Black.copy(alpha = 0.8f),
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .offset(x = 1.dp, y = 1.dp)
-                            )
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Views",
-                                tint = Color.White,
-                                modifier = Modifier.size(12.dp)
+                    if (item.view.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (item.type != "bangumi") {
+                                Box {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.Black.copy(alpha = 0.8f),
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .offset(x = 1.dp, y = 1.dp)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Views",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
+                            }
+                            Text(
+                                text = item.view,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    shadow = Shadow(
+                                        color = Color.Black,
+                                        offset = Offset(2f, 2f),
+                                        blurRadius = 4f
+                                    )
+                                ),
+                                color = Color.White,
+                                fontSize = 10.sp
                             )
                         }
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = item.view,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                shadow = Shadow(
-                                    color = Color.Black,
-                                    offset = Offset(2f, 2f),
-                                    blurRadius = 4f
-                                )
-                            ),
-                            color = Color.White,
-                            fontSize = 10.sp
-                        )
                     }
                 }
             }

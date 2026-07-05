@@ -1,19 +1,12 @@
 package com.qx.orbit.bili.presentation
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,12 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,13 +29,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -50,36 +44,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.HorizontalPageIndicator
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
-import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
-import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
-import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import coil.imageLoader
+import coil.request.ImageRequest
 import com.google.gson.Gson
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.Bangumi
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
+import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
+import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
+import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.viewmodel.BangumiDetailViewModel
@@ -90,8 +83,29 @@ import java.nio.charset.StandardCharsets
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewModel: BangumiDetailViewModel = viewModel()) {
-    LaunchedEffect(mediaId) {
-        viewModel.loadData(mediaId)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, mediaId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (viewModel.bangumiInfo.value == null) {
+                    viewModel.loadData(mediaId)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    val updatedEpid = savedStateHandle?.get<Long>("updatedEpid")
+    val updatedProgress = savedStateHandle?.get<Long>("updatedProgress")
+    
+    LaunchedEffect(updatedEpid, updatedProgress) {
+        if (updatedEpid != null && updatedProgress != null) {
+            viewModel.updateProgress(updatedEpid, updatedProgress)
+            savedStateHandle.remove<Long>("updatedEpid")
+            savedStateHandle.remove<Long>("updatedProgress")
+        }
     }
     
     val context = LocalContext.current
@@ -147,10 +161,10 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
     
     MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AnimatedContent(
-            targetState = isLoading && bangumiInfo == null,
-            transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) },
-            label = "LoadingAnimation"
+            androidx.compose.animation.Crossfade(
+                targetState = (isLoading || bangumiInfo == null) && errorMessage == null,
+                animationSpec = androidx.compose.animation.core.tween(500),
+                label = "LoadingAnimation"
         ) { isInitialLoading ->
             if (isInitialLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -193,25 +207,35 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                 bangumi = bangumiInfo, 
                                 focusRequester = focusRequesters[0],
                                 onBackClick = { navController.popBackStack() },
-                                onEpisodeClick = { ep ->
+                                onEpisodeClick = { ep, initialProgress ->
                                     val info = bangumiInfo?.info ?: return@BangumiInfoPage
                                     val qn = SharedPreferencesUtil.getInt("play_qn", 16)
-                                    val epLongTitle = ep.title_long ?: ""
-                                    val epTitle = ep.title ?: ""
+                                    val allEpisodes = bangumiInfo?.sectionList?.flatMap { it.episodes } ?: listOf(ep)
+                                    val selectedIndex = allEpisodes.indexOfFirst { it.id == ep.id }.coerceAtLeast(0)
+                                    
+                                    val epLongTitle = ep.title_long
+                                    val epTitle = ep.title
                                     val playerData = PlayerData(
                                         title = epLongTitle.ifEmpty { epTitle },
                                         aid = ep.aid,
                                         cid = ep.cid,
-                                        cids = listOf(ep.cid),
-                                        pagenames = listOf(epLongTitle),
+                                        cids = allEpisodes.map { it.cid },
+                                        epids = allEpisodes.map { it.id },
+                                        aids = allEpisodes.map { it.aid },
+                                        pagenames = allEpisodes.map { it.title_long.ifEmpty { it.title } },
+                                        currentPageIndex = selectedIndex,
                                         type = PlayerData.TYPE_BANGUMI,
+                                        epid = ep.id,
+                                        sid = info.season_id,
                                         qn = qn,
+                                        progress = initialProgress,
                                         bvid = ""
                                     )
                                     val jsonStr = Gson().toJson(playerData)
                                     val encodedJson = URLEncoder.encode(jsonStr, StandardCharsets.UTF_8.toString())
                                     navController.navigate("player/$encodedJson")
-                                }
+                                },
+                                onFollowClick = { viewModel.toggleFollow() }
                             )
                             1 -> VideoCommentsPage(
                                 replies = replies, 
@@ -250,6 +274,8 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
         }
     }
     
+    }
+    
     WriteReplyScreen(
         visible = showWriteReply,
         targetName = replyTarget?.sender?.name,
@@ -268,7 +294,6 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
         },
         onClose = { showWriteReply = false }
     )
-    }
 }
 
 @Composable
@@ -276,7 +301,8 @@ fun BangumiInfoPage(
     bangumi: Bangumi?, 
     focusRequester: FocusRequester,
     onBackClick: () -> Unit,
-    onEpisodeClick: (Bangumi.Episode) -> Unit
+    onEpisodeClick: (Bangumi.Episode, Int) -> Unit,
+    onFollowClick: () -> Unit,
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -368,7 +394,7 @@ fun BangumiInfoPage(
                 
                 item {
                     Text(
-                        text = bangumi.info.title ?: "",
+                        text = bangumi.info.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -388,7 +414,7 @@ fun BangumiInfoPage(
                 item {
                     val pubTime = bangumi.info.publish?.pub_time?.take(4)?.plus("年") ?: ""
                     Text(
-                        text = "${bangumi.info.area_name ?: ""} · $pubTime",
+                        text = "${bangumi.info.area_name} · $pubTime",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -404,7 +430,57 @@ fun BangumiInfoPage(
                     )
                 }
 
-                val evaluateText = bangumi.info.evaluate ?: ""
+                val evaluateText = bangumi.info.evaluate
+                val progress = bangumi.info.user_status?.progress
+                
+                if (progress != null && progress.last_ep_id > 0L) {
+                    item {
+                        Button(
+                            onClick = { 
+                                val ep = bangumi.sectionList.flatMap { it.episodes }.find { it.id == progress.last_ep_id }
+                                if (ep != null) {
+                                    onEpisodeClick(ep, progress.last_time.toInt())
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec),
+                            transformation = SurfaceTransformation(transformationSpec),
+                            icon = { Icon(Icons.Default.PlayCircleOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Text("继续观看", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                
+                item {
+                    val isFollowed = (bangumi.info.user_status?.follow ?: 0) > 0
+                    Button(
+                        onClick = onFollowClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        icon = { 
+                            Icon(
+                                if (isFollowed) Icons.Default.Favorite else Icons.Default.FavoriteBorder, 
+                                contentDescription = null,
+                                tint = if (isFollowed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+                            ) 
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isFollowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = if (isFollowed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text(if (isFollowed) "已追番" else "追番", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+
                 if (evaluateText.isNotEmpty()) {
                     item {
                         Box(
@@ -444,10 +520,19 @@ fun BangumiInfoPage(
                     }
                     
                     val episodes = bangumi.sectionList.firstOrNull()?.episodes ?: emptyList()
-                    items(episodes) { ep ->
-                        val hasDistinctLongTitle = !ep.title_long.isNullOrEmpty() && ep.title_long != ep.title
+                    var lastEpIndex = -1
+                    if (progress != null && progress.last_ep_id > 0L) {
+                        lastEpIndex = episodes.indexOfFirst { it.id == progress.last_ep_id }
+                    }
+
+                    items(episodes.size) { i ->
+                        val ep = episodes[i]
+                        val isLastWatched = ep.id == progress?.last_ep_id
+                        val epProgress = if (isLastWatched) progress.last_time.toInt() else 0
+                        val isWatched = lastEpIndex != -1 && i < lastEpIndex
+                        val hasDistinctLongTitle = ep.title_long.isNotEmpty() && ep.title_long != ep.title
                         Button(
-                            onClick = { onEpisodeClick(ep) },
+                            onClick = { onEpisodeClick(ep, epProgress) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .transformedHeight(this, transformationSpec),
@@ -459,7 +544,7 @@ fun BangumiInfoPage(
                             icon = if (hasDistinctLongTitle) {
                                 {
                                     Text(
-                                        text = ep.title ?: "",
+                                        text = ep.title,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -473,9 +558,9 @@ fun BangumiInfoPage(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    val longTitle = ep.title_long ?: ""
+                                    val longTitle = ep.title_long
                                     Text(
-                                        text = longTitle.takeIf { it.isNotEmpty() } ?: ep.title ?: "",
+                                        text = longTitle.takeIf { it.isNotEmpty() } ?: ep.title,
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Normal,
                                         maxLines = 1,
@@ -485,7 +570,29 @@ fun BangumiInfoPage(
                                         )
                                     )
                                 }
-                            }
+                            },
+                            secondaryLabel = if (isLastWatched || isWatched) {
+                                {
+                                    if (isLastWatched && progress != null) {
+                                        val timeStr = if (progress.last_time > 0) {
+                                            val minutes = progress.last_time / 60
+                                            val seconds = progress.last_time % 60
+                                            "看到 %02d:%02d".format(minutes, seconds)
+                                        } else "刚刚开始"
+                                        Text(
+                                            text = timeStr,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else if (isWatched) {
+                                        Text(
+                                            text = "已看完",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            } else null
                         )
                     }
                 }

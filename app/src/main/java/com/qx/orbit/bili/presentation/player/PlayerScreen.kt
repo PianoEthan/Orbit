@@ -105,7 +105,8 @@ import java.io.File
 @Composable
 fun PlayerScreen(
     initialData: PlayerData,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDisposeAction: (epid: Long, progress: Long) -> Unit = { _, _ -> }
 ) {
     BackHandler {
         onBack()
@@ -169,8 +170,35 @@ fun PlayerScreen(
         if (isPrepared) {
             if (isPlaying) danmakuView.resume() else danmakuView.pause()
         }
+        var heartbeatTick = 0
         while(isPlaying && isPrepared) {
             currentProgress = mediaPlayer.currentPosition
+            
+            if (heartbeatTick >= 15) {
+                heartbeatTick = 0
+                val pos = currentProgress / 1000
+                if (pos > 0 && playerData.type != PlayerData.TYPE_LOCAL && !isLive) {
+                    try {
+                        val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
+                        if (!isBangumi) {
+                            HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                        }
+                        HeartbeatApi.reportHeartbeat(
+                            aid = playerData.aid,
+                            bvid = playerData.bvid,
+                            cid = playerData.cid,
+                            playedTime = pos,
+                            type = if (isBangumi) "4" else "3",
+                            subType = if (isBangumi) "1" else null,
+                            epid = if (isBangumi) playerData.epid else null,
+                            sid = if (isBangumi) playerData.sid else null,
+                            videoDuration = (totalDuration / 1000).coerceAtLeast(0)
+                        )
+                    } catch (_: Exception) {}
+                }
+            }
+            heartbeatTick++
+            
             delay(1.seconds)
         }
     }
@@ -314,6 +342,14 @@ fun PlayerScreen(
                     isPrepared = true
                     isLoading = false
                     totalDuration = it.duration
+                    
+                    if (playerData.progress > 0) {
+                        val targetMs = (playerData.progress * 1000L).coerceAtMost(it.duration)
+                        it.seekTo(targetMs)
+                        currentProgress = targetMs
+                        playerData = playerData.copy(progress = 0)
+                    }
+                    
                     it.start()
                     isPlaying = true
                     danmakuView.start()
@@ -322,13 +358,47 @@ fun PlayerScreen(
                         // Report heartbeat on start
                         scope.launch {
                             try {
+                                val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
                                 HeartbeatApi.reportHeartbeat(
                                     aid = playerData.aid,
                                     bvid = playerData.bvid,
                                     cid = playerData.cid,
-                                    playedTime = 0
+                                    playedTime = playerData.progress.toLong().coerceAtLeast(0),
+                                    type = if (isBangumi) "4" else "3",
+                                    subType = if (isBangumi) "1" else null,
+                                    epid = if (isBangumi) playerData.epid else null,
+                                    sid = if (isBangumi) playerData.sid else null,
+                                    videoDuration = (totalDuration / 1000).coerceAtLeast(0)
                                 )
                             } catch (e: Exception) {}
+                        }
+                    }
+                }
+                mediaPlayer.setOnCompletionListener {
+                    scope.launch {
+                        val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
+                        if (isBangumi) {
+                            HeartbeatApi.reportHeartbeat(
+                                aid = playerData.aid, bvid = playerData.bvid, cid = playerData.cid, playedTime = -1, type = "4", subType = "1", epid = playerData.epid, sid = playerData.sid, videoDuration = (totalDuration / 1000).coerceAtLeast(0)
+                            )
+                        } else {
+                            HistoryApi.reportHistory(playerData.aid, playerData.cid, -1)
+                        }
+                        
+                        if (playerData.currentPageIndex + 1 < playerData.cids.size) {
+                            val nextIndex = playerData.currentPageIndex + 1
+                            val nextAid = if (playerData.aids.size > nextIndex) playerData.aids[nextIndex] else playerData.aid
+                            val nextCid = playerData.cids[nextIndex]
+                            val nextEpid = if (playerData.epids.size > nextIndex) playerData.epids[nextIndex] else playerData.epid
+                            val nextTitle = if (playerData.pagenames.size > nextIndex) playerData.pagenames[nextIndex] else playerData.title
+                            playerData = playerData.copy(
+                                currentPageIndex = nextIndex,
+                                aid = nextAid,
+                                cid = nextCid,
+                                epid = nextEpid,
+                                title = nextTitle,
+                                progress = 0
+                            )
                         }
                     }
                 }
@@ -448,16 +518,26 @@ fun PlayerScreen(
                 try {
                     currentPosSeconds = mediaPlayer.currentPosition / 1000
                 } catch (e: Exception) {}
+                
+                onDisposeAction(playerData.epid, currentPosSeconds)
 
                 GlobalScope.launch {
                     try {
-                        HistoryApi.reportHistory(playerData.aid, playerData.cid, currentPosSeconds)
+                        val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
+                        if (!isBangumi) {
+                            HistoryApi.reportHistory(playerData.aid, playerData.cid, currentPosSeconds)
+                        }
                         HeartbeatApi.reportHeartbeat(
                             aid = playerData.aid,
                             bvid = playerData.bvid,
                             cid = playerData.cid,
                             playedTime = currentPosSeconds,
-                            startTs = startTs
+                            startTs = startTs,
+                            type = if (isBangumi) "4" else "3",
+                            subType = if (isBangumi) "1" else null,
+                            epid = if (isBangumi) playerData.epid else null,
+                            sid = if (isBangumi) playerData.sid else null,
+                            videoDuration = (totalDuration / 1000).coerceAtLeast(0)
                         )
                     } catch (e: Exception) {}
                 }
@@ -546,12 +626,20 @@ fun PlayerScreen(
                                 if (playerData.type == PlayerData.TYPE_LOCAL || isLive) return@launch
                                 try {
                                     val pos = mediaPlayer.currentPosition / 1000
-                                    HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                                    val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
+                                    if (!isBangumi) {
+                                        HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                                    }
                                     HeartbeatApi.reportHeartbeat(
                                         aid = playerData.aid,
                                         bvid = playerData.bvid,
                                         cid = playerData.cid,
-                                        playedTime = pos
+                                        playedTime = pos,
+                                        type = if (isBangumi) "4" else "3",
+                                        subType = if (isBangumi) "1" else null,
+                                        epid = if (isBangumi) playerData.epid else null,
+                                        sid = if (isBangumi) playerData.sid else null,
+                                        videoDuration = (totalDuration / 1000).coerceAtLeast(0)
                                     )
                                 } catch (_: Exception) {}
                             }
@@ -805,12 +893,20 @@ fun PlayerScreen(
                                     if (playerData.type == PlayerData.TYPE_LOCAL || isLive) return@launch
                                     try {
                                         val pos = mediaPlayer.currentPosition / 1000
-                                        HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                                        val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
+                                        if (!isBangumi) {
+                                            HistoryApi.reportHistory(playerData.aid, playerData.cid, pos)
+                                        }
                                         HeartbeatApi.reportHeartbeat(
                                             aid = playerData.aid,
                                             bvid = playerData.bvid,
                                             cid = playerData.cid,
-                                            playedTime = pos
+                                            playedTime = pos,
+                                            type = if (isBangumi) "4" else "3",
+                                            subType = if (isBangumi) "1" else null,
+                                            epid = if (isBangumi) playerData.epid else null,
+                                            sid = if (isBangumi) playerData.sid else null,
+                                            videoDuration = (totalDuration / 1000).coerceAtLeast(0)
                                         )
                                     } catch (_: Exception) {}
                                 }

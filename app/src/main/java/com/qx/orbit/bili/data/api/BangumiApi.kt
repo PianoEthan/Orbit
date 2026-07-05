@@ -8,6 +8,9 @@ import com.qx.orbit.bili.data.remote.Result
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 
@@ -37,7 +40,7 @@ object BangumiApi {
         @SerializedName("areas") val areas: List<AreaData>? = null,
         @SerializedName("publish") val publish: PublishData? = null,
         @SerializedName("season_title") val season_title: String? = null,
-        @SerializedName("stat") val stat: SeasonStat? = null,
+        @SerializedName("stat") val stat: FollowStat? = null,
         @SerializedName("url") val url: String? = null
     )
 
@@ -112,7 +115,21 @@ object BangumiApi {
         @SerializedName("series") val series: SeriesData? = null,
         @SerializedName("seasons") val seasons: List<SeasonItem>? = null,
         @SerializedName("total_ep") val total_ep: Int = 0,
-        @SerializedName("staff") val staff: String? = null
+        @SerializedName("staff") val staff: String? = null,
+        @SerializedName("user_status") val user_status: UserStatusData? = null
+    )
+
+    internal data class UserStatusData(
+        @SerializedName("progress") val progress: ProgressData? = null,
+        @SerializedName(value = "follow", alternate = ["is_follow", "is_followed", "attention"]) val follow: Int = 0,
+        @SerializedName("follow_status") val follow_status: Int = 0,
+        @SerializedName("status") val status: Int = 0
+    )
+
+    internal data class ProgressData(
+        @SerializedName("last_ep_id") val last_ep_id: Long = 0,
+        @SerializedName("last_ep_index") val last_ep_index: String? = null,
+        @SerializedName("last_time") val last_time: Long = 0
     )
 
     internal data class SeasonResult(
@@ -243,19 +260,70 @@ object BangumiApi {
         val data = resp.data ?: return@withContext Pair(1, emptyList<VideoCard>())
         val list = data.list
         if (list.isNullOrEmpty()) return@withContext Pair(1, emptyList<VideoCard>())
-        val cards = list.map { item ->
-            VideoCard(
-                title = item.title ?: "",
-                upName = "",
-                view = item.stat?.views?.let { StringUtil.toWan(it.toLong()) } ?: "",
-                cover = item.cover ?: "",
-                type = "bangumi",
-                aid = item.media_id,
-                bvid = "",
-                cid = 0
-            )
+        val cards = coroutineScope {
+            list.map { item ->
+                async {
+                    // 并发获取每个番剧的播出信息与用户观看进度
+                    val fullInfo = getInfo(item.media_id)
+                    val progress = fullInfo?.user_status?.progress
+                    val count = fullInfo?.count ?: item.total_count
+
+                    // 左侧：集数信息（使用 new_ep.index_show，如「全12话」）
+                    val indexShow = item.new_ep?.index_show ?: if (count > 0) "全${count}话" else ""
+
+                    // 右侧：观看进度
+                    val progressStr = if (progress != null && !progress.last_ep_index.isNullOrEmpty()) {
+                        val lastEp = progress.last_ep_index
+                        if (count > 0 && lastEp == count.toString()) {
+                            "已看完"
+                        } else if (lastEp.toIntOrNull() != null) {
+                            "看到第${lastEp}话"
+                        } else {
+                            "看到 $lastEp"
+                        }
+                    } else {
+                        "从未看过"
+                    }
+
+                    VideoCard(
+                        title = item.title ?: "",
+                        upName = indexShow,
+                        view = progressStr,
+                        cover = (item.cover ?: "").replace("http://", "https://"),
+                        type = "bangumi",
+                        aid = item.media_id,
+                        bvid = "",
+                        cid = 0,
+                        seasonId = item.season_id
+                    )
+                }
+            }.awaitAll()
         }
         Pair(0, cards)
+    }
+
+    suspend fun followBangumi(seasonId: Long): Boolean = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        if (csrf.isEmpty()) return@withContext false
+        val resp = api.addBangumiFollow(seasonId, csrf)
+        if (resp is Result.Success) {
+            val type = object : TypeToken<ApiResponse<Any>>() {}.type
+            val parsed: ApiResponse<Any>? = GsonConfig.gson.fromJson(resp.data, type)
+            return@withContext parsed?.isSuccess == true
+        }
+        false
+    }
+
+    suspend fun unfollowBangumi(seasonId: Long): Boolean = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        if (csrf.isEmpty()) return@withContext false
+        val resp = api.deleteBangumiFollow(seasonId, csrf)
+        if (resp is Result.Success) {
+            val type = object : TypeToken<ApiResponse<Any>>() {}.type
+            val parsed: ApiResponse<Any>? = GsonConfig.gson.fromJson(resp.data, type)
+            return@withContext parsed?.isSuccess == true
+        }
+        false
     }
 
     suspend fun getBangumi(mediaId: Long): Bangumi? = withContext(Dispatchers.IO) {
@@ -347,8 +415,8 @@ object BangumiApi {
                         up_info = media.up_info?.let {
                             Bangumi.UpInfo(mid = it.mid, name = it.name ?: "", avatar = it.avatar ?: "")
                         },
-                        series = null,
-                        seasons = emptyList()
+                        seasons = emptyList(),
+                        user_status = null
                     )
                 }
             } else {
@@ -374,6 +442,25 @@ object BangumiApi {
             }
         } else if (score == 0f) {
             score = result.rating?.score ?: 0f
+        }
+
+        var actualUserStatus = result.user_status
+        if (result.season_id > 0) {
+            val userStatusJson = when (val r = api.getSeasonUserStatus(seasonId = result.season_id)) {
+                is Result.Success -> r.data
+                is Result.Error -> null
+            }
+            if (userStatusJson != null) {
+                try {
+                    val type = object : TypeToken<ApiResponse<UserStatusData>>() {}.type
+                    val userStatusResp: ApiResponse<UserStatusData>? = GsonConfig.gson.fromJson(userStatusJson, type)
+                    if (userStatusResp != null && userStatusResp.isSuccess && userStatusResp.data != null) {
+                        actualUserStatus = userStatusResp.data
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
 
         Bangumi.Info(
@@ -423,7 +510,19 @@ object BangumiApi {
                     cover = s.cover ?: "",
                     badge = s.badge ?: ""
                 )
-            } ?: emptyList()
+            } ?: emptyList(),
+            user_status = actualUserStatus?.let { status ->
+                Bangumi.UserStatus(
+                    progress = status.progress?.let { p ->
+                        Bangumi.Progress(
+                            last_ep_id = p.last_ep_id,
+                            last_ep_index = p.last_ep_index ?: "",
+                            last_time = p.last_time
+                        )
+                    },
+                    follow = if (status.follow > 0 || status.follow_status > 0 || status.status > 0) 1 else 0
+                )
+            }
         )
     }
 

@@ -107,6 +107,8 @@ import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.about.AboutScreen
+import com.qx.orbit.bili.presentation.FollowListScreen
+import com.qx.orbit.bili.presentation.viewmodel.FollowListViewModel
 import com.qx.orbit.bili.presentation.player.PlayerScreen
 import com.qx.orbit.bili.presentation.settings.SettingLoginStatusScreen
 import com.qx.orbit.bili.presentation.settings.SettingPreferenceScreen
@@ -324,6 +326,10 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     val searchViewModel: SearchViewModel = viewModel()
                     SearchResultScreen(viewModel = searchViewModel, query = query, navController = navController)
                 }
+                composable("follow_list") {
+                    val followListViewModel: FollowListViewModel = viewModel()
+                    FollowListScreen(viewModel = followListViewModel, navController = navController)
+                }
                 composable(
                     "reply_detail/{rpid}/{replyJson}",
                     arguments = listOf(
@@ -353,9 +359,17 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     navArgument("playerDataJson") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
+                val previousEntry = remember { navController.previousBackStackEntry }
                 val json = backStackEntry.arguments?.getString("playerDataJson") ?: ""
                 val playerData = Gson().fromJson(json, PlayerData::class.java) ?: PlayerData(aid = 0L)
-                PlayerScreen(initialData = playerData, onBack = { navController.popBackStack() })
+                PlayerScreen(
+                    initialData = playerData, 
+                    onBack = { navController.popBackStack() },
+                    onDisposeAction = { epid, progress ->
+                        previousEntry?.savedStateHandle?.set("updatedEpid", epid)
+                        previousEntry?.savedStateHandle?.set("updatedProgress", progress)
+                    }
+                )
             }
             composable(
                 "user_space/{mid}",
@@ -625,6 +639,26 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                                     Icon(Icons.Default.Download, modifier = Modifier.size(20.dp), contentDescription = "缓存管理")
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("缓存")
+                                }
+                            }
+                            item {
+                                Button(
+                                    onClick = {
+                                        showTabMenu = false
+                                        navController.navigate("follow_list")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, menuTransformationSpec),
+                                    transformation = SurfaceTransformation(menuTransformationSpec)
+                                ) {
+                                    Icon(Icons.Default.Favorite, modifier = Modifier.size(20.dp), contentDescription = "追番列表")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("追番")
                                 }
                             }
                             item {

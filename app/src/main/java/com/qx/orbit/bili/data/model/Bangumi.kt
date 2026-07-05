@@ -27,7 +27,19 @@ data class Bangumi(
         val stat: Stat? = null,
         val up_info: UpInfo? = null,
         val series: Series? = null,
-        val seasons: List<Season> = emptyList()
+        val seasons: List<Season> = emptyList(),
+        val user_status: UserStatus? = null
+    )
+
+    data class UserStatus(
+        val progress: Progress? = null,
+        val follow: Int = 0
+    )
+
+    data class Progress(
+        val last_ep_id: Long = 0,
+        val last_ep_index: String = "",
+        val last_time: Long = 0
     )
 
     data class Publish(
