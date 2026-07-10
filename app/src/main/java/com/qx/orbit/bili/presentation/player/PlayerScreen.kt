@@ -58,6 +58,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -109,18 +110,22 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.findActivity
 import com.qx.orbit.bili.presentation.viewmodel.EmoteInline
 import com.qx.orbit.bili.service.PlayerForegroundService
+import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
 import com.qx.orbit.bili.util.SharedPreferencesUtil
+import com.qx.orbit.bili.util.TextureViewProbe
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import master.flame.danmaku.danmaku.loader.android.DanmakuLoaderFactory
-import master.flame.danmaku.danmaku.model.android.DanmakuContext
-import master.flame.danmaku.danmaku.model.android.Danmakus
-import master.flame.danmaku.danmaku.parser.BaseDanmakuParser
-import master.flame.danmaku.danmaku.parser.android.BiliDanmukuParser
-import master.flame.danmaku.danmaku.parser.android.BiliProtobufDanmakuParser
-import master.flame.danmaku.ui.widget.DanmakuView
+import com.qx.orbit.bili.util.danmaku.base.DanmakuConfig
+import com.qx.orbit.bili.util.danmaku.base.DanmakuPlayer
+import com.qx.orbit.bili.util.danmaku.base.ProtobufDanmakuParser
+import com.qx.orbit.bili.util.danmaku.base.createDanmaku
+import com.qx.orbit.bili.util.danmaku.base.createDanmakuConfig
+import com.qx.orbit.bili.util.danmaku.base.createDanmakuPlayer
+import com.qx.orbit.bili.util.danmaku.base.createEmptyParser
+import com.qx.orbit.bili.util.danmaku.base.createProtobufParser
+import com.qx.orbit.bili.util.danmaku.base.createXmlParser
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
@@ -205,8 +210,8 @@ fun PlayerScreen(
     }
 
     val mediaPlayer = remember { IjkMediaPlayer() }
-    val danmakuView = remember { DanmakuView(context) }
-    var danmakuContext by remember { mutableStateOf<DanmakuContext?>(null) }
+    val danmakuPlayer = remember { createDanmakuPlayer(context) }
+    var danmakuConfig by remember { mutableStateOf<DanmakuConfig?>(null) }
 
     val mediaSession = remember {
         MediaSession(context, "OrbitPlayer").apply {
@@ -229,19 +234,19 @@ fun PlayerScreen(
         val callback = object : MediaSession.Callback() {
             override fun onPlay() {
                 mediaPlayer.start()
-                danmakuView.resume()
+                danmakuPlayer.resume()
                 isPlaying = true
             }
 
             override fun onPause() {
                 mediaPlayer.pause()
-                danmakuView.pause()
+                danmakuPlayer.pause()
                 isPlaying = false
             }
 
             override fun onSeekTo(pos: Long) {
                 mediaPlayer.seekTo(pos)
-                danmakuView.seekTo(pos)
+                danmakuPlayer.seekTo(pos)
                 currentProgress = pos
             }
             
@@ -401,7 +406,10 @@ fun PlayerScreen(
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
     var surfaceReady by remember { mutableStateOf(false) }
     var textureSurface by remember { mutableStateOf<Surface?>(null) }
-    
+    val isTextureViewOk = remember { mutableIntStateOf(SharedPreferencesUtil.getInt("isTextureViewOk", 0)) }
+    val showTextureDialog = remember { mutableStateOf(false) }
+    val probeFailedThisSession = remember { mutableStateOf(false) }
+
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
@@ -409,6 +417,14 @@ fun PlayerScreen(
     var videoWidth by remember { mutableFloatStateOf(16f) }
     var videoHeight by remember { mutableFloatStateOf(9f) }
     val useTextureView = remember { SharedPreferencesUtil.getBoolean("player_texture_view", true) }
+    val effectiveUseTexture = useTextureView && isTextureViewOk.intValue != -1
+
+    // Prefs 已记录 TextureView 不可用 → 弹 dialog（允许 retry）
+    LaunchedEffect(Unit) {
+        if (useTextureView && isTextureViewOk.intValue == -1) {
+            showTextureDialog.value = true
+        }
+    }
 
     LaunchedEffect(interactionCounter, isPlaying) {
         if (interactionCounter > 0 || !isPlaying) {
@@ -422,7 +438,7 @@ fun PlayerScreen(
 
     LaunchedEffect(isPlaying, isPrepared) {
         if (isPrepared) {
-            if (isPlaying) danmakuView.resume() else danmakuView.pause()
+            if (isPlaying) danmakuPlayer.resume() else danmakuPlayer.pause()
         }
         var heartbeatTick = 0
         while(isPlaying && isPrepared) {
@@ -478,7 +494,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(showDanmaku) {
-        if (showDanmaku) danmakuView.show() else danmakuView.hide()
+        if (showDanmaku) danmakuPlayer.show() else danmakuPlayer.hide()
     }
 
     LaunchedEffect(if (isLive) playerData.aid else if (isLocal) playerData.videoUrl else playerData.cid, isAudioOnlyMode) {
@@ -490,19 +506,19 @@ fun PlayerScreen(
 
             if (!isLive && !isLocal) {
                 val danmakuSegment = DanmakuApi.getVideoDanmakuSegment(playerData.aid, playerData.cid, 1)
-                val parser = BiliProtobufDanmakuParser()
+                val parser = createProtobufParser()
                 if (danmakuSegment != null) {
                     parser.setDanmakuSegments(listOf(danmakuSegment))
                 }
-                val ctx = DanmakuContext.create().apply {
+                val config = createDanmakuConfig().apply {
                     val mergeDuplicates = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
                     val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true)
                     val maxLines = SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
 
-                    setDuplicateMergingEnabled(mergeDuplicates)
+                    setDuplicateMerging(mergeDuplicates)
                     setSpecialDanmakuVisibility(enableAdvanced)
-                    
+
                     if (!allowOverlap) {
                         val overlappingPairs = mapOf(1 to true, 5 to true, 4 to true, 6 to true)
                         preventOverlapping(overlappingPairs)
@@ -516,52 +532,42 @@ fun PlayerScreen(
                     setScaleTextSize(0.8f)
                     setDanmakuTransparency(0.4f)
                 }
-                danmakuContext = ctx
-                danmakuView.prepare(parser, ctx)
-                danmakuView.enableDanmakuDrawingCache(true)
+                danmakuConfig = config
+                danmakuPlayer.prepare(parser, config)
+                danmakuPlayer.enableDrawingCache(true)
             } else if (isLocal) {
-                val ctx = DanmakuContext.create().apply {
+                val config = createDanmakuConfig().apply {
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
                     setSpecialDanmakuVisibility(enableAdvanced)
-                    setDuplicateMergingEnabled(false)
+                    setDuplicateMerging(false)
                     setScaleTextSize(0.8f)
                     setDanmakuTransparency(0.4f)
                 }
-                danmakuContext = ctx
+                danmakuConfig = config
                 var xmlFile = File("${playerData.videoUrl}.danmaku.xml")
                 if (!xmlFile.exists()) {
                     val fallbackPath = playerData.videoUrl.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
                     xmlFile = File(fallbackPath.toUri().path ?: "")
                 }
                 if (xmlFile.exists()) {
-                    val loader = DanmakuLoaderFactory.create(DanmakuLoaderFactory.TAG_BILI)
-                    loader.load(xmlFile.inputStream())
-                    val parser = BiliDanmukuParser()
-                    parser.load(loader.dataSource)
-                    danmakuView.prepare(parser, ctx)
+                    val parser = createXmlParser()
+                    parser.load(xmlFile.inputStream())
+                    danmakuPlayer.prepare(parser, config)
                 } else {
-                    danmakuView.prepare(object : BaseDanmakuParser() {
-                        override fun parse(): Danmakus {
-                            return Danmakus()
-                        }
-                    }, ctx)
+                    danmakuPlayer.prepare(createEmptyParser(), config)
                 }
-                danmakuView.enableDanmakuDrawingCache(true)
+                danmakuPlayer.enableDrawingCache(true)
             } else {
-                val ctx = DanmakuContext.create().apply {
+                val config = createDanmakuConfig().apply {
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
                     setSpecialDanmakuVisibility(enableAdvanced)
-                    setDuplicateMergingEnabled(false)
+                    setDuplicateMerging(false)
                     setScaleTextSize(0.8f)
                     setDanmakuTransparency(0.4f)
                 }
-                danmakuContext = ctx
-                danmakuView.prepare(object : BaseDanmakuParser() {
-                    override fun parse(): Danmakus {
-                        return Danmakus()
-                    }
-                }, ctx)
-                danmakuView.enableDanmakuDrawingCache(true)
+                danmakuConfig = config
+                danmakuPlayer.prepare(createEmptyParser(), config)
+                danmakuPlayer.enableDrawingCache(true)
             }
 
             val result = if (isLive || isLocal) playerData 
@@ -590,7 +596,7 @@ fun PlayerScreen(
                 }
                 val playUrl = if (isAudioOnlyMode && result.audioUrl.isNotEmpty()) result.audioUrl else result.videoUrl
                 mediaPlayer.dataSource = playUrl
-                if (useTextureView) {
+                if (effectiveUseTexture) {
                     if (textureSurface != null) {
                         mediaPlayer.setSurface(textureSurface)
                     }
@@ -621,7 +627,7 @@ fun PlayerScreen(
                     
                     it.start()
                     isPlaying = true
-                    danmakuView.start()
+                    danmakuPlayer.start()
                     
                     if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
                         // Report heartbeat on start
@@ -684,12 +690,12 @@ fun PlayerScreen(
                 mediaPlayer.setOnInfoListener { _, what, _ ->
                     when (what) {
                         IjkMediaPlayer.MEDIA_INFO_BUFFERING_START -> {
-                            danmakuView.pause()
+                            danmakuPlayer.pause()
                             isLoading = true
                         }
                         IjkMediaPlayer.MEDIA_INFO_BUFFERING_END -> {
                             if (isPlaying) {
-                                danmakuView.resume()
+                                danmakuPlayer.resume()
                             }
                             isLoading = false
                         }
@@ -723,8 +729,8 @@ fun PlayerScreen(
                         @SuppressLint("LocalContextResourcesRead")
                         override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?, id: String) {
                             try {
-                                val ctx = danmakuContext ?: return
-                                val item = ctx.mDanmakuFactory.createDanmaku(type) ?: return
+                                val config = danmakuConfig ?: return
+                                val item = createDanmaku(config, type) ?: return
                                 val showSender = SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true)
                                 val displayText = if (!showSender && senderName.isNotEmpty()) {
                                     text.removePrefix("$senderName：")
@@ -734,7 +740,7 @@ fun PlayerScreen(
                                 item.priority = 1
                                 item.textColor = color
                                 item.textSize = textSize * (context.resources.displayMetrics.density - 0.6f)
-                                item.time = danmakuView.currentTime + 100
+                                item.time = danmakuPlayer.getCurrentTime() + 100
                                 
                                 if (borderColor != 0) {
                                     item.borderColor = borderColor
@@ -748,7 +754,7 @@ fun PlayerScreen(
                                     item.obj = emotes
                                 }
                                 
-                                danmakuView.addDanmaku(item)
+                                danmakuPlayer.addDanmaku(item)
                             } catch (_: Exception) {}
                         }
                         override var onlineNumber: String = ""
@@ -780,10 +786,10 @@ fun PlayerScreen(
     LaunchedEffect(isLongPressSpeedUp, playbackSpeed) {
         if (isLongPressSpeedUp) {
             try { mediaPlayer.setSpeed(2.0f) } catch(e:Exception){}
-            try { danmakuView.setSpeed(2.0f) } catch(e:Exception){}
+            try { danmakuPlayer.setSpeed(2.0f) } catch(e:Exception){}
         } else {
             try { mediaPlayer.setSpeed(playbackSpeed) } catch(e:Exception){}
-            try { danmakuView.setSpeed(playbackSpeed) } catch(e:Exception){}
+            try { danmakuPlayer.setSpeed(playbackSpeed) } catch(e:Exception){}
         }
     }
 
@@ -807,7 +813,7 @@ fun PlayerScreen(
                 } else {
                     if (isPlaying) {
                         mediaPlayer.pause()
-                        danmakuView.pause()
+                        danmakuPlayer.pause()
                         isPlaying = false
                     }
                 }
@@ -818,7 +824,7 @@ fun PlayerScreen(
                     } catch (e: Exception) {}
                     isAudioOnlyMode = false
                 } else {
-                    if (useTextureView) {
+                    if (effectiveUseTexture) {
                         if (textureSurface != null) mediaPlayer.setSurface(textureSurface)
                     } else {
                         if (surfaceHolder != null) mediaPlayer.setDisplay(surfaceHolder)
@@ -871,7 +877,7 @@ fun PlayerScreen(
             liveWebSocket?.close(1000, "bye")
             liveWebSocket = null
             mediaPlayer.release()
-            danmakuView.release()
+            danmakuPlayer.release()
         }
     }
 
@@ -903,7 +909,7 @@ fun PlayerScreen(
                     onDoubleTap = {
                         if (isPlaying) {
                             mediaPlayer.pause()
-                            danmakuView.pause()
+                            danmakuPlayer.pause()
                             isPlaying = false
                             // Report progress on pause
                             scope.launch {
@@ -929,7 +935,7 @@ fun PlayerScreen(
                             }
                         } else {
                             mediaPlayer.start()
-                            danmakuView.resume()
+                            danmakuPlayer.resume()
                             isPlaying = true
                         }
                         interactionCounter++
@@ -1044,7 +1050,7 @@ fun PlayerScreen(
                     val delta = it.verticalScrollPixels
                     val newProgress = (mediaPlayer.currentPosition + delta * 100).toLong().coerceIn(0L, totalDuration)
                     mediaPlayer.seekTo(newProgress)
-                    danmakuView.seekTo(newProgress)
+                    danmakuPlayer.seekTo(newProgress)
                     currentProgress = newProgress
                     interactionCounter++
                 }
@@ -1075,9 +1081,28 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxSize(0.65f).clip(RoundedCornerShape(16.dp))
                     )
                 }
+                if (useTextureView && isTextureViewOk.intValue == 0) {
+                    AndroidView(
+                        factory = { ctx ->
+                            FrameLayout(ctx).apply {
+                                TextureViewProbe.probe(this) { ok ->
+                                    SharedPreferencesUtil.putInt("isTextureViewOk", if (ok) 1 else -1)
+                                    isTextureViewOk.intValue = if (ok) 1 else -1
+                                    if (!ok) {
+                                        probeFailedThisSession.value = true
+                                        showTextureDialog.value = true
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(1.dp)
+                    )
+                }
+
+                key(useTextureView, isTextureViewOk.intValue) {
                 AndroidView(
                     factory = { ctx ->
-                        if (useTextureView) {
+                        if (effectiveUseTexture) {
                             TextureView(ctx).apply {
                                 layoutParams = FrameLayout.LayoutParams(
                                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -1135,12 +1160,13 @@ fun PlayerScreen(
                             matchHeightConstraintsFirst = videoHeight > videoWidth
                         )
                 )
+                }
             }
         }
 
         // DanmakuView outside scaling container to prevent scaling with video
         AndroidView(
-            factory = { danmakuView },
+            factory = { danmakuPlayer.view },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -1217,21 +1243,21 @@ fun PlayerScreen(
                             detectHorizontalDragGestures(
                                 onDragStart = {
                                     dragProgress = (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                                    danmakuView.pause()
+                                    danmakuPlayer.pause()
                                 },
                                 onDragEnd = {
                                     if (dragProgress >= 0f) {
                                         val targetTime = (dragProgress * totalDuration).toLong()
                                         mediaPlayer.seekTo(targetTime)
-                                        danmakuView.seekTo(targetTime)
+                                        danmakuPlayer.seekTo(targetTime)
                                         currentProgress = targetTime
                                         dragProgress = -1f
-                                        if (isPlaying) danmakuView.resume()
+                                        if (isPlaying) danmakuPlayer.resume()
                                     }
                                 },
                                 onDragCancel = {
                                     dragProgress = -1f
-                                    if (isPlaying) danmakuView.resume()
+                                    if (isPlaying) danmakuPlayer.resume()
                                 },
                                 onHorizontalDrag = { change, dragAmount ->
                                     change.consume()
@@ -1330,7 +1356,7 @@ fun PlayerScreen(
                         onClick = {
                             if (isPlaying) {
                                 mediaPlayer.pause()
-                                danmakuView.pause()
+                                danmakuPlayer.pause()
                                 isPlaying = false
                                 scope.launch {
                                     if (playerData.type == PlayerData.TYPE_LOCAL || isLive) return@launch
@@ -1355,7 +1381,7 @@ fun PlayerScreen(
                                 }
                             } else {
                                 mediaPlayer.start()
-                                danmakuView.resume()
+                                danmakuPlayer.resume()
                                 isPlaying = true
                             }
                         },
@@ -1455,6 +1481,34 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+        }
+
+        // TextureView 兼容性提示 dialog
+        if (showTextureDialog.value && isTextureViewOk.intValue != 1) {
+            val canRetry = !probeFailedThisSession.value
+            WysAlertDialog(
+                show = true,
+                onDismissRequest = { showTextureDialog.value = false },
+                title = "渲染引擎提示",
+                content = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("您的设备不支持 TextureView，建议切换到 SurfaceView")
+                        if (canRetry) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            androidx.wear.compose.material3.Button(onClick = {
+                                showTextureDialog.value = false
+                                probeFailedThisSession.value = false
+                                isTextureViewOk.intValue = 0
+                                SharedPreferencesUtil.putInt("isTextureViewOk", 0)
+                            }) { Text("重试检测") }
+                        }
+                    }
+                },
+                onConfirm = {
+                    SharedPreferencesUtil.putBoolean("player_texture_view", false)
+                    showTextureDialog.value = false
+                }
+            )
         }
     }
 }

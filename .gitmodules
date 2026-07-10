@@ -1,0 +1,3 @@
+[submodule "DFMNext"]
+	path = DFMNext
+	url = git@github.com:YNotBili/DFMNext.git
