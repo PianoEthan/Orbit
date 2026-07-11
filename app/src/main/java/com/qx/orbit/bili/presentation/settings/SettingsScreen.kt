@@ -422,47 +422,18 @@ fun SettingApsisPlayerScreen(navController: NavController) {
             }
 
             item {
-                ListHeader(
+                Button(
+                    onClick = { navController.navigate("settings_danmaku_engine") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
                     transformation = SurfaceTransformation(transformationSpec),
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
                 ) {
-                    Text(text = "弹幕引擎", color = MaterialTheme.colorScheme.primary)
-                }
-            }
-
-            val engineOptions = listOf("dfm" to "DanmakuFlameMaster（推荐）", "dfmnext" to "DFMNext")
-
-            engineOptions.forEach { (value, label) ->
-                item {
-                    TitleCard(
-                        onClick = {
-                            currentDanmakuEngine = value
-                            SharedPreferencesUtil.putString("danmaku_engine", value)
-                        },
-                        transformation = SurfaceTransformation(transformationSpec),
-                        title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (currentDanmakuEngine == value) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "已选择",
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(label)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec),
-                        colors = if (currentDanmakuEngine == value) {
-                            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
-                        } else CardDefaults.cardColors()
-                    )
+                    Text(text = "弹幕引擎设置", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
 
@@ -839,6 +810,71 @@ fun SettingVideoRenderScreen(navController: NavController) {
                         }
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun SettingDanmakuEngineScreen(navController: NavController) {
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    var currentDanmakuEngine by remember { mutableStateOf(SharedPreferencesUtil.getString("danmaku_engine", "dfm")) }
+
+    ScreenScaffold(
+        scrollState = listState,
+        timeText = { WysTimeText() }
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
+            item {
+                ListHeader(
+                    transformation = SurfaceTransformation(transformationSpec),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                ) {
+                    Text(text = "弹幕引擎", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            val engineOptions = listOf("dfm" to "DanmakuFlameMaster（推荐）", "dfmnext" to "DFMNext")
+
+            engineOptions.forEach { (value, label) ->
+                item {
+                    TitleCard(
+                        onClick = {
+                            currentDanmakuEngine = value
+                            SharedPreferencesUtil.putString("danmaku_engine", value)
+                        },
+                        transformation = SurfaceTransformation(transformationSpec),
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (currentDanmakuEngine == value) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "已选择",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(label)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                        colors = if (currentDanmakuEngine == value) {
+                            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                        } else CardDefaults.cardColors()
+                    )
+                }
+            }
+
         }
     }
 }

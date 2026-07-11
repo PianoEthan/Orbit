@@ -121,6 +121,7 @@ import com.qx.orbit.bili.presentation.settings.SettingPreferenceScreen
 import com.qx.orbit.bili.presentation.settings.SettingApsisPlayerScreen
 import com.qx.orbit.bili.presentation.settings.SettingUIScreen
 import com.qx.orbit.bili.presentation.settings.SettingVideoRenderScreen
+import com.qx.orbit.bili.presentation.settings.SettingDanmakuEngineScreen
 import com.qx.orbit.bili.presentation.settings.SettingCacheLocationScreen
 import com.qx.orbit.bili.presentation.settings.OneFingerZoomTutorialScreen
 import com.qx.orbit.bili.presentation.settings.SettingsScreen
@@ -361,8 +362,14 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     val watchLaterViewModel: com.qx.orbit.bili.presentation.viewmodel.WatchLaterViewModel = viewModel()
                     WatchLaterScreen(viewModel = watchLaterViewModel, navController = navController)
                 }
-                composable("reply_detail") {
-                    val reply = navController.previousBackStackEntry?.savedStateHandle?.get<Reply>("reply")
+                composable("reply_detail") { entry ->
+                    var reply = entry.savedStateHandle.get<Reply>("reply")
+                    if (reply == null) {
+                        reply = navController.previousBackStackEntry?.savedStateHandle?.get<Reply>("reply")
+                        if (reply != null) {
+                            entry.savedStateHandle.set("reply", reply)
+                        }
+                    }
                     val replyDetailViewModel: ReplyDetailViewModel = viewModel()
                     if (reply != null) {
                         ReplyDetailScreen(reply = reply, viewModel = replyDetailViewModel, navController = navController)
@@ -422,6 +429,9 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             }
             composable("settings_video_render") {
                 SettingVideoRenderScreen(navController = navController)
+            }
+            composable("settings_danmaku_engine") {
+                SettingDanmakuEngineScreen(navController = navController)
             }
             composable("settings_video_quality") {
                 SettingVideoQualityScreen(navController = navController)

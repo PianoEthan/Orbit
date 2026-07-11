@@ -1,6 +1,7 @@
 package com.qx.orbit.bili.presentation
 
-import android.view.HapticFeedbackConstants
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -24,9 +25,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.text.ClickableText
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +44,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Download
@@ -53,7 +52,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayCircleOutline
-import androidx.compose.material.icons.filled.WatchLater
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,27 +64,28 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -108,18 +108,14 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
-import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
-import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
-import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import coil.imageLoader
-import com.google.gson.Gson
+import coil.request.ImageRequest
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.api.ReplyApi
@@ -129,23 +125,22 @@ import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.StringUtil
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
-import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
+import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
+import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
-import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import com.qx.orbit.bili.presentation.ui.components.ReplyCard
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
+import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.viewmodel.VideoDetailViewModel
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material.icons.filled.Schedule
 import com.qx.orbit.bili.util.SharedPreferencesUtil
-import com.qx.orbit.bili.util.formatCount
 import com.qx.orbit.bili.util.VideoDownloadManager
+import com.qx.orbit.bili.util.formatCount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -385,7 +380,18 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                     }
                                 }
                             },
-                            onCoinClick = { showCoinDialog = true },
+                            onCoinClick = {
+                                val info = videoInfo
+                                if (info != null) {
+                                    val maxAllowed = if (info.copyright == 2) 1 else 2
+                                    val donated = info.stats?.coined ?: 0
+                                    if (donated >= maxAllowed) {
+                                        RoundToast.show(context, "投币数量已达上限")
+                                    } else {
+                                        showCoinDialog = true
+                                    }
+                                }
+                            },
                             onFavClick = { 
                                 viewModel.loadFavoriteFolders()
                                 showFavDialog = true
@@ -484,14 +490,19 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
     }
     
     Dialog(visible = showCoinDialog, onDismissRequest = { showCoinDialog = false }) {
+        val remainingCoinsAllowed = remember(videoInfo) {
+            val maxAllowed = if (videoInfo?.copyright == 2) 1 else 2
+            val donated = videoInfo?.stats?.coined ?: 0
+            (maxAllowed - donated).coerceAtLeast(0)
+        }
         var selectedCoinIndex by remember { mutableIntStateOf(0) }
-        val rowOffsetX by animateDpAsState(targetValue = if (selectedCoinIndex == 0) 45.dp else (-45).dp)
+        val rowOffsetX by animateDpAsState(targetValue = if (remainingCoinsAllowed <= 1) 0.dp else if (selectedCoinIndex == 0) 45.dp else (-45).dp)
         
         val scaleBox1 by animateFloatAsState(targetValue = if (selectedCoinIndex == 0) 1f else 0.8f)
         val scaleBox2 by animateFloatAsState(targetValue = if (selectedCoinIndex == 1) 1f else 0.8f)
         
-        val dragYDpAnim = remember { androidx.compose.animation.core.Animatable(0f) }
-        val blockJumpAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+        val dragYDpAnim = remember { Animatable(0f) }
+        val blockJumpAnim = remember { Animatable(0f) }
         var isHit by remember { mutableStateOf(false) }
         val coroutineScope = rememberCoroutineScope()
         val density = LocalDensity.current
@@ -518,7 +529,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                         .height(80.dp)
                         .pointerInput(Unit) {
                             detectHorizontalDragGestures { _, dragAmount ->
-                                if (!isHit) {
+                                if (!isHit && remainingCoinsAllowed >= 2) {
                                     if (dragAmount < -10) selectedCoinIndex = 1
                                     else if (dragAmount > 10) selectedCoinIndex = 0
                                 }
@@ -542,17 +553,19 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                                 modifier = Modifier.size(40.dp)
                             )
                         }
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp).offset(y = if (selectedCoinIndex == 1) blockJumpAnim.value.dp else 0.dp).graphicsLayer { scaleX = scaleBox2; scaleY = scaleBox2 }) {
-                            Image(
-                                painter = painterResource(R.drawable.ic_pay_coins_box),
-                                contentDescription = null,
-                                modifier = Modifier.size(80.dp)
-                            )
-                            Image(
-                                painter = painterResource(R.drawable.ic_coins_two),
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp)
-                            )
+                        if (remainingCoinsAllowed >= 2) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp).offset(y = if (selectedCoinIndex == 1) blockJumpAnim.value.dp else 0.dp).graphicsLayer { scaleX = scaleBox2; scaleY = scaleBox2 }) {
+                                Image(
+                                    painter = painterResource(R.drawable.ic_pay_coins_box),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(80.dp)
+                                )
+                                Image(
+                                    painter = painterResource(R.drawable.ic_coins_two),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -892,7 +905,7 @@ fun VideoInfoPage(
                         @OptIn(ExperimentalLayoutApi::class)
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.Center
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
@@ -907,8 +920,7 @@ fun VideoInfoPage(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                                 )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Spacer(Modifier.width(8.dp))
                                 Icon(
                                     painterResource(R.drawable.ic_danmaku),
                                     contentDescription = "Danmaku",
@@ -917,6 +929,7 @@ fun VideoInfoPage(
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Text(
+                                    modifier = Modifier.height(14.dp),
                                     text = formatCount(videoInfo.stats?.danmaku ?: 0),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
@@ -962,7 +975,7 @@ fun VideoInfoPage(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
-                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(videoInfo.bvid))
+                                clipboardManager.setText(AnnotatedString(videoInfo.bvid))
                                 RoundToast.show(context, "已复制BV号: ${videoInfo.bvid}")
                             }
                         ){

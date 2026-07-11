@@ -144,10 +144,12 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     var backPressedTime by remember { mutableLongStateOf(0L) }
+    var isExiting by remember { mutableStateOf(false) }
     
     BackHandler {
         val currentTime = System.currentTimeMillis()
         if (currentTime - backPressedTime < 2000) {
+            isExiting = true
             onBack()
         } else {
             backPressedTime = currentTime
@@ -537,9 +539,24 @@ fun PlayerScreen(
                 danmakuPlayer.enableDrawingCache(true)
             } else if (isLocal) {
                 val config = createDanmakuConfig().apply {
+                    val duplicateMergingEnabled = SharedPreferencesUtil.getBoolean("player_danmaku_merge_enable", false)
+                    val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_overlap", true)
+                    val maxLines = SharedPreferencesUtil.getString("player_danmaku_max_lines", "-1").toIntOrNull() ?: -1
+
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
                     setSpecialDanmakuVisibility(enableAdvanced)
-                    setDuplicateMerging(false)
+                    setDuplicateMerging(duplicateMergingEnabled)
+
+                    if (!allowOverlap) {
+                        val overlappingPairs = mapOf(1 to true, 5 to true, 4 to true, 6 to true)
+                        preventOverlapping(overlappingPairs)
+                    }
+
+                    if (maxLines > 0) {
+                        val maxLinesPair = mapOf(1 to maxLines, 5 to maxLines, 4 to maxLines, 6 to maxLines)
+                        setMaximumLines(maxLinesPair)
+                    }
+
                     setScaleTextSize(0.8f)
                     setDanmakuTransparency(0.4f)
                 }
@@ -561,7 +578,7 @@ fun PlayerScreen(
                 val config = createDanmakuConfig().apply {
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
                     setSpecialDanmakuVisibility(enableAdvanced)
-                    setDuplicateMerging(false)
+                    setDuplicateMerging(true)
                     setScaleTextSize(0.8f)
                     setDanmakuTransparency(0.4f)
                 }
@@ -582,13 +599,15 @@ fun PlayerScreen(
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
                 mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "file,http,https,tcp,tls,crypto")
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "headers", "Referer: https://www.bilibili.com")
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1)
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_at_eof", 1)
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1)
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_delay_max", 2)
-                mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
+                if (!isLocal) {
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "headers", "Referer: https://www.bilibili.com")
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect", 1)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_at_eof", 1)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_streamed", 1)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "reconnect_delay_max", 2)
+                    mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "dns_cache_clear", 1)
+                }
                 if (isLive) {
                     mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "live直播延时", 1)
                     mediaPlayer.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
@@ -628,6 +647,9 @@ fun PlayerScreen(
                     it.start()
                     isPlaying = true
                     danmakuPlayer.start()
+                    if (currentProgress > 0) {
+                        danmakuPlayer.seekTo(currentProgress)
+                    }
                     
                     if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
                         // Report heartbeat on start
@@ -674,6 +696,8 @@ fun PlayerScreen(
                                 title = nextTitle,
                                 progress = 0
                             )
+                        } else {
+                            isPlaying = false
                         }
                     }
                 }
@@ -800,7 +824,7 @@ fun PlayerScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                if (SharedPreferencesUtil.getBoolean("player_background", false)) {
+                if (!isExiting && SharedPreferencesUtil.getBoolean("player_background", false)) {
                     val audioOnly = SharedPreferencesUtil.getBoolean("player_background_audio_only", false)
                     if (audioOnly && !isLive && !isLocal) {
                         try {
@@ -1051,6 +1075,9 @@ fun PlayerScreen(
                     val newProgress = (mediaPlayer.currentPosition + delta * 100).toLong().coerceIn(0L, totalDuration)
                     mediaPlayer.seekTo(newProgress)
                     danmakuPlayer.seekTo(newProgress)
+                    if (isPlaying) {
+                        mediaPlayer.start()
+                    }
                     currentProgress = newProgress
                     interactionCounter++
                 }
@@ -1252,7 +1279,10 @@ fun PlayerScreen(
                                         danmakuPlayer.seekTo(targetTime)
                                         currentProgress = targetTime
                                         dragProgress = -1f
-                                        if (isPlaying) danmakuPlayer.resume()
+                                        if (isPlaying) {
+                                            mediaPlayer.start()
+                                            danmakuPlayer.resume()
+                                        }
                                     }
                                 },
                                 onDragCancel = {
@@ -1279,7 +1309,10 @@ fun PlayerScreen(
                         .align(Alignment.TopCenter)
                         .padding(top = 24.dp)
                         .padding(horizontal = 36.dp)
-                        .clickable { onBack() }
+                        .clickable {
+                            isExiting = true
+                            onBack()
+                        }
                         .basicMarquee()
                 )
                 

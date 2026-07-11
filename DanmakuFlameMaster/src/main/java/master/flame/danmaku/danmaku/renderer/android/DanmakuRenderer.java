@@ -131,9 +131,6 @@ public class DanmakuRenderer extends Renderer {
                     || drawItem.getType() == BaseDanmaku.TYPE_SCROLL_LR){
                 // 同屏弹幕密度只对滚动弹幕有效
                 orderInScreen++;
-                if (orderInScreen > 150) {
-                    continue;
-                }
             } else if (drawItem.getType() == BaseDanmaku.TYPE_SPECIAL) {
                 if (drawItem.isOutside()) {
                     continue;
