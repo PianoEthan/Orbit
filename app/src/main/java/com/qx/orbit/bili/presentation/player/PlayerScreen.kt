@@ -573,9 +573,9 @@ fun PlayerScreen(
                 danmakuPlayer.enableDrawingCache(true)
             } else if (isLocal) {
                 val config = createDanmakuConfig().apply {
-                    val duplicateMergingEnabled = SharedPreferencesUtil.getBoolean("player_danmaku_merge_enable", false)
-                    val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_overlap", true)
-                    val maxLines = SharedPreferencesUtil.getString("player_danmaku_max_lines", "-1").toIntOrNull() ?: -1
+                    val duplicateMergingEnabled = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
+                    val allowOverlap = SharedPreferencesUtil.getBoolean("player_danmaku_allowoverlap", true)
+                    val maxLines = SharedPreferencesUtil.getInt("player_danmaku_maxline", 0)
 
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
                     setSpecialDanmakuVisibility(enableAdvanced)
