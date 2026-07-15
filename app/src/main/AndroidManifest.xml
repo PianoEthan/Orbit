@@ -44,6 +44,7 @@
             android:name=".presentation.MainActivity"
             android:exported="true"
             android:taskAffinity=""
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

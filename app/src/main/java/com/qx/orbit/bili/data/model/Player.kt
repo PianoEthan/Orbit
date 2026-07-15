@@ -47,10 +47,13 @@ data class DashData(
     val flacAudio: DashAudioStream? = null
 ) {
     fun getVideoStream(qn: Int): DashVideoStream? {
-        val exact = videoStreams.find { it.id == qn }
+        val matches = videoStreams.filter { it.id == qn }
+        val exact = matches.find { it.codecid == 7 } ?: matches.firstOrNull()
         if (exact != null) return exact
-        return videoStreams.filter { it.id <= qn }.maxByOrNull { it.id }
-            ?: videoStreams.minByOrNull { kotlin.math.abs(it.id - qn) }
+
+        val fallbackStreams = videoStreams.filter { it.codecid == 7 }.takeIf { it.isNotEmpty() } ?: videoStreams
+        return fallbackStreams.filter { it.id <= qn }.maxByOrNull { it.id }
+            ?: fallbackStreams.minByOrNull { kotlin.math.abs(it.id - qn) }
     }
 
     fun getBestAudioStream(): DashAudioStream? {

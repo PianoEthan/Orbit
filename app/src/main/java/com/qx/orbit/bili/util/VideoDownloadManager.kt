@@ -186,6 +186,7 @@ object VideoDownloadManager {
         val bvid: String = "",
         val qn: Int = 0,
         val type: String = "MP4", // MP4, AUDIO_AND_SUBTITLE
+        val mediaType: Int = PlayerData.TYPE_VIDEO, // Video or Bangumi
         val coverUrl: String = "",
         val duration: Int = 0,
         val status: Int = DownloadManager.STATUS_PENDING,
@@ -195,7 +196,7 @@ object VideoDownloadManager {
         val reason: Int = 0
     )
 
-    fun enqueue(url: String, title: String, filename: String, context: Context, aid: Long, cid: Long, bvid: String, qn: Int, type: String = "MP4", coverUrl: String = "", duration: Int = 0): Long {
+    fun enqueue(url: String, title: String, filename: String, context: Context, aid: Long, cid: Long, bvid: String, qn: Int, type: String = "MP4", coverUrl: String = "", duration: Int = 0, mediaType: Int = PlayerData.TYPE_VIDEO): Long {
         val existing = downloads.values.find { it.aid == aid && it.cid == cid && it.type == type && it.qn == qn }
 
         if (existing != null) {
@@ -213,7 +214,7 @@ object VideoDownloadManager {
         }
 
         val id = nextId++
-        val info = DownloadInfo(id, url, title, filename, aid, cid, bvid, qn, type, coverUrl, duration, status = DownloadManager.STATUS_RUNNING)
+        val info = DownloadInfo(id, url, title, filename, aid, cid, bvid, qn, type, mediaType, coverUrl, duration, status = DownloadManager.STATUS_RUNNING)
         downloads[id] = info
         persistTasks(context)
 
@@ -363,13 +364,22 @@ object VideoDownloadManager {
     private suspend fun refreshUrlAndRetry(id: Long, context: Context) {
         val info = downloads[id] ?: return
         val playerReq = PlayerData(
-            aid = info.aid, cid = info.cid, bvid = info.bvid, qn = info.qn
+            aid = info.aid, cid = info.cid, bvid = info.bvid, qn = info.qn, type = info.mediaType
         )
         val refreshed = if (info.type == "AUDIO_AND_SUBTITLE") {
-            val dash = PlayerApi.getVideoDash(playerReq)
-            dash.audioUrl.ifEmpty { dash.videoUrl }
+            if (info.mediaType == PlayerData.TYPE_BANGUMI) {
+                val dash = PlayerApi.getBangumi(playerReq)
+                dash.audioUrl.ifEmpty { dash.videoUrl }
+            } else {
+                val dash = PlayerApi.getVideoDash(playerReq)
+                dash.audioUrl.ifEmpty { dash.videoUrl }
+            }
         } else {
-            PlayerApi.getVideo(playerReq).videoUrl
+            if (info.mediaType == PlayerData.TYPE_BANGUMI) {
+                PlayerApi.getBangumi(playerReq, forceMp4 = true).videoUrl
+            } else {
+                PlayerApi.getVideo(playerReq).videoUrl
+            }
         }
 
         if (refreshed.isNotEmpty() && refreshed != info.url) {

@@ -93,6 +93,8 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -670,7 +672,7 @@ fun PlayerScreen(
 
             val result = if (isLive || isLocal) playerData 
                          else if (playerData.type == PlayerData.TYPE_BANGUMI) {
-                             if (isAudioOnlyMode) PlayerApi.getVideoDash(playerData) else PlayerApi.getBangumi(playerData)
+                             PlayerApi.getBangumi(playerData)
                          } else {
                              if (isAudioOnlyMode) PlayerApi.getVideoDash(playerData) else PlayerApi.getVideo(playerData)
                          }
@@ -957,6 +959,20 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .layout { measurable, constraints ->
+                val isRotatedLayout = (cumulativeRotation.toInt() % 180) != 0
+                val placeable = if (isRotatedLayout) {
+                    measurable.measure(Constraints.fixed(constraints.maxHeight, constraints.maxWidth))
+                } else {
+                    measurable.measure(constraints)
+                }
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    placeable.place(
+                        (constraints.maxWidth - placeable.width) / 2,
+                        (constraints.maxHeight - placeable.height) / 2
+                    )
+                }
+            }
             .graphicsLayer {
                 rotationZ = animatedRotation
             }

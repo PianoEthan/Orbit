@@ -221,7 +221,7 @@ object PlayerApi {
             val selectedAudio = if (playerData.audioQn != -1) dashData.getAudioStream(playerData.audioQn) else dashData.getBestAudioStream()
             playerData.copy(
                 dashData = dashData,
-                videoUrl = selectedVideo?.baseUrl ?: videoStreams.firstOrNull()?.baseUrl ?: "",
+                videoUrl = selectedVideo?.baseUrl ?: (videoStreams.firstOrNull { it.codecid == 7 } ?: videoStreams.firstOrNull())?.baseUrl ?: "",
                 audioUrl = selectedAudio?.baseUrl ?: audioStreams.firstOrNull()?.baseUrl ?: "",
                 progress = data.quality,
                 qnStrList = data.accept_description?.toTypedArray(),
@@ -261,13 +261,22 @@ object PlayerApi {
         )
     }
 
-    suspend fun getBangumi(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
-        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=1"
+    suspend fun getBangumi(playerData: PlayerData, forceMp4: Boolean = false): PlayerData = withContext(Dispatchers.IO) {
+        val fnval = if (forceMp4) "1" else "4048"
+        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=$fnval&fourk=1"
         val json = httpGet(url)
         val type = object : TypeToken<ApiResponse<PlayUrlData>>() {}.type
         val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(json, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return@withContext playerData
         val data = resp.data
+        if (forceMp4) {
+            val videoUrl = data.durl?.firstOrNull()?.url ?: ""
+            return@withContext playerData.copy(
+                videoUrl = videoUrl,
+                qnStrList = data.accept_description?.toTypedArray(),
+                qnValueList = data.accept_quality?.toIntArray()
+            )
+        }
         val dash = data.dash
         if (dash != null) {
             val videoStreams = dash.video?.map { v ->
@@ -294,16 +303,36 @@ object PlayerApi {
                     codecid = a.codecid
                 )
             } ?: emptyList()
+            val dolbyAudio = dash.dolby?.audio?.firstOrNull()?.let { a ->
+                DashAudioStream(
+                    id = a.id, baseUrl = a.baseUrl ?: a.base_url ?: "",
+                    backupUrl = a.backupUrl ?: a.backup_url ?: emptyList(),
+                    bandwidth = a.bandwidth, mimeType = a.mimeType ?: "",
+                    codecs = a.codecs ?: "", codecid = a.codecid
+                )
+            }
+            val flacAudio = dash.flac?.audio?.let { a ->
+                DashAudioStream(
+                    id = a.id, baseUrl = a.baseUrl ?: a.base_url ?: "",
+                    backupUrl = a.backupUrl ?: a.backup_url ?: emptyList(),
+                    bandwidth = a.bandwidth, mimeType = a.mimeType ?: "",
+                    codecs = a.codecs ?: "", codecid = a.codecid
+                )
+            }
             val dashData = DashData(
                 duration = dash.duration,
                 minBufferTime = dash.minBufferTime,
                 videoStreams = videoStreams,
-                audioStreams = audioStreams
+                audioStreams = audioStreams,
+                dolbyAudio = dolbyAudio,
+                flacAudio = flacAudio
             )
+            val selectedVideo = dashData.getVideoStream(playerData.qn)
+            val selectedAudio = if (playerData.audioQn != -1) dashData.getAudioStream(playerData.audioQn) else dashData.getBestAudioStream()
             playerData.copy(
                 dashData = dashData,
-                videoUrl = videoStreams.firstOrNull()?.baseUrl ?: "",
-                audioUrl = audioStreams.firstOrNull()?.baseUrl ?: "",
+                videoUrl = selectedVideo?.baseUrl ?: (videoStreams.firstOrNull { it.codecid == 7 } ?: videoStreams.firstOrNull())?.baseUrl ?: "",
+                audioUrl = selectedAudio?.baseUrl ?: audioStreams.firstOrNull()?.baseUrl ?: "",
                 qnStrList = data.accept_description?.toTypedArray(),
                 qnValueList = data.accept_quality?.toIntArray()
             )

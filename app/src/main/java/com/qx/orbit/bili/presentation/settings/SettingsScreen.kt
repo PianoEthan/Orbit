@@ -381,6 +381,7 @@ fun SettingApsisPlayerScreen(navController: NavController) {
                 Triple("player_scale", "视频可缩放", true),
                 Triple("player_doublemove", "缩放时可移动", true),
                 Triple("player_one_finger_zoom", "单指缩放", false),
+                Triple("player_request_dash", "请求 DASH 格式视频 (更高画质)", false),
                 Triple("player_danmaku_default_show", "弹幕默认开启", true),
                 Triple("player_subtitle_default_show", "CC字幕默认开启", false),
                 Triple("player_danmaku_advanced_enable", "启用高级弹幕", true),
@@ -523,9 +524,11 @@ fun SettingApsisPlayerScreen(navController: NavController) {
 
             settings.forEach { (key, label, defaultValue) ->
                 item {
+                    val currentEngine = SharedPreferencesUtil.getString("player_engine", "ijk")
                     var checked by remember { mutableStateOf(SharedPreferencesUtil.getBoolean(key, defaultValue)) }
                     SwitchButton(
                         checked = checked,
+                        enabled = (key != "player_request_dash" || currentEngine == "media3"),
                         onCheckedChange = { isChecked ->
                             checked = isChecked
                             SharedPreferencesUtil.putBoolean(key, isChecked)

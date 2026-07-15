@@ -222,7 +222,7 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                         viewModel.viewModelScope.launch {
                             val info = bangumiInfo?.info
                             if (info != null) {
-                                val pd = PlayerApi.getVideoDash(PlayerData(
+                                val pd = PlayerApi.getBangumi(PlayerData(
                                     aid = ep.aid, 
                                     cid = ep.cid, 
                                     qn = 112, 
@@ -313,6 +313,7 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                         bvid = "",
                                         qn = qn,
                                         type = "AUDIO_AND_SUBTITLE",
+                                        mediaType = PlayerData.TYPE_BANGUMI,
                                         coverUrl = targetEpisodeForCache?.cover?.ifEmpty { info.cover }?.replace("http://", "https://") ?: "",
                                         duration = 0
                                     )
@@ -356,6 +357,7 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                         bvid = "",
                                         qn = qn,
                                         type = "MP4",
+                                        mediaType = PlayerData.TYPE_BANGUMI,
                                         coverUrl = targetEpisodeForCache?.cover?.ifEmpty { info.cover }?.replace("http://", "https://") ?: "",
                                         duration = 0
                                     )
@@ -697,8 +699,6 @@ fun BangumiInfoPage(
                     }
                 }
 
-                item { Spacer(modifier = Modifier.height(1.dp)) }
-
                 item {
                     Button(
                         onClick = onCacheClick,
@@ -715,6 +715,8 @@ fun BangumiInfoPage(
                         Text("缓存", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
+
+                item { Spacer(modifier = Modifier.height(1.dp)) }
 
                 if (evaluateText.isNotEmpty()) {
                     item {

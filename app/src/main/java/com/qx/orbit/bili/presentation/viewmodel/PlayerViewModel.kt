@@ -195,10 +195,16 @@ class PlayerViewModel : ViewModel() {
                 }
 
                 val result = if (isLive || isLocal) data
-                else if (data.type == PlayerData.TYPE_BANGUMI) {
-                    if (isAudioOnlyMode) PlayerApi.getVideoDash(data) else PlayerApi.getBangumi(data)
-                } else {
-                    if (isAudioOnlyMode) PlayerApi.getVideoDash(data) else PlayerApi.getVideo(data)
+                else {
+                    val isExoPlayer = com.qx.orbit.bili.util.SharedPreferencesUtil.getString("player_engine", "ijk") == "media3"
+                    val requestDash = com.qx.orbit.bili.util.SharedPreferencesUtil.getBoolean("player_request_dash", false)
+                    val shouldUseDash = isExoPlayer && requestDash
+                    
+                    if (data.type == PlayerData.TYPE_BANGUMI) {
+                        PlayerApi.getBangumi(data, forceMp4 = !shouldUseDash)
+                    } else {
+                        if (shouldUseDash || isAudioOnlyMode) PlayerApi.getVideoDash(data) else PlayerApi.getVideo(data)
+                    }
                 }
 
                 if (!isLive && !isLocal) _playerData.value = result
