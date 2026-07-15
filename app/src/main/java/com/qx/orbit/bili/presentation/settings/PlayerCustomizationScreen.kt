@@ -55,6 +55,7 @@ import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 
 @Composable
 fun PlayerCustomizationScreen(
@@ -191,6 +192,7 @@ fun PlayerCustomizationScreen(
             TransformingLazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 item { Spacer(modifier = Modifier.height(16.dp)) }

@@ -264,7 +264,20 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
         val currentRoute = currentBackStackEntry?.destination?.route
         
         val isMiWatch5 = Build.MODEL == "M2505W1" || Build.MODEL == "M2501W1"
-        val isSwipeEnabled = (currentRoute?.startsWith("player/") != true) && !isMiWatch5
+        val isSwipeEnabled = remember(currentBackStackEntry, isMiWatch5) {
+            val res = if (isMiWatch5) false
+            else if (currentBackStackEntry?.destination?.route?.startsWith("player/") == true) {
+                try {
+                    val jsonStr = java.net.URLDecoder.decode(currentBackStackEntry?.arguments?.getString("playerDataJson") ?: "", "UTF-8")
+                    val pd = com.qx.orbit.bili.data.remote.GsonConfig.gson.fromJson(jsonStr, com.qx.orbit.bili.data.model.PlayerData::class.java)
+                    pd?.audioUrl == "audio"
+                } catch (e: Exception) {
+                    false
+                }
+            } else true
+            android.util.Log.d("SwipeDismiss", "isSwipeEnabled evaluated to $res for route ${currentBackStackEntry?.destination?.route}")
+            res
+        }
         
         val canGoBack = remember(currentBackStackEntry) {
             navController.previousBackStackEntry != null
@@ -423,6 +436,15 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             }
             composable("download_manager") {
                 DownloadManagerScreen(navController = navController)
+            }
+            composable(
+                "video_download_progress/{downloadId}",
+                arguments = listOf(
+                    navArgument("downloadId") { type = NavType.LongType }
+                )
+            ) { backStackEntry ->
+                val downloadId = backStackEntry.arguments?.getLong("downloadId") ?: 0L
+                VideoDownloadForegroundScreen(navController = navController, downloadId = downloadId)
             }
             composable("settings_main") {
                 SettingsScreen(navController = navController)

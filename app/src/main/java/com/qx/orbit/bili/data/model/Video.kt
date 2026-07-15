@@ -95,6 +95,7 @@ object StringUtil {
         return when (parts.size) {
             3 -> (parts[0].toIntOrNull() ?: 0) * 3600 + (parts[1].toIntOrNull() ?: 0) * 60 + (parts[2].toIntOrNull() ?: 0)
             2 -> (parts[0].toIntOrNull() ?: 0) * 60 + (parts[1].toIntOrNull() ?: 0)
+            1 -> parts[0].toIntOrNull() ?: 0
             else -> 0
         }
     }

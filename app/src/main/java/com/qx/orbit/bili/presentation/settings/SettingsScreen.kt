@@ -433,6 +433,7 @@ fun SettingApsisPlayerScreen(navController: NavController) {
                         TransformingLazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             item { Spacer(modifier = Modifier.height(16.dp)) }

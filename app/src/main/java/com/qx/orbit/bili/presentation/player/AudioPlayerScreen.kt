@@ -75,6 +75,7 @@ import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
 import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.viewmodel.PlayerViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.player.OrbitPlayer
@@ -360,6 +361,7 @@ fun AudioPlayerScreen(
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -427,6 +429,7 @@ fun AudioPlayerScreen(
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             item { Spacer(modifier = Modifier.height(16.dp)) }

@@ -43,8 +43,11 @@ object VideoDownloadManager {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var appContext: Context? = null
+    private var isInitialized = false
 
     fun init(context: Context) {
+        if (isInitialized) return
+        isInitialized = true
         appContext = context.applicationContext
         loadTasks(context)
         scanAndRegisterLocalFiles(context)
@@ -201,6 +204,8 @@ object VideoDownloadManager {
                 existing.status == DownloadManager.STATUS_SUCCESSFUL) {
                 return existing.id
             }
+            activeCalls[existing.id]?.cancel()
+            activeCalls.remove(existing.id)
             downloads[existing.id] = existing.copy(status = DownloadManager.STATUS_RUNNING, reason = 0)
             persistTasks(context)
             executeDownload(existing.id, context)
@@ -219,6 +224,8 @@ object VideoDownloadManager {
     fun resume(id: Long, context: Context) {
         val existing = downloads[id] ?: return
         if (existing.status != DownloadManager.STATUS_RUNNING && existing.status != DownloadManager.STATUS_PENDING && existing.status != DownloadManager.STATUS_SUCCESSFUL) {
+            activeCalls[id]?.cancel()
+            activeCalls.remove(id)
             downloads[id] = existing.copy(status = DownloadManager.STATUS_RUNNING, reason = 0)
             persistTasks(context)
             executeDownload(id, context)
@@ -269,14 +276,16 @@ object VideoDownloadManager {
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 if (call.isCanceled()) return
-                activeCalls.remove(id)
+                if (activeCalls[id] == call) activeCalls.remove(id)
                 downloads[id] = downloads[id]?.copy(status = DownloadManager.STATUS_FAILED, reason = -1) ?: return
                 persistTasks(context)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                activeCalls.remove(id)
+                if (call.isCanceled()) return
+                
                 if (response.code == 403) {
+                    if (activeCalls[id] == call) activeCalls.remove(id)
                     // Refresh URL and retry
                     scope.launch {
                         refreshUrlAndRetry(id, context)
@@ -285,12 +294,14 @@ object VideoDownloadManager {
                 }
 
                 if (!response.isSuccessful && response.code != 206) {
+                    if (activeCalls[id] == call) activeCalls.remove(id)
                     downloads[id] = downloads[id]?.copy(status = DownloadManager.STATUS_FAILED, reason = response.code) ?: return
                     persistTasks(context)
                     return
                 }
 
                 val body = response.body ?: run {
+                    if (activeCalls[id] == call) activeCalls.remove(id)
                     downloads[id] = downloads[id]?.copy(status = DownloadManager.STATUS_FAILED) ?: return
                     return
                 }
@@ -314,6 +325,7 @@ object VideoDownloadManager {
                             var lastUpdate = 0L
 
                             while (input.read(buffer).also { read = it } != -1) {
+                                if (call.isCanceled()) return
                                 output.write(buffer, 0, read)
                                 downloaded += read
 
@@ -326,6 +338,10 @@ object VideoDownloadManager {
                             downloads[id] = downloads[id]?.copy(downloadedBytes = downloaded) ?: return
                         }
                     }
+                    
+                    if (call.isCanceled()) return
+                    if (activeCalls[id] == call) activeCalls.remove(id)
+                    
                     downloads[id] = downloads[id]?.copy(status = DownloadManager.STATUS_SUCCESSFUL, localUri = file.absolutePath) ?: return
                     persistTasks(context)
 
@@ -335,6 +351,8 @@ object VideoDownloadManager {
                     }
 
                 } catch (e: Exception) {
+                    if (call.isCanceled()) return
+                    if (activeCalls[id] == call) activeCalls.remove(id)
                     downloads[id] = downloads[id]?.copy(status = DownloadManager.STATUS_FAILED, reason = -2) ?: return
                     persistTasks(context)
                 }
@@ -402,12 +420,13 @@ object VideoDownloadManager {
             // Download all subtitles (including AI) for all video types
             run {
                 val subLinks = PlayerApi.getSubtitleLinks(info.aid, info.cid)
+                val baseFilename = info.filename.substringBeforeLast(".")
                 for (sub in subLinks) {
                     if (sub.url.isEmpty()) continue
                     try {
                         val lang = sub.lang.ifEmpty { if (sub.isAI) "ai" else "unknown" }
                         val suffix = if (sub.isAI) ".ai.$lang" else ".$lang"
-                        val subFile = File(downloadDir, "${info.filename}$suffix.srt")
+                        val subFile = File(downloadDir, "$baseFilename$suffix.json")
                         if (subFile.exists()) continue
                         val subUrl = sub.url.let { if (it.startsWith("//")) "https:$it" else it }
                         val req = Request.Builder().url(subUrl).build()
@@ -417,17 +436,6 @@ object VideoDownloadManager {
                             if (json != null) subFile.writeText(json)
                         }
                     } catch (_: Exception) {}
-                }
-                // Also save a default .srt for backward compatibility (first non-AI, or first AI)
-                val defaultSub = subLinks.firstOrNull { !it.isAI } ?: subLinks.firstOrNull()
-                if (defaultSub != null && defaultSub.url.isNotEmpty()) {
-                    val defaultFile = File(downloadDir, "${info.filename}.srt")
-                    if (!defaultFile.exists()) {
-                        val lang = defaultSub.lang.ifEmpty { if (defaultSub.isAI) "ai" else "unknown" }
-                        val suffix = if (defaultSub.isAI) ".ai.$lang" else ".$lang"
-                        val srcFile = File(downloadDir, "${info.filename}$suffix.srt")
-                        if (srcFile.exists()) srcFile.copyTo(defaultFile)
-                    }
                 }
             }
 
@@ -458,23 +466,18 @@ object VideoDownloadManager {
             activeCalls.remove(id)
 
             val downloadDir = getDownloadDir(info.bvid)
-            val file = File(downloadDir, info.filename)
-            if (file.exists()) file.delete()
+            val baseFilename = info.filename.substringBeforeLast(".")
 
-            val danmakuFile = File(downloadDir, "${info.filename}.danmaku.xml")
-            if (danmakuFile.exists()) danmakuFile.delete()
-
-            val subtitleFile = File(downloadDir, "${info.filename}.srt")
-            if (subtitleFile.exists()) subtitleFile.delete()
-
-            val coverFile = File(downloadDir, "${info.filename}.cover.webp")
-            if (coverFile.exists()) coverFile.delete()
+            // 彻底删除该视频的所有关联文件（包括视频、音频、封面、弹幕、多语言字幕等）
+            downloadDir.listFiles { _, name -> name.startsWith(baseFilename) || name.startsWith(info.filename) }?.forEach {
+                it.delete()
+            }
 
             downloads.remove(id)
             persistTasks(context)
 
-            // Cleanup empty bvid directory
-            if (downloadDir.name == info.bvid && downloadDir.listFiles()?.isEmpty() == true) {
+            // 清理空的bvid目录（如果是根目录则不删除）
+            if (!info.bvid.isNullOrEmpty() && downloadDir.name == info.bvid && downloadDir.listFiles()?.isEmpty() == true) {
                 downloadDir.delete()
             }
         }

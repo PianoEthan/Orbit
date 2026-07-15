@@ -48,11 +48,13 @@ fun CacheVideoCard(
     modifier: Modifier = Modifier,
     item: VideoDownloadManager.DownloadInfo,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     statusText: String? = null,
     transformation: SurfaceTransformation? = null
 ) {
     Card(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.fillMaxWidth().height(110.dp),
         shape = RoundedCornerShape(16.dp),
         contentPadding = PaddingValues(0.dp),
@@ -152,7 +154,11 @@ fun CacheVideoCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     
                     val formattedDuration = if (item.duration > 0) {
-                        String.format("%02d:%02d", item.duration / 60, item.duration % 60)
+                        if (item.duration >= 3600) {
+                            String.format("%02d:%02d:%02d", item.duration / 3600, (item.duration % 3600) / 60, item.duration % 60)
+                        } else {
+                            String.format("%02d:%02d", item.duration / 60, item.duration % 60)
+                        }
                     } else "--:--"
 
                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayCircleOutline
@@ -62,7 +63,9 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.HorizontalPageIndicator
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Dialog
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.lifecycle.viewModelScope
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import coil.compose.AsyncImage
@@ -81,6 +84,8 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.viewmodel.BangumiDetailViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
+import com.qx.orbit.bili.util.VideoDownloadManager
+import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
@@ -139,6 +144,14 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
         } catch (e: Exception) {}
     }
     
+    var showCacheDialog by remember { mutableStateOf(false) }
+    var cacheQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    var cacheAudioQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    var showAudioQualitiesInCacheDialog by remember { mutableStateOf(false) }
+    var isFetchingQualities by remember { mutableStateOf(false) }
+    var showEpisodeDialogForCache by remember { mutableStateOf(false) }
+    var targetEpisodeForCache by remember { mutableStateOf<Bangumi.Episode?>(null) }
+    
     var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
     var isColorExtracted by remember { mutableStateOf(false) }
     val defaultColorScheme = MaterialTheme.colorScheme
@@ -172,6 +185,209 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
     }
     
     MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
+    Dialog(
+        visible = showEpisodeDialogForCache,
+        onDismissRequest = { showEpisodeDialogForCache = false }
+    ) {
+        val listState = rememberTransformingLazyColumnState()
+        val transformationSpec = rememberTransformationSpec()
+        val isRound = LocalScreenRound.current
+
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 24.dp, bottom = 24.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            item {
+                ListHeader(
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                ) {
+                    Text("选择要缓存的分集", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            val episodes = bangumiInfo?.sectionList?.flatMap { it.episodes } ?: emptyList()
+            items(episodes.size) { index ->
+                val ep = episodes[index]
+                val name = ep.title_long.ifEmpty { ep.title }
+                Button(
+                    onClick = {
+                        targetEpisodeForCache = ep
+                        showEpisodeDialogForCache = false
+                        showCacheDialog = true
+                        
+                        isFetchingQualities = true
+                        viewModel.viewModelScope.launch {
+                            val info = bangumiInfo?.info
+                            if (info != null) {
+                                val pd = PlayerApi.getVideoDash(PlayerData(
+                                    aid = ep.aid, 
+                                    cid = ep.cid, 
+                                    qn = 112, 
+                                    type = PlayerData.TYPE_BANGUMI, 
+                                    epid = ep.id, 
+                                    sid = info.season_id
+                                ))
+                                val names = pd.qnStrList
+                                val vals = pd.qnValueList
+                                if (names != null && vals != null && names.size == vals.size) {
+                                    cacheQualities = names.zip(vals.toTypedArray())
+                                }
+                                val audioList = mutableListOf<Pair<String, Int>>()
+                                pd.dashData?.let { dash ->
+                                    dash.audioStreams.forEach {
+                                        val aname = when(it.id) {
+                                            30216 -> "64K"
+                                            30232 -> "132K"
+                                            30280 -> "192K"
+                                            else -> "${it.id}"
+                                        }
+                                        audioList.add(aname to it.id)
+                                    }
+                                    if (dash.dolbyAudio != null) audioList.add("杜比全景声" to 30250)
+                                    if (dash.flacAudio != null) audioList.add("Hi-Res无损" to 30251)
+                                }
+                                cacheAudioQualities = audioList
+                            }
+                            isFetchingQualities = false
+                        }
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                ) {
+                    Text(text = name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
+    }
+
+    Dialog(
+        visible = showCacheDialog,
+        onDismissRequest = { 
+            showCacheDialog = false
+            showAudioQualitiesInCacheDialog = false
+        }
+    ) {
+        if (isFetchingQualities) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            val listState = rememberTransformingLazyColumnState()
+            val transformationSpec = rememberTransformationSpec()
+            val isRound = LocalScreenRound.current
+            TransformingLazyColumn(
+                state = listState, 
+                horizontalAlignment = Alignment.CenterHorizontally, 
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), 
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 24.dp, bottom = 24.dp), 
+                rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+            ) {
+                item {
+                    ListHeader(
+                        modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    ) {
+                        Text(if (showAudioQualitiesInCacheDialog) "选择音质" else "选择清晰度", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (showAudioQualitiesInCacheDialog) {
+                    items(cacheAudioQualities.size) { idx ->
+                        val (name, qn) = cacheAudioQualities[idx]
+                        Button(
+                            onClick = {
+                                val info = bangumiInfo?.info
+                                if (info != null && targetEpisodeForCache != null) {
+                                    val safeTitle = "${info.title}_${targetEpisodeForCache?.title_long?.ifEmpty { targetEpisodeForCache?.title }}".replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    VideoDownloadManager.enqueue(
+                                        url = "",
+                                        title = "${info.title} - ${targetEpisodeForCache?.title_long?.ifEmpty { targetEpisodeForCache?.title }}",
+                                        filename = "${safeTitle}_audio.m4s",
+                                        context = context,
+                                        aid = targetEpisodeForCache?.aid ?: 0L,
+                                        cid = targetEpisodeForCache?.cid ?: 0L,
+                                        bvid = "",
+                                        qn = qn,
+                                        type = "AUDIO_AND_SUBTITLE",
+                                        coverUrl = targetEpisodeForCache?.cover?.ifEmpty { info.cover }?.replace("http://", "https://") ?: "",
+                                        duration = 0
+                                    )
+                                    RoundToast.show(context, "正在下载音频...")
+                                    showAudioQualitiesInCacheDialog = false
+                                    showCacheDialog = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text(name)
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = { showAudioQualitiesInCacheDialog = false },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text("返回")
+                        }
+                    }
+                } else {
+                    items(cacheQualities.size) { idx ->
+                        val (name, qn) = cacheQualities[idx]
+                        Button(
+                            onClick = {
+                                val info = bangumiInfo?.info
+                                if (info != null && targetEpisodeForCache != null) {
+                                    val safeTitle = "${info.title}_${targetEpisodeForCache?.title_long?.ifEmpty { targetEpisodeForCache?.title }}".replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    VideoDownloadManager.enqueue(
+                                        url = "",
+                                        title = "${info.title} - ${targetEpisodeForCache?.title_long?.ifEmpty { targetEpisodeForCache?.title }}",
+                                        filename = "${safeTitle}_$qn.mp4",
+                                        context = context,
+                                        aid = targetEpisodeForCache?.aid ?: 0L,
+                                        cid = targetEpisodeForCache?.cid ?: 0L,
+                                        bvid = "",
+                                        qn = qn,
+                                        type = "MP4",
+                                        coverUrl = targetEpisodeForCache?.cover?.ifEmpty { info.cover }?.replace("http://", "https://") ?: "",
+                                        duration = 0
+                                    )
+                                    RoundToast.show(context, "正在下载视频...")
+                                    showCacheDialog = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text(name)
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = {
+                                showAudioQualitiesInCacheDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text("仅音频+字幕")
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
+        }
+    }
+
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             AnimatedContent(
                 targetState = (isLoading || bangumiInfo == null || !isColorExtracted) && errorMessage == null,
@@ -246,7 +462,8 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                     )
                                     PlayerApi.jumpToPlayer(context, navController, playerData)
                                 },
-                                onFollowClick = { viewModel.toggleFollow() }
+                                onFollowClick = { viewModel.toggleFollow() },
+                                onCacheClick = { showEpisodeDialogForCache = true }
                             )
                             1 -> VideoCommentsPage(
                                 replies = replies, 
@@ -313,6 +530,7 @@ fun BangumiInfoPage(
     onBackClick: () -> Unit,
     onEpisodeClick: (Bangumi.Episode, Int) -> Unit,
     onFollowClick: () -> Unit,
+    onCacheClick: () -> Unit,
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -476,6 +694,25 @@ fun BangumiInfoPage(
                         )
                     ) {
                         Text(if (isFollowed) "已追番" else "追番", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+
+                item { Spacer(modifier = Modifier.height(1.dp)) }
+
+                item {
+                    Button(
+                        onClick = onCacheClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                        icon = { Icon(Icons.Default.Download, contentDescription = "Cache", tint = MaterialTheme.colorScheme.onSurface) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("缓存", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
 

@@ -177,6 +177,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
     var showTripleSuccessOverlay by remember { mutableStateOf(false) }
     var cacheQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     var cacheAudioQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
+    var showAudioQualitiesInCacheDialog by remember { mutableStateOf(false) }
     var isFetchingQualities by remember { mutableStateOf(false) }
     
     val emotes by viewModel.emotes.collectAsState()
@@ -231,7 +232,10 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
     // Cache Dialog
     Dialog(
         visible = showCacheDialog,
-        onDismissRequest = { showCacheDialog = false }
+        onDismissRequest = { 
+            showCacheDialog = false
+            showAudioQualitiesInCacheDialog = false
+        }
     ) {
         if (isFetchingQualities) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -247,67 +251,93 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                         modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                     ) {
-                        Text("选择清晰度", color = MaterialTheme.colorScheme.primary)
+                        Text(if (showAudioQualitiesInCacheDialog) "选择音质" else "选择清晰度", color = MaterialTheme.colorScheme.primary)
                     }
                 }
-                items(cacheQualities) { (name, qn) ->
-                    Button(
-                        onClick = {
-                            val info = videoInfo
-                            if (info != null) {
-                                val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                VideoDownloadManager.enqueue(
-                                    url = "", // Will be fetched inside manager
-                                    title = info.title,
-                                    filename = "${safeTitle}_$qn.mp4",
-                                    context = context,
-                                    aid = aid,
-                                    cid = info.cids.firstOrNull() ?: 0L,
-                                    bvid = bvid,
-                                    qn = qn,
-                                    type = "MP4",
-                                    coverUrl = info.cover.replace("http://", "https://"),
-                                    duration = StringUtil.parseTime(info.duration)
-                                )
-                                RoundToast.show(context, "正在下载视频...")
-                                showCacheDialog = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
-                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
-                    ) {
-                        Text(name)
+                if (showAudioQualitiesInCacheDialog) {
+                    items(cacheAudioQualities) { (name, qn) ->
+                        Button(
+                            onClick = {
+                                val info = videoInfo
+                                if (info != null) {
+                                    val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    VideoDownloadManager.enqueue(
+                                        url = "",
+                                        title = info.title,
+                                        filename = "${safeTitle}_audio.m4s",
+                                        context = context,
+                                        aid = aid,
+                                        cid = info.cids.firstOrNull() ?: 0L,
+                                        bvid = bvid,
+                                        qn = qn,
+                                        type = "AUDIO_AND_SUBTITLE",
+                                        coverUrl = info.cover.replace("http://", "https://"),
+                                        duration = StringUtil.parseTime(info.duration)
+                                    )
+                                    RoundToast.show(context, "正在下载音频...")
+                                    showAudioQualitiesInCacheDialog = false
+                                    showCacheDialog = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text(name)
+                        }
                     }
-                }
-                item {
-                    Button(
-                        onClick = {
-                            val info = videoInfo
-                            if (info != null) {
-                                val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                VideoDownloadManager.enqueue(
-                                    url = "",
-                                    title = info.title,
-                                    filename = "${safeTitle}_audio.m4s",
-                                    context = context,
-                                    aid = aid,
-                                    cid = info.cids.firstOrNull() ?: 0L,
-                                    bvid = bvid,
-                                    qn = 16,
-                                    type = "AUDIO_AND_SUBTITLE",
-                                    coverUrl = info.cover.replace("http://", "https://"),
-                                    duration = StringUtil.parseTime(info.duration)
-                                )
-                                RoundToast.show(context, "正在下载视频...")
-                                showCacheDialog = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
-                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
-                    ) {
-                        Text("仅音频+字幕")
+                    item {
+                        Button(
+                            onClick = { showAudioQualitiesInCacheDialog = false },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text("返回")
+                        }
+                    }
+                } else {
+                    items(cacheQualities) { (name, qn) ->
+                        Button(
+                            onClick = {
+                                val info = videoInfo
+                                if (info != null) {
+                                    val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    VideoDownloadManager.enqueue(
+                                        url = "", // Will be fetched inside manager
+                                        title = info.title,
+                                        filename = "${safeTitle}_$qn.mp4",
+                                        context = context,
+                                        aid = aid,
+                                        cid = info.cids.firstOrNull() ?: 0L,
+                                        bvid = bvid,
+                                        qn = qn,
+                                        type = "MP4",
+                                        coverUrl = info.cover.replace("http://", "https://"),
+                                        duration = StringUtil.parseTime(info.duration)
+                                    )
+                                    RoundToast.show(context, "正在下载视频...")
+                                    showCacheDialog = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text(name)
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = {
+                                showAudioQualitiesInCacheDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text("仅音频+字幕")
+                        }
                     }
                 }
                 item { Spacer(Modifier.height(20.dp)) }

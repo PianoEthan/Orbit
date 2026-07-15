@@ -11,7 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.Row
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,19 +75,40 @@ fun ImageViewerDialog(
                     dialogUrl = "$dialogUrl@1024w.webp"
                 }
                 
+                var scale by remember { mutableStateOf(1f) }
+                var offset by remember { mutableStateOf(Offset.Zero) }
+                
                 Box(
-                    modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onDismiss() },
-                            onLongPress = { showMenuForUrl = dialogUrl }
-                        )
-                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onLongPress = { showMenuForUrl = dialogUrl }
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                if (scale > 1f) {
+                                    offset += pan
+                                } else {
+                                    offset = Offset.Zero
+                                }
+                            }
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     SubcomposeAsyncImage(
                         model = dialogUrl,
                         contentDescription = null,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y
+                            ),
                         loading = {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -97,6 +124,23 @@ fun ImageViewerDialog(
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 16.dp)
                 )
+            }
+            
+            // Top Bar with Close Button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+                    .align(Alignment.TopCenter),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(40.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(24.dp))
+                }
             }
         }
     }

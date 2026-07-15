@@ -44,6 +44,7 @@ import java.io.File
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
+import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 
 data class MediaItem(
     val uri: Uri,
@@ -97,6 +98,7 @@ fun ImagePickerScreen(
             TransformingLazyColumn(
                 state = listState,
                 contentPadding = contentPadding,
+                rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
                 modifier = Modifier.fillMaxSize()
             ) {
                 item {

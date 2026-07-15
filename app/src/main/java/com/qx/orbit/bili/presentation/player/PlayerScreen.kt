@@ -190,20 +190,15 @@ fun PlayerScreen(
     var isExiting by remember { mutableStateOf(false) }
     var isAudioOnlyMode by remember { mutableStateOf(false) }
 
-    BackHandler {
-        val isAudioPlayer = isAudioOnlyMode || initialData.audioUrl == "audio"
-        if (isAudioPlayer) {
+    val isAudioPlayer = isAudioOnlyMode || initialData.audioUrl == "audio"
+    BackHandler(enabled = !isAudioPlayer) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - backPressedTime < 2000) {
             isExiting = true
             onBack()
         } else {
-            val currentTime = System.currentTimeMillis()
-            if (currentTime - backPressedTime < 2000) {
-                isExiting = true
-                onBack()
-            } else {
-                backPressedTime = currentTime
-                RoundToast.show(context, "再按一次返回键退出")
-            }
+            backPressedTime = currentTime
+            RoundToast.show(context, "再按一次返回键退出")
         }
     }
     val scope = rememberCoroutineScope()
@@ -512,7 +507,7 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isPlaying, isPrepared, vmCurrentProgress) {
+    LaunchedEffect(isPlaying, isPrepared) {
         if (isPrepared) {
             if (isPlaying) {
                 danmakuPlayer.resume()
@@ -525,6 +520,12 @@ fun PlayerScreen(
                 danmakuPlayer.pause()
                 currentProgress = viewModel.player.currentPosition
             }
+        }
+    }
+
+    LaunchedEffect(vmCurrentProgress) {
+        if (isPrepared && !isPlaying) {
+            currentProgress = vmCurrentProgress
         }
     }
 
@@ -553,6 +554,8 @@ fun PlayerScreen(
         viewModel.setLoading(true)
         lastLoadId = loadId
         try {
+            danmakuPlayer.removeAllDanmakus(true)
+            
             if (!isLocal && !CookieManager.getCookie().contains("buvid3")) {
                 CookiesApi.checkCookies()
             }
@@ -920,6 +923,7 @@ fun PlayerScreen(
             liveWebSocket?.close(1000, "bye")
             liveWebSocket = null
             viewModel.release()
+            danmakuPlayer.removeAllDanmakus(true)
             danmakuPlayer.release()
         }
     }
@@ -1635,6 +1639,7 @@ fun PlayerScreen(
                 TransformingLazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -1712,6 +1717,7 @@ fun PlayerScreen(
             TransformingLazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 item { Spacer(modifier = Modifier.height(16.dp)) }

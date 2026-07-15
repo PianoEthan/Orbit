@@ -30,6 +30,7 @@ import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.presentation.ui.components.CacheVideoCard
 import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
+import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.VideoDownloadManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,6 +46,8 @@ fun DownloadManagerScreen(navController: NavController) {
     val coroutineScope = rememberCoroutineScope()
     var allDownloads by remember { mutableStateOf(VideoDownloadManager.getAllDownloads()) }
     var downloadToDelete by remember { mutableStateOf<Long?>(null) }
+    var showPlayerSelectionDialog by remember { mutableStateOf(false) }
+    var selectedDownloadForPlayer by remember { mutableStateOf<VideoDownloadManager.DownloadInfo?>(null) }
     val handleDelete: (Long) -> Unit = { id ->
         allDownloads = allDownloads.filter { it.id != id }
         coroutineScope.launch(Dispatchers.IO) {
@@ -148,11 +151,7 @@ fun DownloadManagerScreen(navController: NavController) {
                                 statusText = statusText,
                                 transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                                 onClick = {
-                                    if (download.status == DownloadManager.STATUS_RUNNING || download.status == DownloadManager.STATUS_PENDING) {
-                                        VideoDownloadManager.pause(download.id, context)
-                                    } else {
-                                        VideoDownloadManager.resume(download.id, context)
-                                    }
+                                    navController.navigate("video_download_progress/${download.id}")
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -232,6 +231,10 @@ fun DownloadManagerScreen(navController: NavController) {
                                     )
                                     PlayerApi.jumpToPlayer(context, navController, playerData)
                                 },
+                                onLongClick = {
+                                    selectedDownloadForPlayer = download
+                                    showPlayerSelectionDialog = true
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                             )
@@ -268,17 +271,71 @@ fun DownloadManagerScreen(navController: NavController) {
                     }
                 }
             }
-        }
-
-        WysAlertDialog(
-            show = (downloadToDelete != null),
-            onDismissRequest = { downloadToDelete = null },
-            title = "确认删除",
-            content = { Text("确定要删除该缓存视频吗？", textAlign = TextAlign.Center) },
-            onConfirm = {
-                downloadToDelete?.let { handleDelete(it) }
-                downloadToDelete = null
+            WysAlertDialog(
+                show = (downloadToDelete != null),
+                onDismissRequest = { downloadToDelete = null },
+                title = "确认删除",
+                content = { Text("确定要删除该缓存视频吗？", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+                onConfirm = {
+                    downloadToDelete?.let { handleDelete(it) }
+                    downloadToDelete = null
+                }
+            )
+            
+            Dialog(
+                visible = showPlayerSelectionDialog,
+                onDismissRequest = { showPlayerSelectionDialog = false }
+            ) {
+                val dialogListState = rememberTransformingLazyColumnState()
+                TransformingLazyColumn(
+                    state = dialogListState,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp),
+                    rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(dialogListState)
+                ) {
+                    item {
+                        ListHeader(
+                            modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                        ) {
+                            Text("选择播放器", color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    val players = listOf(
+                        "apsisPlayer" to "Apsis Player",
+                        "pureAudioPlayer" to "Apsis AudioPlayer",
+                        "aliangPlayer" to "凉腕播放器"
+                    )
+                    items(players.size) { index ->
+                        val (playerKey, playerName) = players[index]
+                        Button(
+                            onClick = {
+                                selectedDownloadForPlayer?.let { download ->
+                                    val playerData = PlayerData(
+                                        title = download.title,
+                                        aid = download.aid,
+                                        cid = download.cid,
+                                        bvid = download.bvid,
+                                        type = PlayerData.TYPE_LOCAL,
+                                        videoUrl = download.localUri ?: "",
+                                        audioUrl = if (download.type == "AUDIO_AND_SUBTITLE") "audio" else "",
+                                        cover = download.coverUrl
+                                    )
+                                    PlayerApi.jumpToPlayer(context, navController, playerData, playerKey)
+                                }
+                                showPlayerSelectionDialog = false
+                            },
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer, contentColor = MaterialTheme.colorScheme.onSurface)
+                        ) {
+                            Text(playerName)
+                        }
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
             }
-        )
+        }
     }
 }

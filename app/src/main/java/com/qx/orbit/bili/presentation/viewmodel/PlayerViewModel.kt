@@ -150,15 +150,19 @@ class PlayerViewModel : ViewModel() {
         val dir = videoFile.parentFile ?: return emptyArray()
         val baseName = videoFile.nameWithoutExtension
         val srtFiles = dir.listFiles { f ->
-            f.isFile && f.extension == "srt" && f.nameWithoutExtension.startsWith(baseName)
-        } ?: return emptyArray()
-        return srtFiles.mapIndexed { idx, f ->
+            f.isFile && (f.extension == "srt" || f.extension == "json") && f.nameWithoutExtension.startsWith(baseName)
+        }?.sortedBy { it.extension } ?: return emptyArray()
+        
+        return srtFiles.mapIndexedNotNull { idx, f ->
             val name = f.nameWithoutExtension
             val isAi = name.contains(".ai") || name.contains("ai.")
-            val lang = name.removePrefix(baseName).removePrefix(".").removePrefix("ai.").removePrefix(".ai")
+            var lang = name.removePrefix(baseName)
+            if (lang.startsWith(".mp4")) lang = lang.removePrefix(".mp4")
+            if (lang.startsWith(".m4s")) lang = lang.removePrefix(".m4s")
+            lang = lang.removePrefix(".").removePrefix("ai.").removePrefix(".ai").removePrefix(".")
                 .ifEmpty { if (isAi) "AI" else "默认" }
             SubtitleLink(id = -(idx + 1L), isAI = isAi, lang = lang, url = f.absolutePath)
-        }.sortedByDescending { !it.isAI }.toTypedArray()
+        }.distinctBy { it.lang + it.isAI }.sortedByDescending { !it.isAI }.toTypedArray()
     }
 
     companion object {
