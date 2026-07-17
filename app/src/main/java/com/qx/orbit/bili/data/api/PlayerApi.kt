@@ -9,6 +9,8 @@ import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.*
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
+import com.qx.orbit.bili.util.AccountUtil
+import com.qx.orbit.bili.util.PlayerConfig
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import java.io.Serializable
 import java.net.URLEncoder
@@ -146,6 +148,10 @@ object PlayerApi {
     )
 
     suspend fun getVideoDash(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
+        val isLoggedIn = AccountUtil.isUserLoggedIn()
+        val tryLookEnabled = PlayerConfig.isTryLookEnabled()
+        val tryLook = !isLoggedIn && tryLookEnabled
+        
         val params = WbiSigner.signParams(mapOf(
             "avid" to playerData.aid.toString(),
             "cid" to playerData.cid.toString(),
@@ -156,7 +162,8 @@ object PlayerApi {
             "platform" to "pc",
             "voice_balance" to "1",
             "gaia_source" to "pre-load",
-            "isGaiaAvoided" to "true"
+            "isGaiaAvoided" to "true",
+            "try_look" to if (tryLook) "1" else "0"
         ))
         val jsonElement = when (val result = api.getPlayUrl(params)) {
             is Result.Success -> result.data
@@ -233,6 +240,10 @@ object PlayerApi {
     }
 
     suspend fun getVideo(playerData: PlayerData): PlayerData = withContext(Dispatchers.IO) {
+        val isLoggedIn = AccountUtil.isUserLoggedIn()
+        val tryLookEnabled = PlayerConfig.isTryLookEnabled()
+        val tryLook = !isLoggedIn && tryLookEnabled
+        
         val params = WbiSigner.signParams(mapOf(
             "avid" to playerData.aid.toString(),
             "cid" to playerData.cid.toString(),
@@ -243,7 +254,8 @@ object PlayerApi {
             "platform" to "html5",
             "voice_balance" to "1",
             "gaia_source" to "pre-load",
-            "isGaiaAvoided" to "true"
+            "isGaiaAvoided" to "true",
+            "try_look" to if (tryLook) "1" else "0"
         ))
         val jsonElement = when (val result = api.getPlayUrl(params)) {
             is Result.Success -> result.data
@@ -262,8 +274,12 @@ object PlayerApi {
     }
 
     suspend fun getBangumi(playerData: PlayerData, forceMp4: Boolean = false): PlayerData = withContext(Dispatchers.IO) {
+        val isLoggedIn = AccountUtil.isUserLoggedIn()
+        val tryLookEnabled = PlayerConfig.isTryLookEnabled()
+        val tryLook = !isLoggedIn && tryLookEnabled
+        
         val fnval = if (forceMp4) "1" else "4048"
-        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=$fnval&fourk=1"
+        val url = "https://api.bilibili.com/pgc/player/web/playurl?avid=${playerData.aid}&cid=${playerData.cid}&qn=${playerData.qn}&fnval=$fnval&fourk=1&try_look=${if (tryLook) "1" else "0"}"
         val json = httpGet(url)
         val type = object : TypeToken<ApiResponse<PlayUrlData>>() {}.type
         val resp: ApiResponse<PlayUrlData>? = GsonConfig.gson.fromJson(json, type)
