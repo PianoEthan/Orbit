@@ -1,0 +1,16 @@
+# Keep Orbit's native Wear Compose screens and list item render paths compiled
+# ahead of time. Wear Compose 1.6.2 marks its transforming-list implementation
+# as post-startup only, so explicitly mark the native scroll/transform paths hot
+# as well as the app-side composables and state reads invoked around them.
+HPLandroidx/wear/compose/foundation/lazy/**->**(**)**
+HPLandroidx/wear/compose/material3/lazy/**->**(**)**
+HPLandroidx/wear/compose/material3/SurfaceTransformation**->**(**)**
+HPLandroidx/wear/compose/material3/SwipeToReveal**->**(**)**
+HPLandroidx/wear/compose/material3/TransformingLazyColumnStateAdapter;->**(**)**
+HSPLcom/qx/orbit/bili/OrbitApp;->**(**)**
+HSPLcom/qx/orbit/bili/presentation/MainActivity;->**(**)**
+HSPLcom/qx/orbit/bili/presentation/MainActivityKt**->**(**)**
+HPLcom/qx/orbit/bili/presentation/**->**(**)**
+HPLcom/qx/orbit/bili/data/model/**->**(**)**
+HPLcom/qx/orbit/bili/util/FormatUtil**->**(**)**
+HPLcom/qx/orbit/bili/util/TimeUtil**->**(**)**
