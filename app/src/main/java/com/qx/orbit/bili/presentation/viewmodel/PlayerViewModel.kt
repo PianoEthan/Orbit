@@ -16,6 +16,7 @@ import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.util.player.OrbitPlayer
 import com.qx.orbit.bili.util.player.createOrbitPlayer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +33,7 @@ class PlayerViewModel : ViewModel() {
 
     fun initPlayer(context: Context) {
         if (::_player.isInitialized) return
-        _player = createOrbitPlayer(context)
+        _player = createOrbitPlayer(context.applicationContext)
     }
 
     // --- State ---
@@ -91,6 +92,11 @@ class PlayerViewModel : ViewModel() {
     private var switchPendingSeekMs = -1L
     private var startTs = 0L
     private var heartbeatStarted = false
+    private var heartbeatJob: Job? = null
+    private var bufferSpeedJob: Job? = null
+    private var liveElapsedJob: Job? = null
+    private var subtitleCursor = 0
+    private var released = false
 
     /**
      * Read position directly from player, bypassing the currentProgress flow
@@ -122,12 +128,21 @@ class PlayerViewModel : ViewModel() {
         _isLoading.value = loading
     }
 
+    fun beginPlaybackPreparation() {
+        _isPrepared.value = false
+        _isLoading.value = true
+        heartbeatStarted = false
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
     fun setError(msg: String?) {
         _errorMessage.value = msg
     }
 
     fun setSubtitles(subs: Array<Subtitle>) {
         _subtitles.value = subs
+        subtitleCursor = 0
     }
 
     fun setSubtitleLinks(links: Array<SubtitleLink>) {
@@ -185,8 +200,7 @@ class PlayerViewModel : ViewModel() {
 
     fun preparePlayback(initialData: PlayerData, isAudioOnlyMode: Boolean) {
         // Stop heartbeat loop before player reset (prevents currentProgress from being zeroed)
-        _isPrepared.value = false
-        heartbeatStarted = false
+        beginPlaybackPreparation()
         val data = _playerData.value
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -224,7 +238,12 @@ class PlayerViewModel : ViewModel() {
 
     private fun configureAndStartPlayer(data: PlayerData, isAudioOnlyMode: Boolean) {
         _player.reset()
-        _player.setDashData(data.dashData, data.videoUrl, data.audioUrl)
+        val useAudioOnlySource = !isLocal && isAudioOnlyMode && data.audioUrl.isNotEmpty()
+        if (useAudioOnlySource) {
+            _player.setDashData(null, data.audioUrl, "")
+        } else {
+            _player.setDashData(data.dashData, data.videoUrl, data.audioUrl)
+        }
         _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
         _player.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
         _player.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "file,http,https,tcp,tls,crypto")
@@ -242,11 +261,11 @@ class PlayerViewModel : ViewModel() {
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
         }
+        if (BuildConfig.HAS_IJK) {
+            _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (useAudioOnlySource) 1 else 0)
+        }
         if (isAudioOnlyMode && !isLocal) {
             // Power-saving: disable video decode (IJK only), minimize buffer
-            if (BuildConfig.HAS_IJK) {
-                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", 1)
-            }
             _player.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "reconnect_delay_max", 2)
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 1024 * 1024)
             _player.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "timeout", 5000000)
@@ -433,7 +452,15 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun release() {
+        if (released || !::_player.isInitialized) return
+        released = true
+        if (_isPrepared.value) {
+            try { _currentProgress.value = _player.currentPosition } catch (_: Exception) {}
+        }
         reportProgress()
+        heartbeatJob?.cancel()
+        bufferSpeedJob?.cancel()
+        liveElapsedJob?.cancel()
         _player.release()
     }
 
@@ -464,7 +491,8 @@ class PlayerViewModel : ViewModel() {
 
     private fun startHeartbeatLoop() {
         startTs = _currentProgress.value / 1000
-        viewModelScope.launch {
+        heartbeatJob?.cancel()
+        heartbeatJob = viewModelScope.launch {
             while (isActive && _isPrepared.value) {
                 delay(15.seconds)
                 updateProgress()
@@ -482,12 +510,27 @@ class PlayerViewModel : ViewModel() {
             return
         }
         val timeSec = progress / 1000.0
-        val matched = subs.find { timeSec >= it.from && timeSec < it.to }
+        if (subtitleCursor !in subs.indices || timeSec < subs[subtitleCursor].from) {
+            var low = 0
+            var high = subs.size
+            while (low < high) {
+                val mid = (low + high) ushr 1
+                if (subs[mid].to <= timeSec) low = mid + 1 else high = mid
+            }
+            subtitleCursor = low.coerceAtMost(subs.lastIndex)
+        } else {
+            while (subtitleCursor < subs.lastIndex && timeSec >= subs[subtitleCursor].to) {
+                subtitleCursor++
+            }
+        }
+        val candidate = subs[subtitleCursor]
+        val matched = candidate.takeIf { timeSec >= it.from && timeSec < it.to }
         _currentSubtitle.value = matched?.content
     }
 
     fun startBufferSpeedLoop() {
-        viewModelScope.launch {
+        bufferSpeedJob?.cancel()
+        bufferSpeedJob = viewModelScope.launch {
             while (isActive && _isLoading.value) {
                 updateBufferSpeed()
                 delay(1.seconds)
@@ -497,8 +540,12 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun startLiveElapsedTimer(timeStamp: Long) {
-        if (timeStamp <= 0) return
-        viewModelScope.launch {
+        liveElapsedJob?.cancel()
+        if (timeStamp <= 0) {
+            _liveElapsedSeconds.value = 0L
+            return
+        }
+        liveElapsedJob = viewModelScope.launch {
             while (isActive) {
                 _liveElapsedSeconds.value = (System.currentTimeMillis() / 1000) - timeStamp
                 delay(1.seconds)
@@ -507,9 +554,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        release()
         super.onCleared()
-        if (::_player.isInitialized) {
-            _player.release()
-        }
     }
 }

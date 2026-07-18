@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Build
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
@@ -159,6 +161,9 @@ import com.qx.orbit.bili.presentation.viewmodel.HistoryViewModel
 import com.qx.orbit.bili.presentation.viewmodel.WatchLaterViewModel
 
 class MainActivity : ComponentActivity() {
+    private val simulatedRotaryHandlers = linkedMapOf<Int, (Float) -> Boolean>()
+    private var nextSimulatedRotaryHandlerId = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
@@ -172,6 +177,34 @@ class MainActivity : ComponentActivity() {
         VideoDownloadManager.init(this)
         setContent {
             WearApp()
+        }
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)
+        ) {
+            val delta = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+            if (delta != 0f && dispatchSimulatedRotaryInput(delta)) {
+                return true
+            }
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    fun registerSimulatedRotaryHandler(handler: (Float) -> Boolean): Int {
+        val id = ++nextSimulatedRotaryHandlerId
+        simulatedRotaryHandlers[id] = handler
+        return id
+    }
+
+    fun unregisterSimulatedRotaryHandler(id: Int) {
+        simulatedRotaryHandlers.remove(id)
+    }
+
+    private fun dispatchSimulatedRotaryInput(delta: Float): Boolean {
+        return simulatedRotaryHandlers.values.toList().asReversed().any { handler ->
+            handler(delta)
         }
     }
 }

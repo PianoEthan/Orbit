@@ -230,7 +230,6 @@ object PlayerApi {
                 dashData = dashData,
                 videoUrl = selectedVideo?.baseUrl ?: (videoStreams.firstOrNull { it.codecid == 7 } ?: videoStreams.firstOrNull())?.baseUrl ?: "",
                 audioUrl = selectedAudio?.baseUrl ?: audioStreams.firstOrNull()?.baseUrl ?: "",
-                progress = data.quality,
                 qnStrList = data.accept_description?.toTypedArray(),
                 qnValueList = data.accept_quality?.toIntArray()
             )
