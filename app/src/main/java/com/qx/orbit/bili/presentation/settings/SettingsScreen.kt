@@ -79,6 +79,7 @@ import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.util.AppConfig
 import com.qx.orbit.bili.util.ScreenMode
 import com.qx.orbit.bili.BuildConfig
+import com.qx.orbit.bili.util.PlayerConfig
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.ShizukuUtils
 import kotlinx.coroutines.launch
@@ -279,6 +280,31 @@ fun SettingPreferenceScreen(navController: NavController) {
                     secondaryLabel = {
                         Text(
                             text = if (checked) "主页拉黑将弹窗确认" else "直接拉黑",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
+            
+            item {
+                var checked by remember { mutableStateOf(PlayerConfig.isTryLookEnabled()) }
+                SwitchButton(
+                    checked = checked,
+                    onCheckedChange = { isChecked ->
+                        checked = isChecked
+                        PlayerConfig.setTryLookEnabled(isChecked)
+                    },
+                    label = {
+                        Text(text = "免登录观看1080P", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
+                    secondaryLabel = {
+                        Text(
+                            text = if (checked) "未登录时可观看1080P视频" else "需要登录才能观看1080P",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
