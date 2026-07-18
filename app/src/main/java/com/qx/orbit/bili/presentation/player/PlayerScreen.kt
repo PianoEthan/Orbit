@@ -37,7 +37,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -61,7 +60,6 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.ScreenRotationAlt
 import androidx.compose.material.icons.rounded.ScreenRotation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -75,13 +73,13 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -132,16 +130,15 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.google.android.horologist.annotations.ExperimentalHorologistApi
 import com.google.android.horologist.audio.ui.material3.VolumeScreen
-import com.google.android.horologist.media.ui.state.model.TrackPositionUiModel
+import com.qx.orbit.bili.BuildConfig
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.CookiesApi
 import com.qx.orbit.bili.data.api.DanmakuApi
-import com.qx.orbit.bili.data.api.HeartbeatApi
-import com.qx.orbit.bili.data.api.HistoryApi
 import com.qx.orbit.bili.data.api.LiveApi
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.data.remote.HttpClient
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
 import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
@@ -163,12 +160,10 @@ import com.qx.orbit.bili.util.danmaku.base.createEmptyParser
 import com.qx.orbit.bili.util.danmaku.base.createProtobufParser
 import com.qx.orbit.bili.util.danmaku.base.createXmlParser
 import com.qx.orbit.bili.util.player.OrbitPlayer
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
 import java.io.File
@@ -176,7 +171,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 @Suppress("unused")
-@OptIn(ExperimentalHorologistApi::class, DelicateCoroutinesApi::class)
+@OptIn(ExperimentalHorologistApi::class)
 @SuppressLint("DefaultLocale")
 @Composable
 fun PlayerScreen(
@@ -187,7 +182,9 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     viewModel.initPlayer(context)
-    viewModel.setData(initialData)
+    LaunchedEffect(initialData) {
+        viewModel.setData(initialData)
+    }
     var backPressedTime by remember { mutableLongStateOf(0L) }
     var isExiting by remember { mutableStateOf(false) }
     var isAudioOnlyMode by remember { mutableStateOf(false) }
@@ -228,8 +225,6 @@ fun PlayerScreen(
     
     var showVolumeScreen by remember { mutableStateOf(false) }
     var showMoreDialog by remember { mutableStateOf(false) }
-    val volumeFocusRequester = remember { FocusRequester() }
-
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     
     val isAutoLandscape = remember { SharedPreferencesUtil.getBoolean("player_autolandscape", false) }
@@ -294,6 +289,7 @@ fun PlayerScreen(
             isActive = true
         }
     }
+    val latestPlayerData by rememberUpdatedState(playerData)
 
     val audioFocusListener = remember { AudioManager.OnAudioFocusChangeListener { } }
     LaunchedEffect(isPlaying) {
@@ -324,13 +320,14 @@ fun PlayerScreen(
             }
             
             override fun onSkipToNext() {
-                if (playerData.currentPageIndex + 1 < playerData.cids.size) {
-                    val nextIndex = playerData.currentPageIndex + 1
-                    val nextAid = if (playerData.aids.size > nextIndex) playerData.aids[nextIndex] else playerData.aid
-                    val nextCid = playerData.cids[nextIndex]
-                    val nextEpid = if (playerData.epids.size > nextIndex) playerData.epids[nextIndex] else playerData.epid
-                    val nextTitle = if (playerData.pagenames.size > nextIndex) playerData.pagenames[nextIndex] else playerData.title
-                    playerData = playerData.copy(
+                val data = latestPlayerData
+                if (data.currentPageIndex + 1 < data.cids.size) {
+                    val nextIndex = data.currentPageIndex + 1
+                    val nextAid = if (data.aids.size > nextIndex) data.aids[nextIndex] else data.aid
+                    val nextCid = data.cids[nextIndex]
+                    val nextEpid = if (data.epids.size > nextIndex) data.epids[nextIndex] else data.epid
+                    val nextTitle = if (data.pagenames.size > nextIndex) data.pagenames[nextIndex] else data.title
+                    playerData = data.copy(
                         currentPageIndex = nextIndex,
                         aid = nextAid,
                         cid = nextCid,
@@ -343,13 +340,14 @@ fun PlayerScreen(
             }
             
             override fun onSkipToPrevious() {
-                if (playerData.currentPageIndex - 1 >= 0) {
-                    val prevIndex = playerData.currentPageIndex - 1
-                    val prevAid = if (playerData.aids.size > prevIndex) playerData.aids[prevIndex] else playerData.aid
-                    val prevCid = playerData.cids[prevIndex]
-                    val prevEpid = if (playerData.epids.size > prevIndex) playerData.epids[prevIndex] else playerData.epid
-                    val prevTitle = if (playerData.pagenames.size > prevIndex) playerData.pagenames[prevIndex] else playerData.title
-                    playerData = playerData.copy(
+                val data = latestPlayerData
+                if (data.currentPageIndex - 1 >= 0) {
+                    val prevIndex = data.currentPageIndex - 1
+                    val prevAid = if (data.aids.size > prevIndex) data.aids[prevIndex] else data.aid
+                    val prevCid = data.cids[prevIndex]
+                    val prevEpid = if (data.epids.size > prevIndex) data.epids[prevIndex] else data.epid
+                    val prevTitle = if (data.pagenames.size > prevIndex) data.pagenames[prevIndex] else data.title
+                    playerData = data.copy(
                         currentPageIndex = prevIndex,
                         aid = prevAid,
                         cid = prevCid,
@@ -379,7 +377,24 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isPlaying, isPrepared, playbackSpeed, playerData.title, totalDuration) {
+    var mediaArt by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(playerData.cover) {
+        mediaArt = null
+        if (playerData.cover.isNotEmpty()) {
+            try {
+                val request = ImageRequest.Builder(context)
+                    .data(playerData.cover.replace("http://", "https://"))
+                    .size(512)
+                    .build()
+                val result = context.imageLoader.execute(request)
+                if (result is SuccessResult) {
+                    mediaArt = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(isPlaying, isPrepared, playerData.title, totalDuration, mediaArt) {
         if (isPrepared) {
             val metadataBuilder = MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, playerData.title)
@@ -389,33 +404,11 @@ fun PlayerScreen(
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "Orbit")
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, totalDuration)
                 
-            if (playerData.cover.isNotEmpty()) {
-                try {
-                    val request = ImageRequest.Builder(context)
-                        .data(playerData.cover.replace("http://", "https://"))
-                        .size(512)
-                        .build()
-                    val result = context.imageLoader.execute(request)
-                    if (result is SuccessResult) {
-                        val drawable = result.drawable
-                        val bitmap = if (drawable is android.graphics.drawable.BitmapDrawable) {
-                            drawable.bitmap
-                        } else null
-                        if (bitmap != null) {
-                            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, bitmap)
-                            metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap)
-                        }
-                    }
-                } catch (e: Exception) {}
+            mediaArt?.let { bitmap ->
+                metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, bitmap)
+                metadataBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap)
             }
             mediaSession.setMetadata(metadataBuilder.build())
-
-            val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
-            val playbackState = PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
-                .setState(state, currentProgress, playbackSpeed)
-                .build()
-            mediaSession.setPlaybackState(playbackState)
             
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -466,12 +459,13 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(currentProgress) {
+    LaunchedEffect(vmCurrentProgress, isPrepared, isPlaying, playbackSpeed) {
         if (isPrepared) {
             val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+            val sessionPosition = try { viewModel.player.currentPosition } catch (_: Exception) { vmCurrentProgress }
             val playbackState = PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
-                .setState(state, currentProgress, playbackSpeed)
+                .setState(state, sessionPosition, playbackSpeed)
                 .build()
             mediaSession.setPlaybackState(playbackState)
         }
@@ -479,7 +473,6 @@ fun PlayerScreen(
 
     var liveWebSocket by remember { mutableStateOf<WebSocket?>(null) }
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
-    var surfaceReady by remember { mutableStateOf(false) }
     var textureSurface by remember { mutableStateOf<Surface?>(null) }
     val isTextureViewOk = remember { mutableIntStateOf(SharedPreferencesUtil.getInt("isTextureViewOk", 0)) }
     val showTextureDialog = remember { mutableStateOf(false) }
@@ -514,13 +507,16 @@ fun PlayerScreen(
             if (isPlaying) {
                 danmakuPlayer.resume()
                 while (isActive) {
-                    androidx.compose.runtime.withFrameMillis { }
                     currentProgress = viewModel.player.currentPosition
                     viewModel.updateCurrentSubtitle(currentProgress)
+                    // Player chrome and subtitles do not need display-refresh-rate updates.
+                    // Keeping this at 4 Hz avoids recomposing the full player on every frame.
+                    delay(250.milliseconds)
                 }
             } else {
                 danmakuPlayer.pause()
                 currentProgress = viewModel.player.currentPosition
+                viewModel.updateCurrentSubtitle(currentProgress)
             }
         }
     }
@@ -528,6 +524,7 @@ fun PlayerScreen(
     LaunchedEffect(vmCurrentProgress) {
         if (isPrepared && !isPlaying) {
             currentProgress = vmCurrentProgress
+            viewModel.updateCurrentSubtitle(currentProgress)
         }
     }
 
@@ -553,13 +550,33 @@ fun PlayerScreen(
             viewModel.setLoading(false)
             return@LaunchedEffect
         }
-        viewModel.setLoading(true)
+        viewModel.beginPlaybackPreparation()
         lastLoadId = loadId
         try {
             danmakuPlayer.removeAllDanmakus(true)
             
             if (!isLocal && !CookieManager.getCookie().contains("buvid3")) {
                 CookiesApi.checkCookies()
+            }
+
+            // Fetch the playback URL while the danmaku engine is being prepared.
+            // Both are required before playback starts, but neither depends on the other.
+            val playbackData = async {
+                if (isLive || isLocal) {
+                    playerData
+                } else {
+                    val media3Selected = !BuildConfig.HAS_IJK ||
+                        SharedPreferencesUtil.getString("player_engine", "ijk") == "media3"
+                    val requestDash = SharedPreferencesUtil.getBoolean("player_request_dash", false)
+                    val shouldUseDash = isAudioOnlyMode || (media3Selected && requestDash)
+                    if (playerData.type == PlayerData.TYPE_BANGUMI) {
+                        PlayerApi.getBangumi(playerData, forceMp4 = !shouldUseDash)
+                    } else if (shouldUseDash) {
+                        PlayerApi.getVideoDash(playerData)
+                    } else {
+                        PlayerApi.getVideo(playerData)
+                    }
+                }
             }
 
             val danmakuTextScale = SharedPreferencesUtil.getFloat("player_danmaku_textsize", 1.0f) * 0.8f
@@ -670,16 +687,18 @@ fun PlayerScreen(
                 }
             }
 
-            val result = if (isLive || isLocal) playerData 
-                         else if (playerData.type == PlayerData.TYPE_BANGUMI) {
-                             PlayerApi.getBangumi(playerData)
-                         } else {
-                             if (isAudioOnlyMode) PlayerApi.getVideoDash(playerData) else PlayerApi.getVideo(playerData)
-                         }
+            val result = playbackData.await()
             if (!isLive && !isLocal) playerData = result
             if (result.videoUrl.isNotEmpty() || result.audioUrl.isNotEmpty()) {
                 mediaPlayer.reset()
-                mediaPlayer.setDashData(result.dashData, result.videoUrl, result.audioUrl)
+                val useAudioOnlySource = !isLocal && isAudioOnlyMode && result.audioUrl.isNotEmpty()
+                if (useAudioOnlySource) {
+                    // Media3 would otherwise merge the DASH video track back in, defeating
+                    // background audio-only mode and continuing video decode off-screen.
+                    mediaPlayer.setDashData(null, result.audioUrl, "")
+                } else {
+                    mediaPlayer.setDashData(result.dashData, result.videoUrl, result.audioUrl)
+                }
                 mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 1)
                 mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
                 mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "file,http,https,tcp,tls,crypto")
@@ -697,6 +716,13 @@ fun PlayerScreen(
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "packet-buffering", 0)
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
                 }
+                if (BuildConfig.HAS_IJK) {
+                    mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (useAudioOnlySource) 1 else 0)
+                }
+                if (useAudioOnlySource) {
+                    mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 1024 * 1024)
+                    mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 0)
+                }
                 val playUrl = if (!isLocal && isAudioOnlyMode && result.audioUrl.isNotEmpty()) result.audioUrl else result.videoUrl
                 mediaPlayer.dataSource = playUrl
                 if (effectiveUseTexture) {
@@ -711,7 +737,6 @@ fun PlayerScreen(
                 if (SharedPreferencesUtil.getBoolean("player_loop", false)) {
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "loop", 1)
                 }
-                mediaPlayer.prepareAsync()
                 var hasPrepared = false
                 mediaPlayer.setOnPreparedListener {
                     if (hasPrepared) return@setOnPreparedListener
@@ -758,6 +783,8 @@ fun PlayerScreen(
                     }
                     true
                 }
+                // Install callbacks before preparing; local sources can become ready quickly.
+                mediaPlayer.prepareAsync()
             } else {
                 viewModel.setError("无法获取视频地址")
                 viewModel.setLoading(false)
@@ -780,6 +807,8 @@ fun PlayerScreen(
                     val buvid = CookieManager.getCookie().split("; ")
                         .find { it.startsWith("buvid3=") }?.substringAfter("=") ?: ""
                     val mid = CookieManager.getMid()
+                    val showDanmakuSender = SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true)
+                    val liveDanmakuDensityScale = context.resources.displayMetrics.density - 0.6f
 
                     val callback = object : PlayerCallback {
                         @SuppressLint("LocalContextResourcesRead")
@@ -787,15 +816,14 @@ fun PlayerScreen(
                             try {
                                 val config = danmakuConfig ?: return
                                 val item = createDanmaku(config, type) ?: return
-                                val showSender = SharedPreferencesUtil.getBoolean("player_danmaku_showsender", true)
-                                val displayText = if (!showSender && senderName.isNotEmpty()) {
+                                val displayText = if (!showDanmakuSender && senderName.isNotEmpty()) {
                                     text.removePrefix("$senderName：")
                                 } else text
                                 item.text = displayText
                                 item.padding = 5
                                 item.priority = 1
                                 item.textColor = color
-                                item.textSize = textSize * (context.resources.displayMetrics.density - 0.6f)
+                                item.textSize = textSize * liveDanmakuDensityScale
                                 item.time = danmakuPlayer.getCurrentTime() + 100
                                 
                                 if (borderColor != 0) {
@@ -825,14 +853,14 @@ fun PlayerScreen(
                         callback = callback
                     )
 
-                    val client = OkHttpClient()
                     val request = Request.Builder()
                         .url(url)
                         .header("Cookie", CookieManager.getCookie())
                         .header("Origin", "https://live.bilibili.com")
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
                         .build()
-                    liveWebSocket = client.newWebSocket(request, listener)
+                    liveWebSocket?.close(1000, "reconnect")
+                    liveWebSocket = HttpClient.client.newWebSocket(request, listener)
                     Log.d("BiliApi", "PlayerScreen danmaku WS connecting to $url, uid=$mid, roomid=${playerData.aid}")
                 }
             } catch (_: Exception) {}
@@ -891,35 +919,12 @@ fun PlayerScreen(
     
     DisposableEffect(Unit) {
         view.keepScreenOn = true
-        val startTs = System.currentTimeMillis() / 1000
         onDispose {
             view.keepScreenOn = false
 
             if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
-                val currentPosSeconds = currentProgress / 1000
-                
+                val currentPosSeconds = viewModel.savePosition() / 1000
                 onDisposeAction(playerData.epid, currentPosSeconds)
-
-                GlobalScope.launch {
-                    try {
-                        val isBangumi = playerData.type == PlayerData.TYPE_BANGUMI && playerData.epid > 0
-                        if (!isBangumi) {
-                            HistoryApi.reportHistory(playerData.aid, playerData.cid, currentPosSeconds)
-                        }
-                        HeartbeatApi.reportHeartbeat(
-                            aid = playerData.aid,
-                            bvid = playerData.bvid,
-                            cid = playerData.cid,
-                            playedTime = currentPosSeconds,
-                            startTs = startTs,
-                            type = if (isBangumi) "4" else "3",
-                            subType = if (isBangumi) "1" else null,
-                            epid = if (isBangumi) playerData.epid else null,
-                            sid = if (isBangumi) playerData.sid else null,
-                            videoDuration = (totalDuration / 1000).coerceAtLeast(0)
-                        )
-                    } catch (e: Exception) {}
-                }
             }
 
             liveWebSocket?.close(1000, "bye")
@@ -1155,7 +1160,7 @@ fun PlayerScreen(
                                 }
                                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                                     override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                                        surfaceReady = true
+                                        textureSurface?.release()
                                         val s = Surface(surface)
                                         textureSurface = s
                                         mediaPlayer.setSurface(s)
@@ -1163,9 +1168,9 @@ fun PlayerScreen(
 
                                     override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
                                     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                                        surfaceReady = false
-                                        textureSurface = null
                                         mediaPlayer.setSurface(null)
+                                        textureSurface?.release()
+                                        textureSurface = null
                                         return true
                                     }
 
@@ -1183,13 +1188,11 @@ fun PlayerScreen(
                                 holder.addCallback(object : SurfaceHolder.Callback {
                                     override fun surfaceCreated(h: SurfaceHolder) {
                                         surfaceHolder = h
-                                        surfaceReady = true
                                         mediaPlayer.setDisplay(h)
                                     }
                                     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
                                     override fun surfaceDestroyed(h: SurfaceHolder) {
                                         surfaceHolder = null
-                                        surfaceReady = false
                                         mediaPlayer.setDisplay(null)
                                     }
                                 })
