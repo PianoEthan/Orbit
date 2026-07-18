@@ -236,9 +236,31 @@ fun PlayerScreen(
     var showVolumeScreen by remember { mutableStateOf(false) }
     var showMoreDialog by remember { mutableStateOf(false) }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val rotaryVolumeEnabled = remember {
+        SharedPreferencesUtil.getBoolean(
+            PLAYER_ROTARY_VOLUME_ENABLED_KEY,
+            DEFAULT_PLAYER_ROTARY_VOLUME_ENABLED
+        )
+    }
+    val volumeGuardEnabled = remember {
+        SharedPreferencesUtil.getBoolean(
+            PLAYER_VOLUME_GUARD_ENABLED_KEY,
+            DEFAULT_PLAYER_VOLUME_GUARD_ENABLED
+        )
+    }
+    val muteOnStartEnabled = remember {
+        SharedPreferencesUtil.getBoolean(
+            PLAYER_MUTE_ON_START_ENABLED_KEY,
+            DEFAULT_PLAYER_MUTE_ON_START_ENABLED
+        )
+    }
     val volumeState = rememberPlayerVolumeState(
-        guardEnabled = true,
-        playbackStartVolumeLimitPercent = 10
+        guardEnabled = volumeGuardEnabled,
+        playbackStartVolumeLimitPercent = if (muteOnStartEnabled) {
+            PLAYER_MUTE_ON_START_VOLUME_PERCENT
+        } else {
+            null
+        }
     )
     val simulatedRotaryHost = remember(context) { context.findActivity() as? MainActivity }
     
@@ -299,20 +321,24 @@ fun PlayerScreen(
     val danmakuPlayer = remember { createDanmakuPlayer(context) }
     var danmakuConfig by remember { mutableStateOf<DanmakuConfig?>(null) }
 
-    DisposableEffect(simulatedRotaryHost, volumeState) {
-        val handlerId = simulatedRotaryHost?.registerSimulatedRotaryHandler { rawDelta ->
-            val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
-            if (delta == 0f) {
-                false
-            } else {
-                volumeState.adjustByDelta(delta)
-                interactionCounter++
-                true
+    DisposableEffect(simulatedRotaryHost, volumeState, rotaryVolumeEnabled) {
+        val handlerId = if (rotaryVolumeEnabled) {
+            simulatedRotaryHost?.registerSimulatedRotaryHandler { rawDelta ->
+                val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
+                if (delta == 0f) {
+                    false
+                } else {
+                    volumeState.adjustByDelta(delta)
+                    interactionCounter++
+                    true
+                }
             }
+        } else {
+            null
         }
         onDispose {
             if (handlerId != null) {
-                simulatedRotaryHost.unregisterSimulatedRotaryHandler(handlerId)
+                simulatedRotaryHost?.unregisterSimulatedRotaryHandler(handlerId)
             }
         }
     }
@@ -1149,9 +1175,21 @@ fun PlayerScreen(
                 }
             }
             .onRotaryScrollEvent {
-                val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
-                if (delta != 0f) {
-                    volumeState.adjustByDelta(delta)
+                if (rotaryVolumeEnabled) {
+                    val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
+                    if (delta != 0f) {
+                        volumeState.adjustByDelta(delta)
+                        interactionCounter++
+                    }
+                } else if (isPrepared) {
+                    val newProgress = (currentProgress + it.verticalScrollPixels * 100)
+                        .toLong()
+                        .coerceIn(0L, totalDuration)
+                    viewModel.seekTo(newProgress)
+                    danmakuPlayer.seekTo(newProgress)
+                    if (isPlaying) {
+                        viewModel.play()
+                    }
                     interactionCounter++
                 }
                 true
