@@ -53,7 +53,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PanoramaFishEye
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.rounded.Pause
@@ -92,7 +95,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -140,6 +145,7 @@ import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.HttpClient
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
+import com.qx.orbit.bili.presentation.MainActivity
 import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
 import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
@@ -167,6 +173,9 @@ import kotlinx.coroutines.isActive
 import okhttp3.Request
 import okhttp3.WebSocket
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -215,10 +224,11 @@ fun PlayerScreen(
     var showDanmaku by remember { mutableStateOf(SharedPreferencesUtil.getBoolean("player_danmaku_default_show", true)) }
     val isPlaying by viewModel.isPlaying.collectAsState()
     
-    val leftTopBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_left", 2)) }
-    val leftBottomBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_left_bottom", 0)) }
-    val rightTopBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_right", 1)) }
-    val rightBottomBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_right_bottom", 0)) }
+    val controlLayout = remember { loadPlayerControlLayout() }
+    val leftTopBtnAction = controlLayout.leftTop
+    val leftBottomBtnAction = controlLayout.leftBottom
+    val rightTopBtnAction = controlLayout.rightTop
+    val rightBottomBtnAction = controlLayout.rightBottom
     
     val subtitleLinks by viewModel.subtitleLinks.collectAsState()
     var showSubtitleDialog by remember { mutableStateOf(false) }
@@ -226,6 +236,11 @@ fun PlayerScreen(
     var showVolumeScreen by remember { mutableStateOf(false) }
     var showMoreDialog by remember { mutableStateOf(false) }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val volumeState = rememberPlayerVolumeState(
+        guardEnabled = true,
+        playbackStartVolumeLimitPercent = 10
+    )
+    val simulatedRotaryHost = remember(context) { context.findActivity() as? MainActivity }
     
     val isAutoLandscape = remember { SharedPreferencesUtil.getBoolean("player_autolandscape", false) }
     val isSoftRotate = remember { SharedPreferencesUtil.getBoolean("player_softrotate", false) }
@@ -283,6 +298,24 @@ fun PlayerScreen(
     val mediaPlayer = viewModel.player
     val danmakuPlayer = remember { createDanmakuPlayer(context) }
     var danmakuConfig by remember { mutableStateOf<DanmakuConfig?>(null) }
+
+    DisposableEffect(simulatedRotaryHost, volumeState) {
+        val handlerId = simulatedRotaryHost?.registerSimulatedRotaryHandler { rawDelta ->
+            val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
+            if (delta == 0f) {
+                false
+            } else {
+                volumeState.adjustByDelta(delta)
+                interactionCounter++
+                true
+            }
+        }
+        onDispose {
+            if (handlerId != null) {
+                simulatedRotaryHost.unregisterSimulatedRotaryHandler(handlerId)
+            }
+        }
+    }
 
     val mediaSession = remember {
         MediaSession(context, "OrbitPlayer").apply {
@@ -481,6 +514,8 @@ fun PlayerScreen(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var scaleMode by remember { mutableStateOf(PlayerScaleMode.Standard) }
+    var videoViewportSize by remember { mutableStateOf(IntSize.Zero) }
 
     val useTextureView = remember { SharedPreferencesUtil.getBoolean("player_texture_view", true) }
     val effectiveUseTexture = useTextureView && isTextureViewOk.intValue != -1
@@ -742,6 +777,10 @@ fun PlayerScreen(
                     if (hasPrepared) return@setOnPreparedListener
                     hasPrepared = true
                     val startDanmakuPlayback = {
+                        // Apply WatchRSS-style mute-on-start immediately before playback.
+                        // The volume state remembers explicit user changes, so resume and
+                        // subsequent episode switches do not keep forcing the limit.
+                        volumeState.enforcePlaybackStartGuard()
                         viewModel.onPrepared()
                         if (!isAudioOnlyMode && playerData.audioUrl != "audio") {
                             val targetPos = viewModel.currentProgress.value
@@ -960,6 +999,16 @@ fun PlayerScreen(
         animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "rotation"
     )
+    val scaleModeMultiplier by animateFloatAsState(
+        targetValue = calculatePlayerScaleMultiplier(
+            viewSize = videoViewportSize,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            scaleMode = scaleMode
+        ),
+        animationSpec = tween(durationMillis = 250),
+        label = "threeStageScale"
+    )
 
     Box(
         modifier = Modifier
@@ -1100,14 +1149,9 @@ fun PlayerScreen(
                 }
             }
             .onRotaryScrollEvent {
-                if (isPrepared) {
-                    val delta = it.verticalScrollPixels
-                    val newProgress = (currentProgress + delta * 100).toLong().coerceIn(0L, totalDuration)
-                    viewModel.seekTo(newProgress)
-                    danmakuPlayer.seekTo(newProgress)
-                    if (isPlaying) {
-                        viewModel.play()
-                    }
+                val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
+                if (delta != 0f) {
+                    volumeState.adjustByDelta(delta)
                     interactionCounter++
                 }
                 true
@@ -1116,9 +1160,10 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .onSizeChanged { videoViewportSize = it }
                 .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
+                    scaleX = scale * scaleModeMultiplier,
+                    scaleY = scale * scaleModeMultiplier,
                     translationX = offsetX,
                     translationY = offsetY
                 ),
@@ -1126,7 +1171,7 @@ fun PlayerScreen(
         ) {
             // Video Surface - fit within round screen safe area by default
             Box(
-                modifier = Modifier.fillMaxSize(if (isRound) 0.86524f else 1f),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 if (useTextureView && isTextureViewOk.intValue == 0) {
@@ -1308,6 +1353,11 @@ fun PlayerScreen(
             )
         }
 
+        PlayerVolumeOverlay(
+            state = volumeState,
+            modifier = Modifier.align(Alignment.Center)
+        )
+
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -1378,7 +1428,7 @@ fun PlayerScreen(
                 ) {
                     val renderCustomButton = @Composable { action: Int, modifier: Modifier ->
                         when (action) {
-                            1 -> {
+                            PLAYER_ACTION_DANMAKU -> {
                                 IconButton(
                                     onClick = { showDanmaku = !showDanmaku },
                                     modifier = modifier.size(36.dp)
@@ -1391,7 +1441,7 @@ fun PlayerScreen(
                                     )
                                 }
                             }
-                            2 -> {
+                            PLAYER_ACTION_SPEED -> {
                                 if (!isLive) {
                                     IconButton(
                                         onClick = {
@@ -1420,7 +1470,7 @@ fun PlayerScreen(
                                     }
                                 }
                             }
-                            3 -> {
+                            PLAYER_ACTION_VOLUME -> {
                                 IconButton(
                                     onClick = { showVolumeScreen = true },
                                     modifier = modifier.size(36.dp)
@@ -1433,7 +1483,7 @@ fun PlayerScreen(
                                     )
                                 }
                             }
-                            4 -> {
+                            PLAYER_ACTION_SUBTITLE -> {
                                 IconButton(
                                     onClick = { showSubtitleDialog = true },
                                     modifier = modifier.size(36.dp)
@@ -1446,39 +1496,13 @@ fun PlayerScreen(
                                     )
                                 }
                             }
-                            5 -> {
+                            PLAYER_ACTION_ROTATE -> {
                                 IconButton(
                                     onClick = {
-                                        if (isSoftRotate) {
-                                            val steps = SharedPreferencesUtil.getString("player_softrotate_steps", "0,90,180,270")
-                                                .split(",").mapNotNull { it.trim().toFloatOrNull() }
-                                            if (steps.size >= 2) {
-                                                val currentIdx = steps.indexOfFirst { it == softRotateDegrees }.coerceAtLeast(0)
-                                                val nextIdx = (currentIdx + 1) % steps.size
-                                                val nextDeg = steps[nextIdx]
-                                                if (steps.size == 2) {
-                                                    // 2 directions: animate "from where it came" (back and forth)
-                                                    cumulativeRotation = nextDeg
-                                                } else {
-                                                    // 3+ directions: always rotate clockwise (same direction)
-                                                    val delta = ((nextDeg - cumulativeRotation) % 360 + 360) % 360
-                                                    cumulativeRotation += if (delta == 0f) 360f else delta
-                                                }
-                                                softRotateDegrees = nextDeg
-                                                SharedPreferencesUtil.putFloat("player_softrotate_deg", softRotateDegrees)
-                                            }
-                                        } else {
-                                            val activity = context.findActivity()
-                                            if (activity != null) {
-                                                val current = activity.requestedOrientation
-                                                if (current == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE ||
-                                                    current == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
-                                                    activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                                } else {
-                                                    activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                                }
-                                            }
-                                        }
+                                        cumulativeRotation += 90f
+                                        softRotateDegrees = ((cumulativeRotation % 360f) + 360f) % 360f
+                                        SharedPreferencesUtil.putFloat("player_softrotate_deg", softRotateDegrees)
+                                        interactionCounter++
                                     },
                                     modifier = modifier.size(36.dp)
                                 ) {
@@ -1487,6 +1511,26 @@ fun PlayerScreen(
                                         contentDescription = "Rotate Screen",
                                         tint = Color.White.copy(alpha = 0.9f),
                                         modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            PLAYER_ACTION_SCALE -> {
+                                val scaleAction = scaleMode.toggleAction()
+                                IconButton(
+                                    onClick = {
+                                        scaleMode = scaleMode.next()
+                                        scale = 1f
+                                        offsetX = 0f
+                                        offsetY = 0f
+                                        interactionCounter++
+                                    },
+                                    modifier = modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = scaleAction.icon,
+                                        contentDescription = scaleAction.contentDescription,
+                                        tint = Color.White.copy(alpha = 0.9f),
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
@@ -1778,6 +1822,77 @@ fun PlayerScreen(
                     }
                 }
                 item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
+        }
+    }
+}
+
+private enum class PlayerScaleMode {
+    Standard,
+    Expanded,
+    Shrunk;
+
+    fun next(): PlayerScaleMode = when (this) {
+        Standard -> Expanded
+        Expanded -> Shrunk
+        Shrunk -> Standard
+    }
+}
+
+private data class PlayerScaleToggleAction(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val contentDescription: String
+)
+
+private fun PlayerScaleMode.toggleAction(): PlayerScaleToggleAction = when (this) {
+    PlayerScaleMode.Standard -> PlayerScaleToggleAction(
+        icon = Icons.Filled.Fullscreen,
+        contentDescription = "放大"
+    )
+    PlayerScaleMode.Expanded -> PlayerScaleToggleAction(
+        icon = Icons.Filled.PanoramaFishEye,
+        contentDescription = "缩小"
+    )
+    PlayerScaleMode.Shrunk -> PlayerScaleToggleAction(
+        icon = Icons.Filled.FullscreenExit,
+        contentDescription = "标准"
+    )
+}
+
+private fun calculatePlayerScaleMultiplier(
+    viewSize: IntSize,
+    videoWidth: Float,
+    videoHeight: Float,
+    scaleMode: PlayerScaleMode
+): Float {
+    if (viewSize.width <= 0 || viewSize.height <= 0 || videoWidth <= 0f || videoHeight <= 0f) {
+        return 1f
+    }
+    val viewWidth = viewSize.width.toFloat()
+    val viewHeight = viewSize.height.toFloat()
+    val viewAspect = viewWidth / viewHeight
+    val videoAspect = videoWidth / videoHeight
+    val contentWidth: Float
+    val contentHeight: Float
+    if (videoAspect > viewAspect) {
+        contentWidth = viewWidth
+        contentHeight = viewWidth / videoAspect
+    } else {
+        contentHeight = viewHeight
+        contentWidth = viewHeight * videoAspect
+    }
+    return when (scaleMode) {
+        PlayerScaleMode.Standard -> 1f
+        PlayerScaleMode.Expanded -> max(
+            viewWidth / contentWidth.coerceAtLeast(1f),
+            viewHeight / contentHeight.coerceAtLeast(1f)
+        )
+        PlayerScaleMode.Shrunk -> {
+            val diagonal = sqrt(contentWidth * contentWidth + contentHeight * contentHeight)
+            if (diagonal > 0f) {
+                (min(viewWidth, viewHeight) / diagonal).coerceAtMost(1f)
+            } else {
+                1f
             }
         }
     }

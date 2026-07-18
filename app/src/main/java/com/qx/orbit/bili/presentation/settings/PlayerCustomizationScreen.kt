@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.ScreenRotationAlt
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -56,20 +57,32 @@ import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_DANMAKU
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_ROTATE
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_SCALE
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_SPEED
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_SUBTITLE
+import com.qx.orbit.bili.presentation.player.PLAYER_ACTION_VOLUME
+import com.qx.orbit.bili.presentation.player.PLAYER_LEFT_BOTTOM_KEY
+import com.qx.orbit.bili.presentation.player.PLAYER_LEFT_TOP_KEY
+import com.qx.orbit.bili.presentation.player.PLAYER_RIGHT_BOTTOM_KEY
+import com.qx.orbit.bili.presentation.player.PLAYER_RIGHT_TOP_KEY
+import com.qx.orbit.bili.presentation.player.loadPlayerControlLayout
 
 @Composable
 fun PlayerCustomizationScreen(
     onBack: () -> Unit
 ) {
-    var leftTopBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_left", 2)) }
-    var leftBottomBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_left_bottom", 0)) }
-    var rightTopBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_right", 1)) }
-    var rightBottomBtnAction by remember { mutableIntStateOf(SharedPreferencesUtil.getInt("player_custom_btn_right_bottom", 0)) }
+    val initialLayout = remember { loadPlayerControlLayout() }
+    var leftTopBtnAction by remember { mutableIntStateOf(initialLayout.leftTop) }
+    var leftBottomBtnAction by remember { mutableIntStateOf(initialLayout.leftBottom) }
+    var rightTopBtnAction by remember { mutableIntStateOf(initialLayout.rightTop) }
+    var rightBottomBtnAction by remember { mutableIntStateOf(initialLayout.rightBottom) }
     
     var showActionDialog by remember { mutableStateOf(false) }
     var configuringSide by remember { mutableIntStateOf(0) } // 0: LT, 1: LB, 2: RT, 3: RB
 
-    val actionNames = listOf("无操作", "弹幕开关", "倍速播放", "音量调节", "字幕设置", "旋转屏幕")
+    val actionNames = listOf("无操作", "弹幕开关", "倍速播放", "音量调节", "字幕设置", "旋转屏幕", "三段缩放")
 
     Box(
         modifier = Modifier
@@ -227,19 +240,19 @@ fun PlayerCustomizationScreen(
                                 when(configuringSide) {
                                     0 -> {
                                         leftTopBtnAction = index
-                                        SharedPreferencesUtil.putInt("player_custom_btn_left", index)
+                                        SharedPreferencesUtil.putInt(PLAYER_LEFT_TOP_KEY, index)
                                     }
                                     1 -> {
                                         leftBottomBtnAction = index
-                                        SharedPreferencesUtil.putInt("player_custom_btn_left_bottom", index)
+                                        SharedPreferencesUtil.putInt(PLAYER_LEFT_BOTTOM_KEY, index)
                                     }
                                     2 -> {
                                         rightTopBtnAction = index
-                                        SharedPreferencesUtil.putInt("player_custom_btn_right", index)
+                                        SharedPreferencesUtil.putInt(PLAYER_RIGHT_TOP_KEY, index)
                                     }
                                     3 -> {
                                         rightBottomBtnAction = index
-                                        SharedPreferencesUtil.putInt("player_custom_btn_right_bottom", index)
+                                        SharedPreferencesUtil.putInt(PLAYER_RIGHT_BOTTOM_KEY, index)
                                     }
                                 }
                                 showActionDialog = false
@@ -269,7 +282,7 @@ fun PlayerCustomizationScreen(
 @Composable
 fun PlayerActionIcon(action: Int) {
     when (action) {
-        1 -> {
+        PLAYER_ACTION_DANMAKU -> {
             Icon(
                 painter = painterResource(R.drawable.ic_danmaku_inline_switch_v2_on),
                 contentDescription = "Danmaku",
@@ -277,7 +290,7 @@ fun PlayerActionIcon(action: Int) {
                 modifier = Modifier.size(36.dp)
             )
         }
-        2 -> {
+        PLAYER_ACTION_SPEED -> {
             Icon(
                 painter = painterResource(R.drawable.speed_1x),
                 contentDescription = "Playback Speed",
@@ -285,7 +298,7 @@ fun PlayerActionIcon(action: Int) {
                 modifier = Modifier.size(28.dp)
             )
         }
-        3 -> {
+        PLAYER_ACTION_VOLUME -> {
             Icon(
                 imageVector = Icons.AutoMirrored.Default.VolumeUp,
                 contentDescription = "Volume",
@@ -293,7 +306,7 @@ fun PlayerActionIcon(action: Int) {
                 modifier = Modifier.size(24.dp)
             )
         }
-        4 -> {
+        PLAYER_ACTION_SUBTITLE -> {
             Icon(
                 painter = painterResource(R.drawable.ic_subtitle_setting),
                 contentDescription = "Subtitle",
@@ -301,12 +314,20 @@ fun PlayerActionIcon(action: Int) {
                 modifier = Modifier.size(24.dp)
             )
         }
-        5 -> {
+        PLAYER_ACTION_ROTATE -> {
             Icon(
                 imageVector = Icons.Filled.ScreenRotation,
                 contentDescription = "Rotate Screen",
                 tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.size(20.dp)
+            )
+        }
+        PLAYER_ACTION_SCALE -> {
+            Icon(
+                imageVector = Icons.Filled.Fullscreen,
+                contentDescription = "Three-stage Scale",
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.size(22.dp)
             )
         }
         else -> {
