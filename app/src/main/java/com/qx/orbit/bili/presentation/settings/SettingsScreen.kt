@@ -67,6 +67,12 @@ import com.google.gson.Gson
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.MainActivity
+import com.qx.orbit.bili.presentation.player.DEFAULT_PLAYER_MUTE_ON_START_ENABLED
+import com.qx.orbit.bili.presentation.player.DEFAULT_PLAYER_ROTARY_VOLUME_ENABLED
+import com.qx.orbit.bili.presentation.player.DEFAULT_PLAYER_VOLUME_GUARD_ENABLED
+import com.qx.orbit.bili.presentation.player.PLAYER_MUTE_ON_START_ENABLED_KEY
+import com.qx.orbit.bili.presentation.player.PLAYER_ROTARY_VOLUME_ENABLED_KEY
+import com.qx.orbit.bili.presentation.player.PLAYER_VOLUME_GUARD_ENABLED_KEY
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.ShizukuActivationDialog
@@ -342,6 +348,30 @@ fun SettingApsisPlayerScreen(navController: NavController) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
+    var rotaryVolumeEnabled by remember {
+        mutableStateOf(
+            SharedPreferencesUtil.getBoolean(
+                PLAYER_ROTARY_VOLUME_ENABLED_KEY,
+                DEFAULT_PLAYER_ROTARY_VOLUME_ENABLED
+            )
+        )
+    }
+    var volumeGuardEnabled by remember {
+        mutableStateOf(
+            SharedPreferencesUtil.getBoolean(
+                PLAYER_VOLUME_GUARD_ENABLED_KEY,
+                DEFAULT_PLAYER_VOLUME_GUARD_ENABLED
+            )
+        )
+    }
+    var muteOnStartEnabled by remember {
+        mutableStateOf(
+            SharedPreferencesUtil.getBoolean(
+                PLAYER_MUTE_ON_START_ENABLED_KEY,
+                DEFAULT_PLAYER_MUTE_ON_START_ENABLED
+            )
+        )
+    }
 
     ScreenScaffold(
         timeText = { WysTimeText() },
@@ -416,6 +446,76 @@ fun SettingApsisPlayerScreen(navController: NavController) {
                 Triple("player_danmaku_showsender", "显示直播弹幕发送者", true),
                 Triple("player_ui_showDanmakuBtn", "显示弹幕按钮", true)
             )
+            item {
+                SwitchButton(
+                    checked = rotaryVolumeEnabled,
+                    onCheckedChange = { isChecked ->
+                        rotaryVolumeEnabled = isChecked
+                        SharedPreferencesUtil.putBoolean(
+                            PLAYER_ROTARY_VOLUME_ENABLED_KEY,
+                            isChecked
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = "使用滚轮调节音量",
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
+                        )
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
+            item {
+                SwitchButton(
+                    checked = volumeGuardEnabled,
+                    enabled = rotaryVolumeEnabled,
+                    onCheckedChange = { isChecked ->
+                        volumeGuardEnabled = isChecked
+                        SharedPreferencesUtil.putBoolean(
+                            PLAYER_VOLUME_GUARD_ENABLED_KEY,
+                            isChecked
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = "音量调节防干扰",
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
+                        )
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
+            item {
+                SwitchButton(
+                    checked = muteOnStartEnabled,
+                    onCheckedChange = { isChecked ->
+                        muteOnStartEnabled = isChecked
+                        SharedPreferencesUtil.putBoolean(
+                            PLAYER_MUTE_ON_START_ENABLED_KEY,
+                            isChecked
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = "静音开播",
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee()
+                        )
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
             item {
                 Button(
                     onClick = { navController.navigate("settings_player_customization") },

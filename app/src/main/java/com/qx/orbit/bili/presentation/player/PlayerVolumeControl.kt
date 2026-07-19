@@ -305,6 +305,15 @@ private fun volumeForPercent(targetPercent: Float, minVolume: Int, maxVolume: In
         .coerceIn((minVolume + 1).toFloat(), maxVolume.toFloat())
 }
 
+internal const val PLAYER_ROTARY_VOLUME_ENABLED_KEY = "player_rotary_volume_enabled"
+internal const val PLAYER_VOLUME_GUARD_ENABLED_KEY = "player_volume_guard_enabled"
+internal const val PLAYER_MUTE_ON_START_ENABLED_KEY = "player_mute_on_start_enabled"
+
+internal const val DEFAULT_PLAYER_ROTARY_VOLUME_ENABLED = true
+internal const val DEFAULT_PLAYER_VOLUME_GUARD_ENABLED = false
+internal const val DEFAULT_PLAYER_MUTE_ON_START_ENABLED = false
+internal const val PLAYER_MUTE_ON_START_VOLUME_PERCENT = 10
+
 internal const val ROTARY_VOLUME_INPUT_SCALE = 0.01f
 
 private const val PLAYBACK_START_VOLUME_LIMIT_PERCENT = 10
