@@ -580,7 +580,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                     val menuListState = rememberTransformingLazyColumnState()
                     val menuFocusRequester = remember { FocusRequester() }
                     val menuTransformationSpec = rememberTransformationSpec()
-    val isRound = LocalScreenRound.current
+                    val isRound = LocalScreenRound.current
 
                     LaunchedEffect(showTabMenu) {
                         if (showTabMenu) {

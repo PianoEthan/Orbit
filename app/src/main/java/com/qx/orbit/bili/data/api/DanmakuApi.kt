@@ -6,7 +6,12 @@ import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.WireFormat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Request
@@ -87,8 +92,26 @@ object DanmakuApi {
         resp?.code ?: -1
     }
 
+    suspend fun getVideoDanmakuSegments(aid: Long, cid: Long): List<DmSegMobileReply> = withContext(Dispatchers.IO) {
+        val segmentCount = getVideoDanmakuSegmentCount(aid, cid).coerceAtLeast(1)
+        (1..segmentCount)
+            .chunked(MAX_CONCURRENT_SEGMENT_REQUESTS)
+            .flatMap { segmentIndexes ->
+                coroutineScope {
+                    segmentIndexes.map { segmentIndex ->
+                        async {
+                            runCatching {
+                                getVideoDanmakuSegment(aid, cid, segmentIndex)
+                            }.getOrNull()
+                        }
+                    }.awaitAll()
+                }
+            }
+            .filterNotNull()
+    }
+
     suspend fun getVideoDanmakuSegment(aid: Long, cid: Long, segmentIndex: Int): DmSegMobileReply? = withContext(Dispatchers.IO) {
-        val baseUrl = "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=$cid&segment_index=$segmentIndex"
+        val baseUrl = "https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?type=1&oid=$cid&pid=$aid&segment_index=$segmentIndex"
         val url = ConfInfoApi.signWBI(baseUrl)
         val request = Request.Builder().url(url)
             .addHeader("Cookie", CookieManager.getCookie())
@@ -96,10 +119,48 @@ object DanmakuApi {
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
         val response = HttpClient.client.newCall(request).execute()
-        val bytes = response.body?.bytes() ?: return@withContext null
+        val bytes = response.body.bytes()
         if (bytes.isEmpty()) return@withContext null
         parseDmSegMobileReply(bytes)
     }
+
+    private suspend fun getVideoDanmakuSegmentCount(aid: Long, cid: Long): Int = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/v2/dm/web/view?type=1&oid=$cid&pid=$aid")
+            .addHeader("Cookie", CookieManager.getCookie())
+            .addHeader("User-Agent", USER_AGENT)
+            .addHeader("Referer", "https://www.bilibili.com/")
+            .build()
+        val response = HttpClient.client.newCall(request).execute()
+        val bytes = response.body.bytes()
+        parseDanmakuSegmentCount(bytes).coerceAtLeast(1)
+    }
+
+    internal fun parseDanmakuSegmentCount(bytes: ByteArray): Int = runCatching {
+        val input = CodedInputStream.newInstance(bytes)
+        while (!input.isAtEnd) {
+            val tag = input.readTag()
+            if (tag == 0) break
+            if (WireFormat.getTagFieldNumber(tag) == DM_SEGMENT_CONFIG_FIELD_NUMBER) {
+                val length = input.readRawVarint32()
+                val oldLimit = input.pushLimit(length)
+                while (!input.isAtEnd) {
+                    val configTag = input.readTag()
+                    if (configTag == 0) break
+                    if (WireFormat.getTagFieldNumber(configTag) == DM_SEGMENT_TOTAL_FIELD_NUMBER) {
+                        val total = input.readInt64().toInt()
+                        input.popLimit(oldLimit)
+                        return@runCatching total
+                    }
+                    input.skipField(configTag)
+                }
+                input.popLimit(oldLimit)
+            } else {
+                input.skipField(tag)
+            }
+        }
+        1
+    }.getOrDefault(1)
 
     private fun parseDmSegMobileReply(bytes: ByteArray): DmSegMobileReply {
         val elems = mutableListOf<DanmakuElem>()
@@ -216,5 +277,8 @@ object DanmakuApi {
         }
     }
 
+    private const val MAX_CONCURRENT_SEGMENT_REQUESTS = 4
+    private const val DM_SEGMENT_CONFIG_FIELD_NUMBER = 4
+    private const val DM_SEGMENT_TOTAL_FIELD_NUMBER = 2
     private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
 }

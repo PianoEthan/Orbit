@@ -827,6 +827,50 @@ fun SettingUIScreen(navController: NavController) {
                     }
                 }
             }
+            item {
+                val context = LocalContext.current
+                var dpiScale by remember { mutableFloatStateOf(AppConfig.dpiScale) }
+                TitleCard(
+                    onClick = {},
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    title = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("全局 DPI 缩放", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    text = String.format(LocalLocale.current.platformLocale, "%.1f", dpiScale),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Slider(
+                                value = dpiScale,
+                                onValueChange = { dpiScale = it },
+                                onValueChangeFinished = {
+                                    AppConfig.saveDpiScale(context, dpiScale)
+                                },
+                                valueRange = 0.5f..2.0f,
+                                steps = 14,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = MaterialTheme.colorScheme.primary,
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                                    activeTickColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+                                    inactiveTickColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }

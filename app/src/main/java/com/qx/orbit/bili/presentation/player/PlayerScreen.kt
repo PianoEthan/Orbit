@@ -266,28 +266,43 @@ fun PlayerScreen(
     
     val isAutoLandscape = remember { SharedPreferencesUtil.getBoolean("player_autolandscape", false) }
     val isSoftRotate = remember { SharedPreferencesUtil.getBoolean("player_softrotate", false) }
-    var softRotateDegrees by remember { mutableFloatStateOf(SharedPreferencesUtil.getFloat("player_softrotate_deg", 0f)) }
+    val enabledRotateSteps = remember {
+        val saved = SharedPreferencesUtil.getString("player_softrotate_steps", "0,90,180,270")
+        val parsed = saved.split(",")
+            .mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in listOf(0, 90, 180, 270) }
+            .sorted()
+        if (parsed.isNotEmpty()) parsed else listOf(0, 90, 180, 270)
+    }
+    val initialRotateAngle = remember(isAutoLandscape, enabledRotateSteps) {
+        if (isAutoLandscape) {
+            if (90 in enabledRotateSteps) 90
+            else if (270 in enabledRotateSteps) 270
+            else enabledRotateSteps.first()
+        } else {
+            val savedDeg = SharedPreferencesUtil.getFloat("player_softrotate_deg", 0f).toInt()
+            if (savedDeg in enabledRotateSteps) savedDeg
+            else enabledRotateSteps.first()
+        }
+    }
+    var cumulativeRotation by remember { mutableFloatStateOf(initialRotateAngle.toFloat()) }
+    var softRotateDegrees by remember { mutableFloatStateOf(initialRotateAngle.toFloat()) }
+    var currentSystemAngle by remember { mutableIntStateOf(initialRotateAngle) }
     val isRound = LocalScreenRound.current
+
     DisposableEffect(isAutoLandscape, isSoftRotate) {
         val activity = context.findActivity()
         val originalOrientation = try { activity?.requestedOrientation } catch (_: Exception) { null }
-        // Only use system landscape if auto-landscape is on AND software rotation is off
-        if (isAutoLandscape && !isSoftRotate && activity != null) {
-            try {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            } catch (_: Exception) {
-                // Device may not support landscape (e.g. round watches)
+        if (!isSoftRotate && activity != null) {
+            activity.requestedOrientation = if (isAutoLandscape) {
+                requestedOrientationForAngle(initialRotateAngle)
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
         }
-        // If software rotation + auto-landscape, default to 90°
-        if (isAutoLandscape && isSoftRotate && softRotateDegrees == 0f) {
-            softRotateDegrees = 90f
-        }
         onDispose {
-            if (isAutoLandscape && !isSoftRotate && activity != null && originalOrientation != null) {
-                try {
-                    activity.requestedOrientation = originalOrientation
-                } catch (_: Exception) {}
+            if (!isSoftRotate && activity != null && originalOrientation != null) {
+                activity.requestedOrientation = originalOrientation
             }
         }
     }
@@ -643,10 +658,10 @@ fun PlayerScreen(
             val danmakuTextScale = SharedPreferencesUtil.getFloat("player_danmaku_textsize", 1.0f) * 0.8f
 
             if (!isLive && !isLocal) {
-                val danmakuSegment = DanmakuApi.getVideoDanmakuSegment(playerData.aid, playerData.cid, 1)
+                val danmakuSegments = DanmakuApi.getVideoDanmakuSegments(playerData.aid, playerData.cid)
                 val parser = createProtobufParser()
-                if (danmakuSegment != null) {
-                    parser.setDanmakuSegments(listOf(danmakuSegment))
+                if (danmakuSegments.isNotEmpty()) {
+                    parser.setDanmakuSegments(danmakuSegments)
                 }
                 val config = createDanmakuConfig().apply {
                     val mergeDuplicates = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
@@ -1019,7 +1034,6 @@ fun PlayerScreen(
     }
 
     // Cumulative angle for smooth clockwise-only animation (avoids 270°→0° going backwards)
-    var cumulativeRotation by remember { mutableFloatStateOf(SharedPreferencesUtil.getFloat("player_softrotate_deg", 0f)) }
     val animatedRotation by animateFloatAsState(
         targetValue = cumulativeRotation,
         animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing),
@@ -1040,7 +1054,7 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .layout { measurable, constraints ->
-                val isRotatedLayout = (cumulativeRotation.toInt() % 180) != 0
+                val isRotatedLayout = isSoftRotate && ((cumulativeRotation.toInt() % 180) != 0)
                 val placeable = if (isRotatedLayout) {
                     measurable.measure(Constraints.fixed(constraints.maxHeight, constraints.maxWidth))
                 } else {
@@ -1054,7 +1068,7 @@ fun PlayerScreen(
                 }
             }
             .graphicsLayer {
-                rotationZ = animatedRotation
+                rotationZ = if (isSoftRotate) animatedRotation else 0f
             }
             .background(Color.Black)
             .pointerInput(Unit) {
@@ -1537,9 +1551,31 @@ fun PlayerScreen(
                             PLAYER_ACTION_ROTATE -> {
                                 IconButton(
                                     onClick = {
-                                        cumulativeRotation += 90f
-                                        softRotateDegrees = ((cumulativeRotation % 360f) + 360f) % 360f
-                                        SharedPreferencesUtil.putFloat("player_softrotate_deg", softRotateDegrees)
+                                        if (isSoftRotate) {
+                                            val currentNorm = ((cumulativeRotation.toInt() % 360) + 360) % 360
+                                            val currentIndex = enabledRotateSteps.indexOf(currentNorm)
+                                            val nextTargetAngle = if (currentIndex != -1) {
+                                                enabledRotateSteps[(currentIndex + 1) % enabledRotateSteps.size]
+                                            } else {
+                                                enabledRotateSteps.firstOrNull { it > currentNorm } ?: enabledRotateSteps.first()
+                                            }
+                                            var diff = nextTargetAngle - (currentNorm % 360)
+                                            if (diff <= 0) diff += 360
+                                            cumulativeRotation += diff
+                                            softRotateDegrees = ((cumulativeRotation % 360f) + 360f) % 360f
+                                            SharedPreferencesUtil.putFloat("player_softrotate_deg", softRotateDegrees)
+                                        } else {
+                                            val activity = context.findActivity()
+                                            val currentIndex = enabledRotateSteps.indexOf(currentSystemAngle)
+                                            val nextTargetAngle = if (currentIndex != -1) {
+                                                enabledRotateSteps[(currentIndex + 1) % enabledRotateSteps.size]
+                                            } else {
+                                                enabledRotateSteps.firstOrNull { it > currentSystemAngle } ?: enabledRotateSteps.first()
+                                            }
+                                            currentSystemAngle = nextTargetAngle
+                                            activity?.requestedOrientation =
+                                                requestedOrientationForAngle(nextTargetAngle)
+                                        }
                                         interactionCounter++
                                     },
                                     modifier = modifier.size(36.dp)
@@ -1863,6 +1899,13 @@ fun PlayerScreen(
             }
         }
     }
+}
+
+private fun requestedOrientationForAngle(angle: Int): Int = when (angle) {
+    90 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    180 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+    270 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 }
 
 private enum class PlayerScaleMode {
