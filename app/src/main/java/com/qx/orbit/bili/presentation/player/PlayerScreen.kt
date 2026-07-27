@@ -1964,10 +1964,10 @@ private fun calculatePlayerScaleMultiplier(
     }
     return when (scaleMode) {
         PlayerScaleMode.Standard -> 1f
-        PlayerScaleMode.Expanded -> max(
+        PlayerScaleMode.Expanded -> min(
             viewWidth / contentWidth.coerceAtLeast(1f),
             viewHeight / contentHeight.coerceAtLeast(1f)
-        )
+        ).coerceIn(1f, Float.MAX_VALUE)
         PlayerScaleMode.Shrunk -> {
             val diagonal = sqrt(contentWidth * contentWidth + contentHeight * contentHeight)
             if (diagonal > 0f) {
