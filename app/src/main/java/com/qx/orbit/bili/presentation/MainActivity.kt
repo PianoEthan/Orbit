@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Recommend
@@ -415,10 +416,30 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     val historyViewModel: HistoryViewModel = viewModel()
                     HistoryScreen(viewModel = historyViewModel, navController = navController)
                 }
-                composable("watch_later") {
-                    val watchLaterViewModel: WatchLaterViewModel = viewModel()
-                    WatchLaterScreen(viewModel = watchLaterViewModel, navController = navController)
-                }
+            composable("watch_later") {
+                val watchLaterViewModel: WatchLaterViewModel = viewModel()
+                WatchLaterScreen(viewModel = watchLaterViewModel, navController = navController)
+            }
+            composable("message_center") {
+                MessageCenterScreen(navController = navController)
+            }
+            composable(
+                "notification/{type}",
+                arguments = listOf(navArgument("type") { type = NavType.StringType })
+            ) { backStackEntry ->
+                NotificationScreen(
+                    typeValue = backStackEntry.arguments?.getString("type").orEmpty(),
+                    navController = navController
+                )
+            }
+            composable(
+                "private_chat/{talkerId}",
+                arguments = listOf(navArgument("talkerId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                PrivateChatScreen(
+                    talkerId = backStackEntry.arguments?.getLong("talkerId") ?: 0L
+                )
+            }
                 composable("reply_detail") { entry ->
                     var reply = entry.savedStateHandle.get<Reply>("reply")
                     if (reply == null) {
@@ -725,6 +746,32 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                                     Icon(imageVector = Icons.Default.Search, modifier = Modifier.size(20.dp), contentDescription = "搜索")
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("搜索")
+                                }
+                            }
+                            if (navInfo?.isLogin == true) {
+                                item {
+                                    Button(
+                                        onClick = {
+                                            showTabMenu = false
+                                            navController.navigate("message_center")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .adaptiveTransformedHeight(this, menuTransformationSpec),
+                                        transformation = if (isRound) SurfaceTransformation(menuTransformationSpec) else null
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Mail,
+                                            modifier = Modifier.size(20.dp),
+                                            contentDescription = "消息中心"
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("消息")
+                                    }
                                 }
                             }
                             items(TabMode.entries.size) { index ->
