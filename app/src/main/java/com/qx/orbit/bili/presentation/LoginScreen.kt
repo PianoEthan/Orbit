@@ -76,6 +76,22 @@ fun LoginScreen(
     val webState by webLoginViewModel.state.collectAsState()
     val hdState by hdLoginViewModel.uiState.collectAsState()
     val useHdQrCode = remember { SharedPreferencesUtil.getBoolean("use_hd_qr_code", true) }
+    var loginCompleted by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        CookieManager.beginAccountLogin()
+        onDispose {
+            if (!loginCompleted) {
+                CookieManager.cancelAccountLogin()
+            }
+        }
+    }
+
+    val finishLogin: () -> Unit = {
+        loginCompleted = true
+        onLoginSuccess()
+        navController.popBackStack()
+    }
 
     /*
     LaunchedEffect(webState) {
@@ -99,19 +115,16 @@ fun LoginScreen(
                 0 -> {
                     if (useHdQrCode) {
                         HdQrPage(hdState, hdLoginViewModel, onLoginSuccess = {
-                            onLoginSuccess()
-                            navController.popBackStack()
+                            finishLogin()
                         })
                     } else {
                         WebQrPage(webState, webLoginViewModel, onLoginSuccess = {
-                            onLoginSuccess()
-                            navController.popBackStack()
+                            finishLogin()
                         })
                     }
                 }
                 1 -> CookieImportPage(onLoginSuccess = {
-                    onLoginSuccess()
-                    navController.popBackStack()
+                    finishLogin()
                 })
             }
         }
@@ -370,6 +383,13 @@ private fun SuccessContent(onDone: () -> Unit) {
 
     LaunchedEffect(Unit) {
         navInfo = UserInfoApi.getNavInfo()
+        navInfo?.takeIf { it.isLogin && it.mid > 0L }?.let { info ->
+            CookieManager.saveCurrentAccount(
+                mid = info.mid,
+                name = info.uname.orEmpty(),
+                avatarUrl = info.face.orEmpty(),
+            )
+        }
     }
     
     LaunchedEffect(navInfo, imageLoaded) {

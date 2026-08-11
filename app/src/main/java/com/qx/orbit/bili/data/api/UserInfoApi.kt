@@ -428,7 +428,7 @@ object UserInfoApi {
             .build()
         val response = HttpClient.client.newCall(request).execute()
         response.body?.string()
-        CookieManager.setCookie("")
+        CookieManager.removeCurrentAccount()
     }
 
     suspend fun getMedalWall(targetId: Long): JsonElement? = withContext(Dispatchers.IO) {
