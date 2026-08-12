@@ -60,7 +60,15 @@ class MainViewModel : ViewModel() {
     fun fetchNavInfo() {
         viewModelScope.launch {
             try {
-                _navInfo.value = UserInfoApi.getNavInfo()
+                val info = UserInfoApi.getNavInfo()
+                _navInfo.value = info
+                info?.takeIf { it.isLogin && it.mid > 0L }?.let {
+                    CookieManager.saveCurrentAccount(
+                        mid = it.mid,
+                        name = it.uname.orEmpty(),
+                        avatarUrl = it.face.orEmpty(),
+                    )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

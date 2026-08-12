@@ -1,290 +1,248 @@
 package com.qx.orbit.bili.data.api
 
-import com.qx.orbit.bili.data.model.*
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.annotations.SerializedName
+import com.qx.orbit.bili.data.model.MessageCard
+import com.qx.orbit.bili.data.model.UserInfo
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
 import com.qx.orbit.bili.data.remote.Result
-import com.google.gson.annotations.SerializedName
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 
 object MessageApi {
-
     private val api by lazy { BiliApiService.create() }
 
     data class UnreadData(
         @SerializedName("at") val at: Int = 0,
         @SerializedName("like") val like: Int = 0,
         @SerializedName("reply") val reply: Int = 0,
-        @SerializedName("sys_msg") val sys_msg: Int = 0,
+        @SerializedName("sys_msg") val system: Int = 0,
         @SerializedName("up") val up: Int = 0
     )
 
-    internal data class PrivateUnreadData(
-        @SerializedName("unfollow_unread") val unfollow_unread: Int = 0,
-        @SerializedName("follow_unread") val follow_unread: Int = 0
-    )
-
-    internal data class LikeMsgData(
-        @SerializedName("total") val total: Int = 0,
-        @SerializedName("items") val items: List<LikeMsgItem>? = null,
-        @SerializedName("cursor") val cursor: MsgCursor? = null
-    )
-
-    internal data class MsgItems(
-        @SerializedName("items") val items: List<LikeMsgItem>? = null,
-        @SerializedName("cursor") val cursor: MsgCursor? = null
-    )
-
-    internal data class LikeMsgItem(
-        @SerializedName("item") val item: LikeItemData? = null,
-        @SerializedName("user") val user: MsgUser? = null,
-        @SerializedName("reply_content") val reply_content: String? = null,
-        @SerializedName("counts") val counts: Int = 0
-    )
-
-    internal data class MsgUser(
-        @SerializedName("mid") val mid: Long = 0,
-        @SerializedName("nickname") val nickname: String? = null,
-        @SerializedName("avatar") val avatar: String? = null
-    )
-
-    internal data class LikeItemData(
-        @SerializedName("title") val title: String? = null,
-        @SerializedName("business_id") val business_id: Int = 0,
-        @SerializedName("item_id") val item_id: Long = 0,
-        @SerializedName("subject_id") val subject_id: Long = 0,
-        @SerializedName("type") val type: Int = 0,
-        @SerializedName("uri") val uri: String? = null,
-        @SerializedName("native_uri") val native_uri: String? = null
-    )
-
-    internal data class MsgCursor(
-        @SerializedName("is_end") val is_end: Boolean = true,
-        @SerializedName("id") val id: Long = 0,
-        @SerializedName("time") val time: Long = 0
-    )
-
-    internal data class ReplyMsgData(
-        @SerializedName("items") val items: List<ReplyMsgItem>? = null,
-        @SerializedName("cursor") val cursor: MsgCursor? = null
-    )
-
-    internal data class ReplyMsgItem(
-        @SerializedName("user") val user: MsgUser? = null,
-        @SerializedName("item") val item: ReplyItemData? = null,
-        @SerializedName("reply_content") val reply_content: String? = null,
-        @SerializedName("counts") val counts: Int = 0
-    )
-
-    internal data class ReplyItemData(
-        @SerializedName("subject_id") val subject_id: Long = 0,
-        @SerializedName("root_id") val root_id: Long = 0,
-        @SerializedName("target_reply_id") val target_reply_id: Long = 0,
-        @SerializedName("business_id") val business_id: Int = 0,
-        @SerializedName("title") val title: String? = null,
-        @SerializedName("uri") val uri: String? = null,
-        @SerializedName("native_uri") val native_uri: String? = null
-    )
-
-    internal data class AtMsgData(
-        @SerializedName("items") val items: List<AtMsgItem>? = null,
-        @SerializedName("cursor") val cursor: MsgCursor? = null
-    )
-
-    internal data class AtMsgItem(
-        @SerializedName("user") val user: MsgUser? = null,
-        @SerializedName("item") val at_item: AtItemData? = null,
-        @SerializedName("reply_content") val reply_content: String? = null
-    )
-
-    internal data class AtItemData(
-        @SerializedName("subject_id") val subject_id: Long = 0,
-        @SerializedName("root_id") val root_id: Long = 0,
-        @SerializedName("target_id") val target_id: Long = 0,
-        @SerializedName("business_id") val business_id: Int = 0,
-        @SerializedName("title") val title: String? = null,
-        @SerializedName("uri") val uri: String? = null,
-        @SerializedName("native_uri") val native_uri: String? = null,
-        @SerializedName("at_time") val at_time: Long = 0
-    )
-
-    internal data class SystemMsgData(
-        @SerializedName("data") val data: SystemNotifyData? = null
-    )
-
-    internal data class SystemNotifyData(
-        @SerializedName("items") val items: List<SystemNotifyItem>? = null
-    )
-
-    internal data class SystemNotifyItem(
-        @SerializedName("id") val id: Long = 0,
-        @SerializedName("title") val title: String? = null,
-        @SerializedName("content") val content: String? = null,
-        @SerializedName("time_at") val time_at: Long = 0,
-        @SerializedName("type") val type: Int = 0
-    )
-
     suspend fun getUnread(): UnreadData = withContext(Dispatchers.IO) {
-        when (val resp = api.getUnread()) {
-            is Result.Success -> {
-                val type = object : TypeToken<ApiResponse<UnreadData>>() {}.type
-                val parsed: ApiResponse<UnreadData>? = GsonConfig.gson.fromJson(resp.data, type)
-                parsed?.data ?: UnreadData()
-            }
-            is Result.Error -> UnreadData()
-        }
+        val data = api.getUnread().body().objectValue("data") ?: return@withContext UnreadData()
+        UnreadData(
+            at = data.intValue("at"),
+            like = data.intValue("like"),
+            reply = data.intValue("reply"),
+            system = data.intValue("sys_msg"),
+            up = data.intValue("up")
+        )
     }
 
-    suspend fun checkMessageUnread(): Int = withContext(Dispatchers.IO) {
-        when (val resp = api.getUnread()) {
-            is Result.Success -> {
-                val type = object : TypeToken<ApiResponse<UnreadData>>() {}.type
-                val parsed: ApiResponse<UnreadData>? = GsonConfig.gson.fromJson(resp.data, type)
-                val data = parsed?.data ?: return@withContext 0
-                data.at + data.reply
-            }
-            is Result.Error -> 0
-        }
+    suspend fun checkMessageUnread(): Int {
+        val unread = getUnread()
+        return unread.at + unread.reply
     }
 
     suspend fun checkPrivateMsgUnread(): Int = withContext(Dispatchers.IO) {
-        when (val resp = api.getPrivateMsgUnread()) {
-            is Result.Success -> {
-                val type = object : TypeToken<ApiResponse<PrivateUnreadData>>() {}.type
-                val parsed: ApiResponse<PrivateUnreadData>? = GsonConfig.gson.fromJson(resp.data, type)
-                val data = parsed?.data ?: return@withContext 0
-                data.unfollow_unread + data.follow_unread
-            }
-            is Result.Error -> 0
+        val data = api.getPrivateMsgUnread().body().objectValue("data") ?: return@withContext 0
+        PRIVATE_UNREAD_FIELDS.sumOf { field -> data.intValue(field) }
+    }
+
+    suspend fun getLikeMsg(
+        id: Long,
+        time: Long
+    ): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
+        val data = api.getLikeMsg(id.positiveOrNull(), time.positiveOrNull())
+            .body()
+            .objectValue("data")
+            ?: return@withContext null to emptyList()
+        val items = data.objectValue("total")?.arrayValue("items")
+            ?: data.arrayValue("items")
+            ?: JsonArray()
+        parseCursor(data) to items.mapNotNull { element ->
+            val message = element.objectOrNull() ?: return@mapNotNull null
+            val item = message.objectValue("item") ?: JsonObject()
+            val users = message.arrayValue("users")
+                ?.mapNotNull { it.objectOrNull()?.toUserInfo() }
+                .orEmpty()
+                .ifEmpty {
+                    listOfNotNull(message.objectValue("user")?.toUserInfo())
+                }
+            val itemType = item.stringValue("type")
+            val count = message.longValue("counts").coerceAtLeast(users.size.toLong())
+            MessageCard(
+                id = message.longValue("id"),
+                user = users,
+                timeStamp = message.longValue("like_time"),
+                content = likeDescription(itemType, count),
+                subjectId = item.longValue("item_id").takeIf { it > 0L }
+                    ?: item.longValue("subject_id"),
+                businessId = item.intValue("business_id"),
+                itemType = itemType,
+                getType = MessageCard.GET_TYPE_LIKE,
+                sourceId = item.longValue("source_id"),
+                rootId = item.longValue("root_id"),
+                targetId = item.longValue("target_id"),
+                targetTitle = item.stringValue("title"),
+                targetImage = item.stringValue("image"),
+                targetUri = item.stringValue("uri")
+            )
         }
     }
 
-    suspend fun getLikeMsg(id: Long, time: Long): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
-        when (val result = api.getLikeMsg(id, time)) {
-            is Result.Error -> Pair(null, emptyList())
-            is Result.Success -> {
-                val resp: ApiResponse<LikeMsgData>? = GsonConfig.gson.fromJson(result.data, object : TypeToken<ApiResponse<LikeMsgData>>() {}.type)
-                if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(null, emptyList())
-                val data = resp.data
-                val cursor = if (data.cursor != null) MessageCard.Cursor(
-                    is_end = data.cursor.is_end,
-                    id = data.cursor.id,
-                    time = data.cursor.time
-                ) else null
-                val list = data.items?.mapNotNull { item ->
-                    val userInfo = item.user ?: return@mapNotNull null
-                    MessageCard(
-                        user = listOf(UserInfo(
-                            mid = userInfo.mid,
-                            name = userInfo.nickname ?: "",
-                            avatar = userInfo.avatar ?: ""
-                        )),
-                        content = item.reply_content ?: "",
-                        timeStamp = data.cursor?.time ?: 0,
-                        subjectId = item.item?.subject_id ?: 0,
-                        businessId = item.item?.business_id ?: 0,
-                        getType = MessageCard.GET_TYPE_LIKE
-                    )
-                } ?: emptyList()
-                Pair(cursor, list)
-            }
+    suspend fun getReplyMsg(
+        id: Long,
+        time: Long
+    ): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
+        val data = api.getReplyMsg(id.positiveOrNull(), time.positiveOrNull())
+            .body()
+            .objectValue("data")
+            ?: return@withContext null to emptyList()
+        val items = data.arrayValue("items") ?: JsonArray()
+        parseCursor(data) to items.mapNotNull { element ->
+            val message = element.objectOrNull() ?: return@mapNotNull null
+            val item = message.objectValue("item") ?: JsonObject()
+            MessageCard(
+                id = message.longValue("id"),
+                user = listOfNotNull(message.objectValue("user")?.toUserInfo()),
+                timeStamp = message.longValue("reply_time"),
+                content = item.stringValue("source_content")
+                    .ifBlank { message.stringValue("reply_content") }
+                    .ifBlank { "回复了你" },
+                subjectId = item.longValue("subject_id"),
+                businessId = item.intValue("business_id"),
+                itemType = item.stringValue("type"),
+                getType = MessageCard.GET_TYPE_REPLY,
+                sourceId = item.longValue("source_id"),
+                rootId = item.longValue("root_id"),
+                targetId = item.longValue("target_id"),
+                targetTitle = item.stringValue("title"),
+                targetImage = item.stringValue("image"),
+                targetUri = item.stringValue("uri")
+            )
         }
     }
 
-    suspend fun getReplyMsg(id: Long, time: Long): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
-        when (val result = api.getReplyMsg(id, time)) {
-            is Result.Error -> Pair(null, emptyList())
-            is Result.Success -> {
-                val resp: ApiResponse<ReplyMsgData>? = GsonConfig.gson.fromJson(result.data, object : TypeToken<ApiResponse<ReplyMsgData>>() {}.type)
-                if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(null, emptyList())
-                val data = resp.data
-                val cursor = if (data.cursor != null) MessageCard.Cursor(
-                    is_end = data.cursor.is_end,
-                    id = data.cursor.id,
-                    time = data.cursor.time
-                ) else null
-                val list = data.items?.mapNotNull { item ->
-                    val userInfo = item.user ?: return@mapNotNull null
-                    MessageCard(
-                        user = listOf(UserInfo(
-                            mid = userInfo.mid,
-                            name = userInfo.nickname ?: "",
-                            avatar = userInfo.avatar ?: ""
-                        )),
-                        content = item.reply_content ?: "",
-                        timeStamp = data.cursor?.time ?: 0,
-                        subjectId = item.item?.subject_id ?: 0,
-                        rootId = item.item?.root_id ?: 0,
-                        targetId = item.item?.target_reply_id ?: 0,
-                        businessId = item.item?.business_id ?: 0,
-                        getType = MessageCard.GET_TYPE_REPLY
-                    )
-                } ?: emptyList()
-                Pair(cursor, list)
-            }
-        }
-    }
-
-    suspend fun getAtMsg(id: Long, time: Long): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
-        when (val result = api.getAtMsg(id, time)) {
-            is Result.Error -> Pair(null, emptyList())
-            is Result.Success -> {
-                val resp: ApiResponse<AtMsgData>? = GsonConfig.gson.fromJson(result.data, object : TypeToken<ApiResponse<AtMsgData>>() {}.type)
-                if (resp == null || !resp.isSuccess || resp.data == null) return@withContext Pair(null, emptyList())
-                val data = resp.data
-                val cursor = if (data.cursor != null) MessageCard.Cursor(
-                    is_end = data.cursor.is_end,
-                    id = data.cursor.id,
-                    time = data.cursor.time
-                ) else null
-                val list = data.items?.mapNotNull { item ->
-                    val userInfo = item.user ?: return@mapNotNull null
-                    MessageCard(
-                        user = listOf(UserInfo(
-                            mid = userInfo.mid,
-                            name = userInfo.nickname ?: "",
-                            avatar = userInfo.avatar ?: ""
-                        )),
-                        content = item.reply_content ?: "",
-                        timeStamp = item.at_item?.at_time ?: 0,
-                        subjectId = item.at_item?.subject_id ?: 0,
-                        rootId = item.at_item?.root_id ?: 0,
-                        targetId = item.at_item?.target_id ?: 0,
-                        businessId = item.at_item?.business_id ?: 0,
-                        getType = MessageCard.GET_TYPE_AT
-                    )
-                } ?: emptyList()
-                Pair(cursor, list)
-            }
+    suspend fun getAtMsg(
+        id: Long,
+        time: Long
+    ): Pair<MessageCard.Cursor?, List<MessageCard>> = withContext(Dispatchers.IO) {
+        val data = api.getAtMsg(id.positiveOrNull(), time.positiveOrNull())
+            .body()
+            .objectValue("data")
+            ?: return@withContext null to emptyList()
+        val items = data.arrayValue("items") ?: JsonArray()
+        parseCursor(data) to items.mapNotNull { element ->
+            val message = element.objectOrNull() ?: return@mapNotNull null
+            val item = message.objectValue("item") ?: JsonObject()
+            MessageCard(
+                id = message.longValue("id"),
+                user = listOfNotNull(message.objectValue("user")?.toUserInfo()),
+                timeStamp = message.longValue("at_time"),
+                content = "提到了我",
+                subjectId = item.longValue("subject_id"),
+                businessId = item.intValue("business_id"),
+                itemType = item.stringValue("type"),
+                getType = MessageCard.GET_TYPE_AT,
+                sourceId = item.longValue("source_id"),
+                rootId = item.longValue("root_id"),
+                targetId = item.longValue("target_id"),
+                targetTitle = item.stringValue("title"),
+                targetImage = item.stringValue("image"),
+                targetUri = item.stringValue("uri")
+            )
         }
     }
 
     suspend fun getSystemMsg(): List<MessageCard> = withContext(Dispatchers.IO) {
-        val url = "https://message.bilibili.com/x/sys-msg/query_user_notify"
-        val json = httpGet(url)
-        val type = object : TypeToken<SystemMsgData>() {}.type
-        val resp: SystemMsgData? = GsonConfig.gson.fromJson(json, type)
-        resp?.data?.items?.map { item ->
+        val csrf = CookieManager.getCsrf()
+        val url = "https://message.bilibili.com/x/sys-msg/query_user_notify" +
+            "?csrf=$csrf&page_size=35&build=0&mobi_app=web"
+        val request = Request.Builder().url(url).build()
+        val responseBody = HttpClient.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                error("HTTP ${response.code}")
+            }
+            response.body.string()
+        }
+        val root = GsonConfig.gson.fromJson(responseBody, JsonObject::class.java)
+        val items = root.objectValue("data")?.arrayValue("system_notify_list") ?: JsonArray()
+        items.mapNotNull { element ->
+            val item = element.objectOrNull() ?: return@mapNotNull null
+            val timestamp = item.longValue("time_at")
             MessageCard(
-                id = item.id,
-                content = item.content ?: "",
-                timeStamp = item.time_at
+                id = item.longValue("id"),
+                content = listOf(item.stringValue("title"), item.stringValue("content"))
+                    .filter(String::isNotBlank)
+                    .joinToString("\n"),
+                timeStamp = timestamp,
+                timeDesc = if (timestamp == 0L) item.stringValue("time_at") else ""
             )
-        } ?: emptyList()
+        }
     }
 
-    private fun httpGet(url: String): String {
-        val request = Request.Builder().url(url)
-            .addHeader("Cookie", CookieManager.getCookie())
-            .addHeader("User-Agent", USER_AGENT)
-            .addHeader("Referer", "https://www.bilibili.com/")
-            .build()
-        return HttpClient.client.newCall(request).execute().body?.string() ?: ""
+    private fun parseCursor(data: JsonObject): MessageCard.Cursor? {
+        val cursor = data.objectValue("cursor") ?: return null
+        return MessageCard.Cursor(
+            is_end = cursor.booleanValue("is_end", true),
+            id = cursor.longValue("id"),
+            time = cursor.longValue("time")
+        )
     }
 
-    private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36"
+    private fun JsonObject.toUserInfo(): UserInfo = UserInfo(
+        mid = longValue("mid"),
+        name = stringValue("nickname").ifBlank { stringValue("name") },
+        avatar = stringValue("avatar").ifBlank { stringValue("face") },
+        fans = intValue("fans"),
+        followed = booleanValue("follow")
+    )
+
+    private fun likeDescription(itemType: String, count: Long): String {
+        val target = when (itemType) {
+            "video" -> "视频"
+            "reply" -> "评论"
+            "dynamic", "album" -> "动态"
+            "article" -> "专栏"
+            else -> "内容"
+        }
+        return if (count > 1L) "等总共 $count 人点赞了你的$target" else "点赞了你的$target"
+    }
+
+    private fun Result<JsonElement>.body(): JsonObject = when (this) {
+        is Result.Success -> data.objectOrNull() ?: error("响应格式错误")
+        is Result.Error -> throw exception
+    }
+
+    private fun JsonElement.objectOrNull(): JsonObject? =
+        takeIf { it.isJsonObject }?.asJsonObject
+
+    private fun JsonObject.objectValue(name: String): JsonObject? =
+        get(name)?.objectOrNull()
+
+    private fun JsonObject.arrayValue(name: String): JsonArray? =
+        get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+
+    private fun JsonObject.stringValue(name: String): String =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asString }.getOrNull() }.orEmpty()
+
+    private fun JsonObject.longValue(name: String): Long =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asLong }.getOrNull() } ?: 0L
+
+    private fun JsonObject.intValue(name: String): Int =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asInt }.getOrNull() } ?: 0
+
+    private fun JsonObject.booleanValue(name: String, default: Boolean = false): Boolean =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asBoolean }.getOrNull() } ?: default
+
+    private fun Long.positiveOrNull(): Long? = takeIf { it > 0L }
+
+    private val PRIVATE_UNREAD_FIELDS = listOf(
+        "unfollow_unread",
+        "follow_unread",
+        "unfollow_push_msg",
+        "dustbin_push_msg",
+        "dustbin_unread",
+        "biz_msg_unfollow_unread",
+        "biz_msg_follow_unread",
+        "custom_unread"
+    )
 }

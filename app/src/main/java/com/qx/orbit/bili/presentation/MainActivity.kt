@@ -46,7 +46,9 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -118,6 +120,7 @@ import com.qx.orbit.bili.presentation.FollowListScreen
 import com.qx.orbit.bili.presentation.viewmodel.FollowListViewModel
 import com.qx.orbit.bili.presentation.player.PlayerScreen
 import com.qx.orbit.bili.presentation.settings.SettingLoginStatusScreen
+import com.qx.orbit.bili.presentation.settings.AccountManagementScreen
 import com.qx.orbit.bili.presentation.settings.SettingPreferenceScreen
 import com.qx.orbit.bili.presentation.settings.SettingApsisPlayerScreen
 import com.qx.orbit.bili.presentation.settings.SettingUIScreen
@@ -413,10 +416,30 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     val historyViewModel: HistoryViewModel = viewModel()
                     HistoryScreen(viewModel = historyViewModel, navController = navController)
                 }
-                composable("watch_later") {
-                    val watchLaterViewModel: WatchLaterViewModel = viewModel()
-                    WatchLaterScreen(viewModel = watchLaterViewModel, navController = navController)
-                }
+            composable("watch_later") {
+                val watchLaterViewModel: WatchLaterViewModel = viewModel()
+                WatchLaterScreen(viewModel = watchLaterViewModel, navController = navController)
+            }
+            composable("message_center") {
+                MessageCenterScreen(navController = navController)
+            }
+            composable(
+                "notification/{type}",
+                arguments = listOf(navArgument("type") { type = NavType.StringType })
+            ) { backStackEntry ->
+                NotificationScreen(
+                    typeValue = backStackEntry.arguments?.getString("type").orEmpty(),
+                    navController = navController
+                )
+            }
+            composable(
+                "private_chat/{talkerId}",
+                arguments = listOf(navArgument("talkerId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                PrivateChatScreen(
+                    talkerId = backStackEntry.arguments?.getLong("talkerId") ?: 0L
+                )
+            }
                 composable("reply_detail") { entry ->
                     var reply = entry.savedStateHandle.get<Reply>("reply")
                     if (reply == null) {
@@ -482,6 +505,9 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             composable("settings_main") {
                 SettingsScreen(navController = navController)
             }
+            composable("account_management") {
+                AccountManagementScreen(navController = navController)
+            }
             composable("settings_player_choose") {
                 SettingPlayerChooseScreen(navController = navController)
             }
@@ -533,6 +559,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val navInfo by viewModel.navInfo.collectAsState()
+    val accountState by CookieManager.accountState.collectAsState()
     var showTabMenu by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
@@ -675,6 +702,32 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                                     }
                                 }
                             }
+                            if (accountState.accounts.isNotEmpty()) {
+                                item {
+                                    Button(
+                                        onClick = {
+                                            showTabMenu = false
+                                            navController.navigate("account_management")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .adaptiveTransformedHeight(this, menuTransformationSpec),
+                                        transformation = if (isRound) SurfaceTransformation(menuTransformationSpec) else null
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PersonAdd,
+                                            modifier = Modifier.size(20.dp),
+                                            contentDescription = "账号管理"
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("账号管理")
+                                    }
+                                }
+                            }
                             item {
                                 Button(
                                     onClick = {
@@ -693,6 +746,32 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                                     Icon(imageVector = Icons.Default.Search, modifier = Modifier.size(20.dp), contentDescription = "搜索")
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("搜索")
+                                }
+                            }
+                            if (navInfo?.isLogin == true) {
+                                item {
+                                    Button(
+                                        onClick = {
+                                            showTabMenu = false
+                                            navController.navigate("message_center")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .adaptiveTransformedHeight(this, menuTransformationSpec),
+                                        transformation = if (isRound) SurfaceTransformation(menuTransformationSpec) else null
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Mail,
+                                            modifier = Modifier.size(20.dp),
+                                            contentDescription = "消息中心"
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("消息")
+                                    }
                                 }
                             }
                             items(TabMode.entries.size) { index ->

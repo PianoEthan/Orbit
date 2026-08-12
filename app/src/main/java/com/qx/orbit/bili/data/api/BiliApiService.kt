@@ -376,18 +376,30 @@ interface BiliApiService {
 
     @GET("https://api.bilibili.com/x/msgfeed/like")
     suspend fun getLikeMsg(
-        @Query("id") id: Long,
-        @Query("reply_time") replyTime: Long
+        @Query("id") id: Long?,
+        @Query("reply_time") replyTime: Long?,
+        @Query("platform") platform: String = "web",
+        @Query("build") build: Int = 0,
+        @Query("mobi_app") mobiApp: String = "web"
     ): Result<JsonElement>
 
     @GET("https://api.bilibili.com/x/msgfeed/reply")
     suspend fun getReplyMsg(
-        @Query("id") id: Long,
-        @Query("reply_time") replyTime: Long
+        @Query("id") id: Long?,
+        @Query("reply_time") replyTime: Long?,
+        @Query("platform") platform: String = "web",
+        @Query("build") build: Int = 0,
+        @Query("mobi_app") mobiApp: String = "web"
     ): Result<JsonElement>
 
     @GET("https://api.bilibili.com/x/msgfeed/at")
-    suspend fun getAtMsg(@Query("id") id: Long, @Query("at_time") atTime: Long): Result<JsonElement>
+    suspend fun getAtMsg(
+        @Query("id") id: Long?,
+        @Query("at_time") atTime: Long?,
+        @Query("platform") platform: String = "web",
+        @Query("build") build: Int = 0,
+        @Query("mobi_app") mobiApp: String = "web"
+    ): Result<JsonElement>
 
     // ===== Emote =====
 
@@ -618,23 +630,11 @@ interface BiliApiService {
 
     @FormUrlEncoded
     @POST("https://api.vc.bilibili.com/web_im/v1/web_im/send_msg")
-    suspend fun sendPrivateMsg(
-        @Field("msg_type") msgType: Int,
-        @Field("msg_content") content: String,
-        @Field("sender_uid") senderUid: Long,
-        @Field("receiver_uid") receiverUid: Long,
-        @Field("timestamp") timestamp: Long,
-        @Field("csrf") csrf: String
-    ): Result<JsonElement>
+    suspend fun sendPrivateMsg(@FieldMap fields: Map<String, String>): Result<JsonElement>
 
     @FormUrlEncoded
     @POST("https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack")
-    suspend fun updateAck(
-        @Field("talker_id") talkerId: Long,
-        @Field("session_type") sessionType: Int,
-        @Field("ack_seqno") ackSeqno: Long,
-        @Field("csrf") csrf: String
-    ): Result<JsonElement>
+    suspend fun updateAck(@FieldMap fields: Map<String, String>): Result<JsonElement>
 
     companion object {
         fun create(): BiliApiService {

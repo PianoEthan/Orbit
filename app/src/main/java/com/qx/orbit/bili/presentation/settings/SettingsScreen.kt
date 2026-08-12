@@ -123,6 +123,21 @@ fun SettingsScreen(navController: NavController) {
             if (isLoggedIn) {
                 item {
                     Button(
+                        onClick = { navController.navigate("account_management") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
+                    ) {
+                        Text(text = "账号管理", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                item {
+                    Button(
                         onClick = { navController.navigate("settings_login_status") },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -1008,7 +1023,7 @@ fun SettingLoginStatusScreen(navController: NavController) {
             content = { Text("确定要退出当前登录账号吗？", textAlign = TextAlign.Center) },
             onConfirm = {
                 showLogoutDialog = false
-                CookieManager.clearCookie()
+                CookieManager.removeCurrentAccount()
                 RoundToast.show(context, "已退出登录")
                 val intent = Intent(context, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)

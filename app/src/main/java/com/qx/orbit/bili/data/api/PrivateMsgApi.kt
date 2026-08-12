@@ -1,131 +1,188 @@
 package com.qx.orbit.bili.data.api
 
-import com.qx.orbit.bili.data.model.*
-import com.qx.orbit.bili.data.remote.*
+import com.google.gson.JsonArray
 import com.google.gson.JsonElement
-import com.google.gson.annotations.SerializedName
-import com.google.gson.reflect.TypeToken
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.qx.orbit.bili.data.model.PrivateMessage
+import com.qx.orbit.bili.data.model.PrivateMessagePage
+import com.qx.orbit.bili.data.model.PrivateMsgSession
+import com.qx.orbit.bili.data.model.UserInfo
+import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.data.remote.GsonConfig
+import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
+import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import com.qx.orbit.bili.data.remote.HttpClient
+import okhttp3.Request
 
 object PrivateMsgApi {
-
     private val api by lazy { BiliApiService.create() }
 
-    internal data class SessionListData(
-        @SerializedName("session_list") val session_list: List<SessionItem>? = null
-    )
+    suspend fun getPrivateMsgPage(
+        talkerId: Long,
+        size: Int,
+        beginSeqno: Long,
+        endSeqno: Long
+    ): PrivateMessagePage = withContext(Dispatchers.IO) {
+        val root = api.getPrivateMsg(talkerId, 1, size, beginSeqno, endSeqno).body()
+        val data = root.objectValue("data") ?: return@withContext PrivateMessagePage()
+        PrivateMessagePage(
+            messages = parseMessages(data),
+            hasMore = data.intValue("has_more") == 1
+        )
+    }
 
-    internal data class SessionItem(
-        @SerializedName("talker_id") val talker_id: Long = 0,
-        @SerializedName("unread_count") val unread_count: Int = 0,
-        @SerializedName("last_msg") val last_msg: LastMsg? = null,
-        @SerializedName("session_type") val session_type: Int = 0
-    )
+    suspend fun getPrivateMsg(
+        talkerId: Long,
+        size: Int,
+        beginSeqno: Long,
+        endSeqno: Long
+    ): List<PrivateMessage> = getPrivateMsgPage(talkerId, size, beginSeqno, endSeqno).messages
 
-    internal data class LastMsg(
-        @SerializedName("msg_type") val msg_type: Int = 0,
-        @SerializedName("content") val content: String? = null,
-        @SerializedName("timestamp") val timestamp: Long = 0,
-        @SerializedName("sender_uid") val sender_uid: Long = 0,
-        @SerializedName("msg_seqno") val msg_seqno: Long = 0
-    )
-
-    internal data class FetchMsgData(
-        @SerializedName("messages") val messages: List<MsgItemData>? = null
-    )
-
-    internal data class MsgItemData(
-        @SerializedName("sender_uid") val sender_uid: Long = 0,
-        @SerializedName("msg_type") val msg_type: Int = 0,
-        @SerializedName("timestamp") val timestamp: Long = 0,
-        @SerializedName("msg_seqno") val msg_seqno: Long = 0,
-        @SerializedName("content") val content: JsonElement? = null
-    )
-
-    internal data class UserCardsData(
-        @SerializedName("cards") val cards: List<UserCardItem>? = null
-    )
-
-    internal data class UserCardItem(
-        @SerializedName("mid") val mid: Long = 0,
-        @SerializedName("name") val name: String? = null,
-        @SerializedName("face") val face: String? = null,
-        @SerializedName("sign") val sign: String? = null,
-        @SerializedName("fans") val fans: Int = 0,
-        @SerializedName("attention") val attention: Int = 0
-    )
-
-    suspend fun getPrivateMsg(talkerId: Long, size: Int, beginSeqno: Long, endSeqno: Long): List<PrivateMessage> = withContext(Dispatchers.IO) {
-        when (val resp = api.getPrivateMsg(talkerId, 1, size, beginSeqno, endSeqno)) {
-            is Result.Success -> {
-                val type = object : TypeToken<ApiResponse<FetchMsgData>>() {}.type
-                val apiResp: ApiResponse<FetchMsgData>? = GsonConfig.gson.fromJson(resp.data, type)
-                val data = apiResp?.data
-                data?.messages?.map { msg ->
-                    PrivateMessage(content = msg.content, type = msg.msg_type, timestamp = msg.timestamp, uid = msg.sender_uid, msgId = msg.msg_seqno, msgSeqno = msg.msg_seqno)
-                } ?: emptyList()
-            }
-            is Result.Error -> emptyList()
+    suspend fun getPrivateMsgList(allMsgJson: JsonElement): List<PrivateMessage> =
+        withContext(Dispatchers.Default) {
+            val root = allMsgJson.objectOrNull() ?: return@withContext emptyList()
+            parseMessages(root.objectValue("data") ?: root)
         }
-    }
-
-    suspend fun getPrivateMsgList(allMsgJson: JsonElement): List<PrivateMessage> = withContext(Dispatchers.IO) {
-        val type = object : TypeToken<ApiResponse<FetchMsgData>>() {}.type
-        val resp: ApiResponse<FetchMsgData>? = GsonConfig.gson.fromJson(allMsgJson, type)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyList()
-        resp.data.messages?.map { msg ->
-            PrivateMessage(content = msg.content, type = msg.msg_type, timestamp = msg.timestamp, uid = msg.sender_uid, msgId = msg.msg_seqno, msgSeqno = msg.msg_seqno)
-        } ?: emptyList()
-    }
 
     suspend fun getUsersInfo(uidList: List<Long>): Map<Long, UserInfo> = withContext(Dispatchers.IO) {
         if (uidList.isEmpty()) return@withContext emptyMap()
-        val uids = uidList.joinToString(",")
-        val url = "https://api.bilibili.com/account/v1/user/cards?uids=$uids"
-        val json = HttpClient.client.newCall(
-            okhttp3.Request.Builder().url(url)
-                .addHeader("Cookie", CookieManager.getCookie())
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-                .build()
-        ).execute().body?.string() ?: return@withContext emptyMap()
-        val respType = object : TypeToken<ApiResponse<UserCardsData>>() {}.type
-        val resp: ApiResponse<UserCardsData>? = GsonConfig.gson.fromJson(json, respType)
-        if (resp == null || !resp.isSuccess || resp.data == null) return@withContext emptyMap()
-        resp.data.cards?.associate { card ->
-            card.mid to UserInfo(mid = card.mid, name = card.name ?: "", avatar = card.face ?: "", sign = card.sign ?: "", fans = card.fans, following = card.attention)
-        } ?: emptyMap()
+        val uids = uidList.distinct().joinToString(",")
+        val request = Request.Builder()
+            .url("https://api.vc.bilibili.com/account/v1/user/cards?uids=$uids")
+            .build()
+        val responseBody = HttpClient.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+            response.body.string()
+        }
+        val root = GsonConfig.gson.fromJson(responseBody, JsonObject::class.java)
+        val data = root.arrayValue("data")
+            ?: root.objectValue("data")?.arrayValue("cards")
+            ?: JsonArray()
+        data.mapNotNull { element ->
+            val user = element.objectOrNull() ?: return@mapNotNull null
+            val mid = user.longValue("mid")
+            if (mid <= 0L) return@mapNotNull null
+            mid to UserInfo(
+                mid = mid,
+                name = user.stringValue("name"),
+                avatar = user.stringValue("face"),
+                sign = user.stringValue("sign"),
+                fans = user.intValue("fans"),
+                following = user.intValue("attention")
+            )
+        }.toMap()
     }
 
     suspend fun getSessionsList(size: Int): List<PrivateMsgSession> = withContext(Dispatchers.IO) {
-        when (val resp = api.getSessions(size)) {
-            is Result.Success -> {
-                val type = object : TypeToken<ApiResponse<SessionListData>>() {}.type
-                val apiResp: ApiResponse<SessionListData>? = GsonConfig.gson.fromJson(resp.data, type)
-                val data = apiResp?.data
-                data?.session_list?.map { session ->
-                    val contentElement = session.last_msg?.content?.let {
-                        try { GsonConfig.gson.fromJson(it, JsonElement::class.java) } catch (_: Exception) { null }
-                    }
-                    PrivateMsgSession(talkerUid = session.talker_id, unread = session.unread_count, contentType = session.last_msg?.msg_type ?: 0, content = contentElement)
-                } ?: emptyList()
+        val data = api.getSessions(size).body().objectValue("data")
+            ?: return@withContext emptyList()
+        val sessions = data.arrayValue("session_list") ?: return@withContext emptyList()
+        sessions.mapNotNull { element ->
+            val session = element.objectOrNull() ?: return@mapNotNull null
+            if (session.has("account_info") && !session.get("account_info").isJsonNull) {
+                return@mapNotNull null
             }
-            is Result.Error -> emptyList()
+            val talkerId = session.longValue("talker_id")
+            if (talkerId <= 0L) return@mapNotNull null
+            val lastMessage = session.objectValue("last_msg")
+            PrivateMsgSession(
+                talkerUid = talkerId,
+                unread = session.intValue("unread_count"),
+                contentType = lastMessage?.intValue("msg_type") ?: 0,
+                content = lastMessage?.get("content").parseNestedJson(),
+                timestamp = lastMessage?.longValue("timestamp") ?: 0L,
+                lastMsgSeqno = lastMessage?.longValue("msg_seqno") ?: 0L,
+                sessionType = session.intValue("session_type").takeIf { it > 0 } ?: 1
+            )
         }
     }
 
-    suspend fun sendMsg(senderUid: Long, receiverUid: Long, msgType: Int, timestamp: Long, content: String): Int = withContext(Dispatchers.IO) {
-        when (val resp = api.sendPrivateMsg(msgType, content, senderUid, receiverUid, timestamp, CookieManager.getCsrf())) {
-            is Result.Success -> 0
-            is Result.Error -> resp.exception.code
+    suspend fun sendMsg(
+        senderUid: Long,
+        receiverUid: Long,
+        msgType: Int,
+        timestamp: Long,
+        content: String
+    ) = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        val fields = mapOf(
+            "msg[dev_id]" to UUID.randomUUID().toString().uppercase(Locale.ROOT),
+            "msg[msg_type]" to msgType.toString(),
+            "msg[content]" to content,
+            "msg[receiver_type]" to "1",
+            "msg[sender_uid]" to senderUid.toString(),
+            "msg[receiver_id]" to receiverUid.toString(),
+            "msg[timestamp]" to timestamp.toString(),
+            "csrf" to csrf
+        )
+        api.sendPrivateMsg(fields).body()
+        Unit
+    }
+
+    suspend fun updateAck(talkerId: Long, sessionType: Int, ackSeqno: Long) =
+        withContext(Dispatchers.IO) {
+            val csrf = CookieManager.getCsrf()
+            val fields = buildMap {
+                put("talker_id", talkerId.toString())
+                put("session_type", sessionType.toString())
+                if (ackSeqno > 0L) put("ack_seqno", ackSeqno.toString())
+                put("csrf_token", csrf)
+                put("csrf", csrf)
+                put("build", "0")
+                put("mobi_app", "web")
+            }
+            api.updateAck(fields).body()
+            Unit
+        }
+
+    private fun parseMessages(data: JsonObject): List<PrivateMessage> {
+        val messages = data.arrayValue("messages") ?: return emptyList()
+        return messages.mapNotNull { element ->
+            val message = element.objectOrNull() ?: return@mapNotNull null
+            PrivateMessage(
+                content = message.get("content").parseNestedJson(),
+                type = message.intValue("msg_type"),
+                timestamp = message.longValue("timestamp"),
+                uid = message.longValue("sender_uid"),
+                msgId = message.longValue("msg_key"),
+                msgSeqno = message.longValue("msg_seqno"),
+                msgSource = message.intValue("msg_source")
+            )
         }
     }
 
-    suspend fun updateAck(talkerId: Long, sessionType: Int, ackSeqno: Long): Int = withContext(Dispatchers.IO) {
-        when (val resp = api.updateAck(talkerId, sessionType, ackSeqno, CookieManager.getCsrf())) {
-            is Result.Success -> 0
-            is Result.Error -> resp.exception.code
-        }
+    private fun Result<JsonElement>.body(): JsonObject = when (this) {
+        is Result.Success -> data.objectOrNull() ?: error("响应格式错误")
+        is Result.Error -> throw exception
     }
+
+    private fun JsonElement?.parseNestedJson(): JsonElement? {
+        if (this == null || isJsonNull) return null
+        if (isJsonObject || isJsonArray) return this
+        val raw = runCatching { asString }.getOrNull().orEmpty().trim()
+        if (!raw.startsWith("{") && !raw.startsWith("[")) return this
+        return runCatching { JsonParser.parseString(raw) }.getOrNull() ?: this
+    }
+
+    private fun JsonElement.objectOrNull(): JsonObject? =
+        takeIf { it.isJsonObject }?.asJsonObject
+
+    private fun JsonObject.objectValue(name: String): JsonObject? =
+        get(name)?.objectOrNull()
+
+    private fun JsonObject.arrayValue(name: String): JsonArray? =
+        get(name)?.takeIf { it.isJsonArray }?.asJsonArray
+
+    private fun JsonObject.stringValue(name: String): String =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asString }.getOrNull() }.orEmpty()
+
+    private fun JsonObject.longValue(name: String): Long =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asLong }.getOrNull() } ?: 0L
+
+    private fun JsonObject.intValue(name: String): Int =
+        get(name)?.takeUnless { it.isJsonNull }?.let { runCatching { it.asInt }.getOrNull() } ?: 0
 }

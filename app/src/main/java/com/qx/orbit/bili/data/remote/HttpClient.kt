@@ -83,9 +83,16 @@ object HttpClient {
 
     private class CookieSaveInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
+            val sessionGeneration = CookieManager.currentSessionGeneration()
+            val requestCookie = chain.request().header("Cookie").orEmpty()
             val response = chain.proceed(chain.request())
             val newCookies = response.headers("Set-Cookie")
-            if (newCookies.isEmpty()) return response
+            if (newCookies.isEmpty() ||
+                sessionGeneration != CookieManager.currentSessionGeneration() ||
+                !CookieManager.isCookieFromCurrentSession(requestCookie)
+            ) {
+                return response
+            }
 
             val cookieMap = mutableMapOf<String, String>()
             CookieManager.getCookie().split("; ").filter { it.contains("=") }.forEach { part ->
