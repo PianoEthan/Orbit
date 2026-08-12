@@ -158,6 +158,7 @@ import com.qx.orbit.bili.presentation.viewmodel.PlayerViewModel
 import com.qx.orbit.bili.service.PlayerForegroundService
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.TextureViewProbe
+import com.qx.orbit.bili.util.VideoDownloadManager
 import com.qx.orbit.bili.util.danmaku.base.DanmakuConfig
 import com.qx.orbit.bili.util.danmaku.base.createDanmaku
 import com.qx.orbit.bili.util.danmaku.base.createDanmakuConfig
@@ -712,7 +713,11 @@ fun PlayerScreen(
                     setDanmakuTransparency(0.4f)
                 }
                 danmakuConfig = config
-                var xmlFile = File("${playerData.videoUrl}.danmaku.xml")
+                var xmlFile = VideoDownloadManager.ensureLocalDanmakuCache(
+                    aid = playerData.aid,
+                    cid = playerData.cid,
+                    videoPath = playerData.videoUrl
+                ) ?: File("${playerData.videoUrl}.danmaku.xml")
                 if (!xmlFile.exists()) {
                     val fallbackPath = playerData.videoUrl.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
                     xmlFile = File(fallbackPath.toUri().path ?: "")

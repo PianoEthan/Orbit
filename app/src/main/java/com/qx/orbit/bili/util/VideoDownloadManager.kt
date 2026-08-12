@@ -9,13 +9,14 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.data.api.DanmakuApi
 import com.qx.orbit.bili.data.api.PlayerApi
-import com.qx.orbit.bili.data.model.DanmakuElem
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.remote.CookieManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -25,7 +26,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.math.ceil
 
 object VideoDownloadManager {
     private val client = OkHttpClient.Builder()
@@ -37,8 +37,10 @@ object VideoDownloadManager {
 
     private val downloads = mutableMapOf<Long, DownloadInfo>()
     private val activeCalls = mutableMapOf<Long, Call>()
+    private val danmakuCacheLocks = mutableMapOf<Long, Mutex>()
     private var nextId = 1L
     private const val TASKS_FILE = "video_download_tasks.json"
+    private const val DANMAKU_CACHE_VERSION = 1
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -176,6 +178,23 @@ object VideoDownloadManager {
 
     fun getCompletedCount(): Int = downloads.values.count { it.status == DownloadManager.STATUS_SUCCESSFUL }
 
+    suspend fun ensureLocalDanmakuCache(aid: Long, cid: Long, videoPath: String): File? {
+        val existingFile = File("$videoPath.danmaku.xml")
+        val task = downloads.values.firstOrNull { info ->
+            info.localUri == videoPath ||
+                (info.aid == aid && info.cid == cid && info.filename == File(videoPath).name)
+        } ?: return existingFile.takeIf { it.exists() }
+        val context = appContext ?: return existingFile.takeIf { it.exists() }
+        val downloadDir = File(videoPath).parentFile ?: getDownloadDir(task.bvid)
+
+        runCatching {
+            downloadDanmaku(task.id, context, downloadDir)
+        }.onFailure { error ->
+            Log.w("VideoDownloadManager", "Failed to ensure local danmaku cache for task ${task.id}", error)
+        }
+        return existingFile.takeIf { it.exists() }
+    }
+
     data class DownloadInfo(
         val id: Long,
         val url: String,
@@ -193,7 +212,8 @@ object VideoDownloadManager {
         val downloadedBytes: Long = 0L,
         val totalBytes: Long = 0L,
         val localUri: String? = null,
-        val reason: Int = 0
+        val reason: Int = 0,
+        val danmakuCacheVersion: Int = 0
     )
 
     fun enqueue(url: String, title: String, filename: String, context: Context, aid: Long, cid: Long, bvid: String, qn: Int, type: String = "MP4", coverUrl: String = "", duration: Int = 0, mediaType: Int = PlayerData.TYPE_VIDEO): Long {
@@ -396,36 +416,7 @@ object VideoDownloadManager {
         val info = downloads[id] ?: return
         try {
             val downloadDir = getDownloadDir(info.bvid)
-            val danmakuFile = File(downloadDir, "${info.filename}.danmaku.xml")
-            if (!danmakuFile.exists()) {
-                val segments = ceil(info.duration / 360.0).toInt().coerceAtLeast(1)
-                val allElems = mutableListOf<DanmakuElem>()
-                for (i in 1..segments) {
-                    val seg = DanmakuApi.getVideoDanmakuSegment(info.aid, info.cid, i)
-                    if (seg != null) {
-                        allElems.addAll(seg.elems)
-                    }
-                }
-
-                val xmlBuilder = StringBuilder()
-                xmlBuilder.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<i>\n")
-                xmlBuilder.append("<chatserver>chat.bilibili.com</chatserver>\n")
-                xmlBuilder.append("<chatid>${info.cid}</chatid>\n")
-                xmlBuilder.append("<mission>0</mission>\n")
-                xmlBuilder.append("<maxlimit>8000</maxlimit>\n")
-                xmlBuilder.append("<state>0</state>\n")
-                xmlBuilder.append("<real_name>0</real_name>\n")
-                xmlBuilder.append("<source>k-v</source>\n")
-
-                for (elem in allElems) {
-                    // p="progress(s),mode,fontsize,color,timestamp,pool,hash,rowId"
-                    val p = "${elem.progress / 1000f},${elem.mode},${elem.fontsize},${elem.color},${elem.ctime},0,${elem.midHash},${elem.id}"
-                    val content = elem.content.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
-                    xmlBuilder.append("<d p=\"$p\">$content</d>\n")
-                }
-                xmlBuilder.append("</i>")
-                danmakuFile.writeText(xmlBuilder.toString())
-            }
+            downloadDanmaku(id, context, downloadDir)
 
             // Download all subtitles (including AI) for all video types
             run {
@@ -466,6 +457,56 @@ object VideoDownloadManager {
             }
         } catch (e: Exception) {
             Log.e("VideoDownloadManager", "Failed to download danmaku/subtitle", e)
+        }
+    }
+
+    private suspend fun downloadDanmaku(id: Long, context: Context, downloadDir: File) {
+        val lock = synchronized(danmakuCacheLocks) {
+            danmakuCacheLocks.getOrPut(id) { Mutex() }
+        }
+        lock.withLock {
+            val info = downloads[id] ?: return@withLock
+            val danmakuFile = File(downloadDir, "${info.filename}.danmaku.xml")
+            if (danmakuFile.exists() && info.danmakuCacheVersion >= DANMAKU_CACHE_VERSION) {
+                return@withLock
+            }
+            if (info.aid <= 0 || info.cid <= 0) return@withLock
+
+            val segments = DanmakuApi.getVideoDanmakuSegments(
+                aid = info.aid,
+                cid = info.cid,
+                requireComplete = true
+            )
+            if (segments.isEmpty()) return@withLock
+
+            val xmlBuilder = StringBuilder()
+            xmlBuilder.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<i>\n")
+            xmlBuilder.append("<chatserver>chat.bilibili.com</chatserver>\n")
+            xmlBuilder.append("<chatid>${info.cid}</chatid>\n")
+            xmlBuilder.append("<mission>0</mission>\n")
+            xmlBuilder.append("<maxlimit>8000</maxlimit>\n")
+            xmlBuilder.append("<state>0</state>\n")
+            xmlBuilder.append("<real_name>0</real_name>\n")
+            xmlBuilder.append("<source>k-v</source>\n")
+
+            segments.asSequence().flatMap { it.elems.asSequence() }.forEach { elem ->
+                // p="progress(s),mode,fontsize,color,timestamp,pool,hash,rowId"
+                val p = "${elem.progress / 1000f},${elem.mode},${elem.fontsize},${elem.color},${elem.ctime},${elem.pool},${elem.midHash},${elem.id}"
+                val content = elem.content
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                xmlBuilder.append("<d p=\"$p\">$content</d>\n")
+            }
+            xmlBuilder.append("</i>")
+
+            val temporaryFile = File(downloadDir, "${info.filename}.danmaku.xml.tmp")
+            temporaryFile.writeText(xmlBuilder.toString())
+            temporaryFile.copyTo(danmakuFile, overwrite = true)
+            temporaryFile.delete()
+
+            downloads[id] = info.copy(danmakuCacheVersion = DANMAKU_CACHE_VERSION)
+            persistTasks(context)
         }
     }
 

@@ -92,9 +92,19 @@ object DanmakuApi {
         resp?.code ?: -1
     }
 
-    suspend fun getVideoDanmakuSegments(aid: Long, cid: Long): List<DmSegMobileReply> = withContext(Dispatchers.IO) {
-        val segmentCount = getVideoDanmakuSegmentCount(aid, cid).coerceAtLeast(1)
-        (1..segmentCount)
+    suspend fun getVideoDanmakuSegments(
+        aid: Long,
+        cid: Long,
+        requireComplete: Boolean = false
+    ): List<DmSegMobileReply> = withContext(Dispatchers.IO) {
+        val segmentCount = runCatching {
+            getVideoDanmakuSegmentCount(aid, cid)
+        }.getOrNull() ?: if (requireComplete) {
+            return@withContext emptyList()
+        } else {
+            1
+        }
+        val segments = (1..segmentCount)
             .chunked(MAX_CONCURRENT_SEGMENT_REQUESTS)
             .flatMap { segmentIndexes ->
                 coroutineScope {
@@ -107,7 +117,11 @@ object DanmakuApi {
                     }.awaitAll()
                 }
             }
-            .filterNotNull()
+        if (requireComplete && segments.any { it == null }) {
+            emptyList()
+        } else {
+            segments.filterNotNull()
+        }
     }
 
     suspend fun getVideoDanmakuSegment(aid: Long, cid: Long, segmentIndex: Int): DmSegMobileReply? = withContext(Dispatchers.IO) {
@@ -119,12 +133,16 @@ object DanmakuApi {
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
         val response = HttpClient.client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            response.close()
+            return@withContext null
+        }
         val bytes = response.body.bytes()
-        if (bytes.isEmpty()) return@withContext null
+        if (bytes.isEmpty()) return@withContext DmSegMobileReply()
         parseDmSegMobileReply(bytes)
     }
 
-    private suspend fun getVideoDanmakuSegmentCount(aid: Long, cid: Long): Int = withContext(Dispatchers.IO) {
+    private suspend fun getVideoDanmakuSegmentCount(aid: Long, cid: Long): Int? = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("https://api.bilibili.com/x/v2/dm/web/view?type=1&oid=$cid&pid=$aid")
             .addHeader("Cookie", CookieManager.getCookie())
@@ -132,8 +150,12 @@ object DanmakuApi {
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
         val response = HttpClient.client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            response.close()
+            return@withContext null
+        }
         val bytes = response.body.bytes()
-        parseDanmakuSegmentCount(bytes).coerceAtLeast(1)
+        parseDanmakuSegmentCount(bytes).takeIf { it > 0 }
     }
 
     internal fun parseDanmakuSegmentCount(bytes: ByteArray): Int = runCatching {
@@ -159,8 +181,8 @@ object DanmakuApi {
                 input.skipField(tag)
             }
         }
-        1
-    }.getOrDefault(1)
+        0
+    }.getOrDefault(0)
 
     private fun parseDmSegMobileReply(bytes: ByteArray): DmSegMobileReply {
         val elems = mutableListOf<DanmakuElem>()

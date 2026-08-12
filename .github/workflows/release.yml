@@ -1,0 +1,86 @@
+name: Release Android APKs
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish signed APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build signed lite and full release APKs
+        shell: bash
+        env:
+          ORBIT_KEYSTORE_BASE64: ${{ secrets.ORBIT_KEYSTORE_BASE64 }}
+          ORBIT_KEYSTORE_FILE: ${{ runner.temp }}/orbit-release.jks
+          ORBIT_KEYSTORE_PASSWORD: ${{ secrets.ORBIT_KEYSTORE_PASSWORD }}
+          ORBIT_KEY_ALIAS: ${{ secrets.ORBIT_KEY_ALIAS }}
+          ORBIT_KEY_PASSWORD: ${{ secrets.ORBIT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          : "${ORBIT_KEYSTORE_BASE64:?Missing ORBIT_KEYSTORE_BASE64 secret}"
+          : "${ORBIT_KEYSTORE_PASSWORD:?Missing ORBIT_KEYSTORE_PASSWORD secret}"
+          : "${ORBIT_KEY_ALIAS:?Missing ORBIT_KEY_ALIAS secret}"
+          : "${ORBIT_KEY_PASSWORD:?Missing ORBIT_KEY_PASSWORD secret}"
+
+          umask 077
+          printf '%s' "$ORBIT_KEYSTORE_BASE64" | base64 --decode > "$ORBIT_KEYSTORE_FILE"
+          trap 'rm -f "$ORBIT_KEYSTORE_FILE"' EXIT
+
+          ./gradlew --no-daemon :app:assembleFullRelease
+          ./gradlew --no-daemon -Porbit.universalApkOnly=true :app:assembleLiteRelease
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' lite_apks < <(
+            find app/build/outputs/apk/lite/release \
+              -type f -name '*-universal-release.apk' -print0 | sort -z
+          )
+          mapfile -d '' full_apks < <(
+            find app/build/outputs/apk/full/release \
+              -type f -name '*.apk' -print0 | sort -z
+          )
+
+          if (( ${#lite_apks[@]} != 1 )); then
+            echo "Expected exactly one lite universal APK, found ${#lite_apks[@]}" >&2
+            exit 1
+          fi
+          if (( ${#full_apks[@]} != 3 )); then
+            echo "Expected three full APKs, found ${#full_apks[@]}" >&2
+            exit 1
+          fi
+
+          apks=("${lite_apks[@]}" "${full_apks[@]}")
+
+          gh release create "$GITHUB_REF_NAME" "${apks[@]}" \
+            --verify-tag \
+            --generate-notes

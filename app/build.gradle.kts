@@ -4,6 +4,20 @@ plugins {
     id("kotlin-parcelize")
 }
 
+val releaseKeystorePath = providers.environmentVariable("ORBIT_KEYSTORE_FILE").orNull
+val releaseKeystorePassword = providers.environmentVariable("ORBIT_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ORBIT_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ORBIT_KEY_PASSWORD").orNull
+val universalApkOnly = providers.gradleProperty("orbit.universalApkOnly")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.qx.orbit.bili"
     compileSdk {
@@ -16,14 +30,26 @@ android {
         applicationId = "com.qx.orbit.bili"
         minSdk = 23
         targetSdk = 36
-        versionCode = 510
-        versionName = "0.5.10-Alpha"
+        versionCode = 521
+        versionName = "0.5.21-Alpha"
         resValue("string", "app_verCode", versionCode.toString())
         resValue("string", "app_version", versionName.toString())
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(requireNotNull(releaseKeystorePath))
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -57,7 +83,7 @@ android {
     }
     splits {
         abi {
-            isEnable = true
+            isEnable = !universalApkOnly
             reset()
             include("armeabi-v7a", "arm64-v8a")
             isUniversalApk = true
