@@ -20,7 +20,8 @@ data class MessageCard(
     val targetId: Long = 0,
     val targetTitle: String = "",
     val targetImage: String = "",
-    val targetUri: String = ""
+    val targetUri: String = "",
+    val targetNativeUri: String = ""
 ) {
     data class Cursor(
         val is_end: Boolean,

@@ -151,10 +151,17 @@ import androidx.core.net.toUri
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long, viewModel: VideoDetailViewModel = viewModel()) {
+fun VideoDetailScreen(
+    navController: NavHostController,
+    bvid: String,
+    aid: Long,
+    commentRootId: Long = 0L,
+    commentReplyId: Long = 0L,
+    viewModel: VideoDetailViewModel = viewModel()
+) {
     val vmd = viewModel
-    LaunchedEffect(bvid, aid) {
-        viewModel.loadData(bvid, aid)
+    LaunchedEffect(bvid, aid, commentRootId, commentReplyId) {
+        viewModel.loadData(bvid, aid, commentRootId, commentReplyId)
     }
     
     val context = LocalContext.current
@@ -168,6 +175,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val replyErrorMessage by viewModel.replyErrorMessage.collectAsState()
+    val focusedReplyId by viewModel.focusedReplyId.collectAsState()
     var showCoinDialog by remember { mutableStateOf(false) }
     var showFavDialog by remember { mutableStateOf(false) }
     var showCacheDialog by remember { mutableStateOf(false) }
@@ -184,7 +192,10 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
     val isEmoteLoading by viewModel.isEmoteLoading.collectAsState()
     var showWriteReply by remember { mutableStateOf(false) }
     var replyTarget by remember { mutableStateOf<Reply?>(null) }
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val pagerState = rememberPagerState(
+        initialPage = if (commentRootId > 0L) 1 else 0,
+        pageCount = { 3 }
+    )
     
     // Focus requesters for rotary input for each page
     val focusRequesters = remember { List(3) { FocusRequester() } }
@@ -557,7 +568,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable { viewModel.loadData(bvid, aid) },
+                            .clickable { viewModel.loadData(bvid, aid, commentRootId, commentReplyId) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -715,6 +726,7 @@ fun VideoDetailScreen(navController: NavHostController, bvid: String, aid: Long,
                             replies = replies, 
                             replyCount = replyCount,
                             replyErrorMessage = replyErrorMessage,
+                            focusedReplyId = focusedReplyId,
                             focusRequester = focusRequesters[1],
                             navController = navController,
                             onLoadMore = { viewModel.loadReplies() },
@@ -1557,6 +1569,7 @@ fun VideoCommentsPage(
     replies: List<Reply>, 
     replyCount: Int,
     replyErrorMessage: String?,
+    focusedReplyId: Long = 0L,
     focusRequester: FocusRequester,
     navController: NavHostController,
     onLoadMore: () -> Unit,
@@ -1569,6 +1582,15 @@ fun VideoCommentsPage(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
+    val focusedReplyIndex = remember(replies, focusedReplyId) {
+        replies.indexOfFirst { it.rpid == focusedReplyId }
+    }
+
+    LaunchedEffect(focusedReplyId, focusedReplyIndex) {
+        if (focusedReplyId > 0L && focusedReplyIndex >= 0) {
+            listState.animateScrollToItem(focusedReplyIndex + 2)
+        }
+    }
 
     ScreenScaffold(scrollState = listState, modifier = Modifier.focusRequester(focusRequester)) { contentPadding ->
         TransformingLazyColumn(
@@ -1631,6 +1653,7 @@ fun VideoCommentsPage(
                     }
                     ReplyCard(
                         reply = replies[index],
+                        highlighted = replies[index].rpid == focusedReplyId,
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                         modifier = Modifier.animateItem().adaptiveTransformedHeight(this, transformationSpec),
                         navController = navController,

@@ -372,15 +372,31 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                 LiveDetailScreen(roomId = roomId, navController = navController)
             }
             composable(
-                "detail/{bvid}/{aid}",
+                "detail/{bvid}/{aid}?commentRootId={commentRootId}&commentReplyId={commentReplyId}",
                 arguments = listOf(
                     navArgument("bvid") { type = NavType.StringType },
-                    navArgument("aid") { type = NavType.LongType }
+                    navArgument("aid") { type = NavType.LongType },
+                    navArgument("commentRootId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    },
+                    navArgument("commentReplyId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    }
                 )
             ) { backStackEntry ->
                 val bvid = backStackEntry.arguments?.getString("bvid") ?: ""
                 val aid = backStackEntry.arguments?.getLong("aid") ?: 0L
-                VideoDetailScreen(navController = navController, bvid = bvid, aid = aid)
+                val commentRootId = backStackEntry.arguments?.getLong("commentRootId") ?: 0L
+                val commentReplyId = backStackEntry.arguments?.getLong("commentReplyId") ?: 0L
+                VideoDetailScreen(
+                    navController = navController,
+                    bvid = bvid,
+                    aid = aid,
+                    commentRootId = commentRootId,
+                    commentReplyId = commentReplyId
+                )
             }
             composable(
                 "bangumi_detail/{media_id}",

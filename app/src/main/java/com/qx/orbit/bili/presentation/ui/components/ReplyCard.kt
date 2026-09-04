@@ -85,6 +85,7 @@ fun ReplyCard(
     navController: NavHostController,
     showReplyPreview: Boolean = true,
     isDetail: Boolean = false,
+    highlighted: Boolean = false,
     replyType: Int = ReplyApi.REPLY_TYPE_VIDEO,
     onRemove: (Reply) -> Unit = {},
     onClick: () -> Unit = {},
@@ -204,6 +205,14 @@ fun ReplyCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Column(modifier = Modifier) {
+            if (highlighted) {
+                Text(
+                    text = "消息定位",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable {

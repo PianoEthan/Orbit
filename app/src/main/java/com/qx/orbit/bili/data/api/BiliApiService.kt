@@ -148,6 +148,15 @@ interface BiliApiService {
         @Query("root") root: Long
     ): Result<JsonElement>
 
+    @GET("https://api.bilibili.com/x/v2/reply/detail")
+    suspend fun getReplyDetail(
+        @Query("oid") oid: Long,
+        @Query("type") type: Int,
+        @Query("root") root: Long,
+        @Query("ps") pageSize: Int = 20,
+        @Query("next") next: Int = 0
+    ): Result<JsonElement>
+
     @GET("https://api.bilibili.com/x/v2/reply/wbi/main")
     suspend fun getRepliesLazy(@QueryMap params: Map<String, String>): Result<JsonElement>
 

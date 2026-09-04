@@ -54,6 +54,9 @@ class VideoDetailViewModel : ViewModel() {
     private val _replyErrorMessage = MutableStateFlow<String?>(null)
     val replyErrorMessage: StateFlow<String?> = _replyErrorMessage.asStateFlow()
 
+    private val _focusedReplyId = MutableStateFlow(0L)
+    val focusedReplyId: StateFlow<Long> = _focusedReplyId.asStateFlow()
+
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
@@ -64,7 +67,7 @@ class VideoDetailViewModel : ViewModel() {
     var aid: Long = 0
     private var replyPage = 1
 
-    fun loadData(bvid: String, aid: Long) {
+    fun loadData(bvid: String, aid: Long, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
         if (_isLoading.value) return
         this.bvid = bvid
         this.aid = aid
@@ -96,7 +99,11 @@ class VideoDetailViewModel : ViewModel() {
                 _tags.value = tagsDeferred.await()
                 _relatedVideos.value = relatedDeferred.await()
                 
-                loadReplies(reset = true)
+                loadReplies(
+                    reset = true,
+                    focusedRootId = commentRootId,
+                    focusedReplyId = commentReplyId
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
                 _errorMessage.value = e.localizedMessage ?: "加载详情失败"
@@ -106,7 +113,11 @@ class VideoDetailViewModel : ViewModel() {
         }
     }
     
-    fun loadReplies(reset: Boolean = false) {
+    fun loadReplies(
+        reset: Boolean = false,
+        focusedRootId: Long = 0L,
+        focusedReplyId: Long = 0L
+    ) {
         if (_isReplyLoading.value) return
         viewModelScope.launch {
             _isReplyLoading.value = true
@@ -114,13 +125,23 @@ class VideoDetailViewModel : ViewModel() {
             try {
                 if (reset) {
                     replyPage = 1
+                    _focusedReplyId.value = focusedRootId
                     _replyCount.value = ReplyApi.getReplyCount(oid = aid).toInt()
                 }
                 val newReplies = ReplyApi.getReplies(oid = aid, pageNumber = replyPage)
                 if (reset) {
-                    _replies.value = newReplies
+                    val focusedReply = focusedRootId.takeIf { it > 0L }?.let { rootId ->
+                        ReplyApi.getReplyDetail(
+                            oid = aid,
+                            root = rootId,
+                            targetReplyId = focusedReplyId
+                        )
+                    }
+                    _replies.value = (listOfNotNull(focusedReply) + newReplies)
+                        .distinctBy { it.rpid }
                 } else {
-                    _replies.value = _replies.value + newReplies
+                    val existingIds = _replies.value.mapTo(mutableSetOf()) { it.rpid }
+                    _replies.value = _replies.value + newReplies.filter { it.rpid !in existingIds }
                 }
                 replyPage++
             } catch (e: Exception) {

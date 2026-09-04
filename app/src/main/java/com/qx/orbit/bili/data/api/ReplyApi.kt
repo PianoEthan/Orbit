@@ -41,6 +41,11 @@ object ReplyApi {
         @SerializedName("upper") val upper: UpperData? = null
     )
 
+    internal data class ReplyDetailData(
+        @SerializedName("root") val root: ReplyRootData? = null,
+        @SerializedName("upper") val upper: UpperData? = null
+    )
+
     internal data class CursorData(
         @SerializedName("all_count") val all_count: Int = 0,
         @SerializedName("next") val next: Int = 0,
@@ -225,6 +230,30 @@ object ReplyApi {
         val topIds = topList.map { it.rpid }.toSet()
         val filtered = normalList.filter { it.rpid !in topIds && it.rpid != rpid }
         Triple(count, nextOffset, topList + filtered)
+    }
+
+    suspend fun getReplyDetail(
+        oid: Long,
+        root: Long,
+        targetReplyId: Long = 0L,
+        type: Int = REPLY_TYPE_VIDEO
+    ): Reply? = withContext(Dispatchers.IO) {
+        val jsonElement = when (val result = api.getReplyDetail(oid, type, root)) {
+            is Result.Success -> result.data
+            is Result.Error -> return@withContext null
+        }
+        val typeToken = object : TypeToken<ApiResponse<ReplyDetailData>>() {}.type
+        val resp: ApiResponse<ReplyDetailData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
+        if (resp == null || !resp.isSuccess || resp.data?.root == null) return@withContext null
+        val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
+        val parsed = parseReply(resp.data.root, isDynamic, oid, resp.data.upper?.mid ?: 0L)
+        if (targetReplyId > 0L) {
+            parsed.copy(
+                childMsgList = parsed.childMsgList.sortedByDescending { it.rpid == targetReplyId }
+            )
+        } else {
+            parsed
+        }
     }
 
     suspend fun sendReply(

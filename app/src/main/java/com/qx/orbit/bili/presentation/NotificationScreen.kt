@@ -29,6 +29,7 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import com.qx.orbit.bili.data.model.MessageCard
+import com.qx.orbit.bili.data.api.BilibiliIDConverter
 import com.qx.orbit.bili.presentation.ui.components.NotificationMessageCard
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
@@ -154,22 +155,35 @@ fun NotificationScreen(
 }
 
 private fun notificationTargetRoute(message: MessageCard): String? {
-    val uri = message.targetUri
-    val bvid = BV_ID_REGEX.find(uri)?.value
-    if (!bvid.isNullOrBlank()) return "detail/$bvid/0"
+    val uris = listOf(message.targetUri, message.targetNativeUri).filter(String::isNotBlank)
+    val bvid = uris.firstNotNullOfOrNull { uri -> BV_ID_REGEX.find(uri)?.value }
+    if (!bvid.isNullOrBlank()) return videoTargetRoute(bvid, 0L, message, uris)
 
-    OPUS_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { opusId ->
+    val uriAid = uris.firstNotNullOfOrNull { uri ->
+        AV_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    }
+    if (uriAid != null) {
+        return videoTargetRoute(BilibiliIDConverter.aidToBv(uriAid), uriAid, message, uris)
+    }
+
+    uris.firstNotNullOfOrNull { uri -> OPUS_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { opusId ->
         return "opus_detail/$opusId"
     }
-    DYNAMIC_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { dynamicId ->
+    uris.firstNotNullOfOrNull { uri -> DYNAMIC_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { dynamicId ->
         return "dynamic_detail/$dynamicId"
     }
-    ARTICLE_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { articleId ->
+    uris.firstNotNullOfOrNull { uri -> ARTICLE_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { articleId ->
         return "article_detail/$articleId"
     }
 
     val subjectId = message.subjectId.takeIf { it > 0L } ?: return null
     return when {
+        message.businessId == VIDEO_BUSINESS_ID -> videoTargetRoute(
+            BilibiliIDConverter.aidToBv(subjectId),
+            subjectId,
+            message,
+            uris
+        )
         message.itemType.lowercase() in DYNAMIC_ITEM_TYPES ||
             message.businessId in DYNAMIC_BUSINESS_IDS -> "opus_detail/$subjectId"
         message.itemType.equals("article", ignoreCase = true) ||
@@ -178,12 +192,51 @@ private fun notificationTargetRoute(message: MessageCard): String? {
     }
 }
 
+private fun videoTargetRoute(
+    bvid: String,
+    aid: Long,
+    message: MessageCard,
+    uris: List<String>
+): String {
+    val queryRootId = uris.firstNotNullOfOrNull { uri ->
+        COMMENT_ROOT_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    }
+    val fragmentReplyId = uris.firstNotNullOfOrNull { uri ->
+        REPLY_FRAGMENT_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    }
+    val isCommentMessage = queryRootId != null ||
+        fragmentReplyId != null ||
+        message.rootId > 0L ||
+        message.itemType.equals("reply", ignoreCase = true) ||
+        message.itemType.equals("comment", ignoreCase = true) ||
+        message.getType == MessageCard.GET_TYPE_REPLY
+    if (!isCommentMessage) return "detail/$bvid/$aid"
+
+    val rootId = queryRootId
+        ?: message.rootId.takeIf { it > 0L }
+        ?: message.sourceId.takeIf { it > 0L }
+        ?: fragmentReplyId
+        ?: message.targetId.takeIf { it > 0L }
+        ?: return "detail/$bvid/$aid"
+    val secondaryId = uris.firstNotNullOfOrNull { uri ->
+        COMMENT_SECONDARY_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    } ?: message.sourceId.takeIf { it > 0L && it != rootId }
+        ?: fragmentReplyId.takeIf { it != null && it != rootId }
+        ?: 0L
+    return "detail/$bvid/$aid?commentRootId=$rootId&commentReplyId=$secondaryId"
+}
+
 private val BV_ID_REGEX = Regex("BV[0-9A-Za-z]{10}", RegexOption.IGNORE_CASE)
+private val AV_ID_REGEX = Regex("(?:bilibili\\.com/video/av|bilibili://video/)(\\d+)", RegexOption.IGNORE_CASE)
 private val OPUS_ID_REGEX = Regex("(?:bilibili\\.com/opus/|bilibili://opus/detail/)(\\d+)", RegexOption.IGNORE_CASE)
 private val DYNAMIC_ID_REGEX = Regex("(?:t\\.bilibili\\.com/|bilibili://dynamic/)(\\d+)", RegexOption.IGNORE_CASE)
 private val ARTICLE_ID_REGEX = Regex("(?:bilibili\\.com/read/cv|bilibili://article/)(\\d+)", RegexOption.IGNORE_CASE)
+private val COMMENT_ROOT_ID_REGEX = Regex("[?&]comment_root_id=(\\d+)", RegexOption.IGNORE_CASE)
+private val COMMENT_SECONDARY_ID_REGEX = Regex("[?&]comment_secondary_id=(\\d+)", RegexOption.IGNORE_CASE)
+private val REPLY_FRAGMENT_REGEX = Regex("#reply(\\d+)", RegexOption.IGNORE_CASE)
 private val DYNAMIC_ITEM_TYPES = setOf("dynamic", "album", "opus")
 private val DYNAMIC_BUSINESS_IDS = setOf(11, 17)
+private const val VIDEO_BUSINESS_ID = 1
 private const val ARTICLE_BUSINESS_ID = 12
 
 @Composable

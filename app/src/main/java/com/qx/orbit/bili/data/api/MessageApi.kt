@@ -83,7 +83,8 @@ object MessageApi {
                 targetId = item.longValue("target_id"),
                 targetTitle = item.stringValue("title"),
                 targetImage = item.stringValue("image"),
-                targetUri = item.stringValue("uri")
+                targetUri = item.stringValue("uri"),
+                targetNativeUri = item.stringValue("native_uri")
             )
         }
     }
@@ -116,7 +117,8 @@ object MessageApi {
                 targetId = item.longValue("target_id"),
                 targetTitle = item.stringValue("title"),
                 targetImage = item.stringValue("image"),
-                targetUri = item.stringValue("uri")
+                targetUri = item.stringValue("uri"),
+                targetNativeUri = item.stringValue("native_uri")
             )
         }
     }
@@ -147,7 +149,8 @@ object MessageApi {
                 targetId = item.longValue("target_id"),
                 targetTitle = item.stringValue("title"),
                 targetImage = item.stringValue("image"),
-                targetUri = item.stringValue("uri")
+                targetUri = item.stringValue("uri"),
+                targetNativeUri = item.stringValue("native_uri")
             )
         }
     }
