@@ -155,16 +155,36 @@ fun NotificationScreen(
 
 private fun notificationTargetRoute(message: MessageCard): String? {
     val uri = message.targetUri
-    val bvid = Regex("BV[0-9A-Za-z]{10}", RegexOption.IGNORE_CASE)
-        .find(uri)
-        ?.value
+    val bvid = BV_ID_REGEX.find(uri)?.value
     if (!bvid.isNullOrBlank()) return "detail/$bvid/0"
-    return when (message.itemType) {
-        "dynamic", "album" -> message.subjectId.takeIf { it > 0L }?.let { "dynamic_detail/$it" }
-        "article" -> message.subjectId.takeIf { it > 0L }?.let { "article_detail/$it" }
+
+    OPUS_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { opusId ->
+        return "opus_detail/$opusId"
+    }
+    DYNAMIC_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { dynamicId ->
+        return "dynamic_detail/$dynamicId"
+    }
+    ARTICLE_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.let { articleId ->
+        return "article_detail/$articleId"
+    }
+
+    val subjectId = message.subjectId.takeIf { it > 0L } ?: return null
+    return when {
+        message.itemType.lowercase() in DYNAMIC_ITEM_TYPES ||
+            message.businessId in DYNAMIC_BUSINESS_IDS -> "opus_detail/$subjectId"
+        message.itemType.equals("article", ignoreCase = true) ||
+            message.businessId == ARTICLE_BUSINESS_ID -> "article_detail/$subjectId"
         else -> null
     }
 }
+
+private val BV_ID_REGEX = Regex("BV[0-9A-Za-z]{10}", RegexOption.IGNORE_CASE)
+private val OPUS_ID_REGEX = Regex("(?:bilibili\\.com/opus/|bilibili://opus/detail/)(\\d+)", RegexOption.IGNORE_CASE)
+private val DYNAMIC_ID_REGEX = Regex("(?:t\\.bilibili\\.com/|bilibili://dynamic/)(\\d+)", RegexOption.IGNORE_CASE)
+private val ARTICLE_ID_REGEX = Regex("(?:bilibili\\.com/read/cv|bilibili://article/)(\\d+)", RegexOption.IGNORE_CASE)
+private val DYNAMIC_ITEM_TYPES = setOf("dynamic", "album", "opus")
+private val DYNAMIC_BUSINESS_IDS = setOf(11, 17)
+private const val ARTICLE_BUSINESS_ID = 12
 
 @Composable
 private fun NotificationStatus(message: String, modifier: Modifier = Modifier) {
