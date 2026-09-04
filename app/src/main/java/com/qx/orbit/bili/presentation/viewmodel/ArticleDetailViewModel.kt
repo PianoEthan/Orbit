@@ -28,20 +28,27 @@ class ArticleDetailViewModel : ViewModel() {
     private val _replyCount = MutableStateFlow(0)
     val replyCount: StateFlow<Int> = _replyCount.asStateFlow()
 
+    private val _focusedReplyId = MutableStateFlow(0L)
+    val focusedReplyId: StateFlow<Long> = _focusedReplyId.asStateFlow()
+
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
     private var replyNext: String? = null
     private var hasMoreReplies = true
 
-    fun loadArticle(id: Long) {
+    fun loadArticle(id: Long, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
         viewModelScope.launch {
             _error.value = null
+            replyNext = null
+            hasMoreReplies = true
+            _replies.value = emptyList()
+            _focusedReplyId.value = commentRootId
             try {
                 val data = ArticleApi.getArticle(id)
                 _article.value = data
                 if (data != null) {
-                    loadReplies()
+                    loadReplies(commentRootId, commentReplyId)
                 } else {
                     _error.value = "加载失败"
                 }
@@ -51,19 +58,31 @@ class ArticleDetailViewModel : ViewModel() {
         }
     }
 
-    fun loadReplies() {
+    fun loadReplies(focusedRootId: Long = 0L, focusedReplyId: Long = 0L) {
         if (!hasMoreReplies || _isReplyLoading.value) return
         _isReplyLoading.value = true
         viewModelScope.launch {
             try {
                 val data = _article.value ?: return@launch
+                val isFirstPage = replyNext == null
                 val result = ReplyApi.getRepliesLazy(data.id, 0, replyNext, 12, 1)
-                if (replyNext == null) {
+                if (isFirstPage) {
                     _replyCount.value = result.first
+                }
+                val focusedReply = if (isFirstPage && focusedRootId > 0L) {
+                    ReplyApi.getReplyDetail(
+                        oid = data.id,
+                        root = focusedRootId,
+                        targetReplyId = focusedReplyId,
+                        type = ReplyApi.REPLY_TYPE_ARTICLE
+                    )
+                } else {
+                    null
                 }
                 replyNext = result.second
                 hasMoreReplies = result.second != null && result.second?.isNotBlank() == true
-                _replies.value = _replies.value + result.third
+                _replies.value = (_replies.value + listOfNotNull(focusedReply) + result.third)
+                    .distinctBy { it.rpid }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

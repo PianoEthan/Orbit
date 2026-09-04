@@ -59,6 +59,8 @@ import com.qx.orbit.bili.data.model.Reply
 fun DynamicDetailScreen(
     dynamicId: String,
     navController: NavHostController,
+    commentRootId: Long = 0L,
+    commentReplyId: Long = 0L,
     viewModel: DynamicDetailViewModel = viewModel()
 ) {
     val dynamic by viewModel.dynamic.collectAsState()
@@ -67,6 +69,7 @@ fun DynamicDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val emotes by viewModel.emotes.collectAsState()
+    val focusedReplyId by viewModel.focusedReplyId.collectAsState()
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -82,9 +85,18 @@ fun DynamicDetailScreen(
     var showWriteReply by remember { mutableStateOf(false) }
     var replyTarget by remember { mutableStateOf<Reply?>(null) }
 
-    LaunchedEffect(dynamicId) {
-        viewModel.loadDynamic(dynamicId)
-        viewModel.loadReplies()
+    LaunchedEffect(dynamicId, commentRootId, commentReplyId) {
+        viewModel.loadDynamic(dynamicId, commentRootId, commentReplyId)
+    }
+
+    val focusedReplyIndex = remember(replies, focusedReplyId) {
+        replies.indexOfFirst { it.rpid == focusedReplyId }
+    }
+
+    LaunchedEffect(focusedReplyId, focusedReplyIndex) {
+        if (focusedReplyId > 0L && focusedReplyIndex >= 0) {
+            listState.animateScrollToItem(focusedReplyIndex + 2)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -420,6 +432,7 @@ fun DynamicDetailScreen(
                             }
                             ReplyCard(
                                 reply = replies[index],
+                                highlighted = replies[index].rpid == focusedReplyId,
                                 transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                                 modifier = Modifier.animateItem().adaptiveTransformedHeight(this, transformationSpec),
                                 navController = navController,

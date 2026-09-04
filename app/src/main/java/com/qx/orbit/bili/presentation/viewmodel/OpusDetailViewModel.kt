@@ -31,17 +31,24 @@ class OpusDetailViewModel : ViewModel() {
     private val _replyCount = MutableStateFlow(0)
     val replyCount: StateFlow<Int> = _replyCount.asStateFlow()
 
+    private val _focusedReplyId = MutableStateFlow(0L)
+    val focusedReplyId: StateFlow<Long> = _focusedReplyId.asStateFlow()
+
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
-    fun loadOpus(id: Long) {
+    fun loadOpus(id: Long, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
         viewModelScope.launch {
             _error.value = null
+            replyNext = null
+            hasMoreReplies = true
+            _replies.value = emptyList()
+            _focusedReplyId.value = commentRootId
             try {
                 val data = OpusApi.getOpus(id)
                 _opus.value = data
                 if (data != null) {
-                    loadReplies()
+                    loadReplies(commentRootId, commentReplyId)
                 } else {
                     _error.value = "加载失败"
                 }
@@ -52,20 +59,31 @@ class OpusDetailViewModel : ViewModel() {
         }
     }
 
-    fun loadReplies() {
+    fun loadReplies(focusedRootId: Long = 0L, focusedReplyId: Long = 0L) {
         if (!hasMoreReplies || _isReplyLoading.value) return
         _isReplyLoading.value = true
         viewModelScope.launch {
             try {
                 val data = _opus.value ?: return@launch
+                val isFirstPage = replyNext == null
                 val result = ReplyApi.getRepliesLazy(data.commentId, 0, replyNext, data.commentType, 1)
-                if (replyNext == null) {
+                if (isFirstPage) {
                     _replyCount.value = result.first
+                }
+                val focusedReply = if (isFirstPage && focusedRootId > 0L) {
+                    ReplyApi.getReplyDetail(
+                        oid = data.commentId,
+                        root = focusedRootId,
+                        targetReplyId = focusedReplyId,
+                        type = data.commentType
+                    )
+                } else {
+                    null
                 }
                 replyNext = result.second
                 hasMoreReplies = result.second != null && result.second?.isNotBlank() == true
-                val newReplies = _replies.value.toMutableList().apply { addAll(result.third) }
-                _replies.value = newReplies
+                _replies.value = (_replies.value + listOfNotNull(focusedReply) + result.third)
+                    .distinctBy { it.rpid }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

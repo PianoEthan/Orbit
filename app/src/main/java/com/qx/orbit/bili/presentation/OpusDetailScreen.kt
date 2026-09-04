@@ -104,18 +104,23 @@ import androidx.compose.material3.Text
 fun OpusDetailScreen(
     opusId: Long,
     navController: NavHostController,
+    commentRootId: Long = 0L,
+    commentReplyId: Long = 0L,
     viewModel: OpusDetailViewModel = viewModel()
 ) {
     val opus by viewModel.opus.collectAsState()
     val error by viewModel.error.collectAsState()
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    val pagerState = rememberPagerState(
+        initialPage = if (commentRootId > 0L) 1 else 0,
+        pageCount = { 2 }
+    )
     val focusRequesters = remember { List(2) { FocusRequester() } }
     var showWriteReply by remember { mutableStateOf(false) }
     var replyTarget by remember { mutableStateOf<Reply?>(null) }
     val emotes by viewModel.emotes.collectAsState()
 
-    LaunchedEffect(opusId) {
-        viewModel.loadOpus(opusId)
+    LaunchedEffect(opusId, commentRootId, commentReplyId) {
+        viewModel.loadOpus(opusId, commentRootId, commentReplyId)
     }
 
     LaunchedEffect(pagerState.currentPage) {
@@ -144,7 +149,7 @@ fun OpusDetailScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = { viewModel.loadOpus(opusId) },
+                        onClick = { viewModel.loadOpus(opusId, commentRootId, commentReplyId) },
                         modifier = Modifier.size(width = 80.dp, height = 32.dp)
                     ) {
                         Text("重试", style = MaterialTheme.typography.labelSmall)
@@ -507,10 +512,20 @@ fun OpusCommentsPage(
     val opus by viewModel.opus.collectAsState()
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
     val replyCount by viewModel.replyCount.collectAsState()
+    val focusedReplyId by viewModel.focusedReplyId.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
     val behavior = rememberSafeRotaryScrollableBehavior(listState)
+    val focusedReplyIndex = remember(replies, focusedReplyId) {
+        replies.indexOfFirst { it.rpid == focusedReplyId }
+    }
+
+    LaunchedEffect(focusedReplyId, focusedReplyIndex) {
+        if (focusedReplyId > 0L && focusedReplyIndex >= 0) {
+            listState.animateScrollToItem(focusedReplyIndex + 2)
+        }
+    }
 
     TransformingLazyColumn(
         state = listState,
@@ -547,6 +562,7 @@ fun OpusCommentsPage(
             }
             ReplyCard(
                 reply = replies[index],
+                highlighted = replies[index].rpid == focusedReplyId,
                 transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                 modifier = Modifier.animateItem().adaptiveTransformedHeight(this, transformationSpec),
                 navController = navController,
@@ -567,4 +583,3 @@ fun OpusCommentsPage(
         item { Spacer(modifier = Modifier.height(32.dp)) }
     }
 }
-

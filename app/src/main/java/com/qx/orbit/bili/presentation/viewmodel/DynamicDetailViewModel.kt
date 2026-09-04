@@ -29,13 +29,16 @@ class DynamicDetailViewModel : ViewModel() {
     private val _isReplyLoading = MutableStateFlow(false)
     val isReplyLoading: StateFlow<Boolean> = _isReplyLoading.asStateFlow()
 
+    private val _focusedReplyId = MutableStateFlow(0L)
+    val focusedReplyId: StateFlow<Long> = _focusedReplyId.asStateFlow()
+
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
     private var replyNext: String? = null
     private var hasMoreReplies = true
 
-    fun loadDynamic(dynamicId: String) {
+    fun loadDynamic(dynamicId: String, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
         if (_dynamic.value?.dynamicId == dynamicId) return
         viewModelScope.launch {
             _isLoading.value = true
@@ -44,7 +47,11 @@ class DynamicDetailViewModel : ViewModel() {
                 val data = DynamicApi.getDynamic(dynamicId)
                 if (data != null) {
                     _dynamic.value = data
-                    loadReplies(true)
+                    loadReplies(
+                        reset = true,
+                        focusedRootId = commentRootId,
+                        focusedReplyId = commentReplyId
+                    )
                 } else {
                     _error.value = "无法加载动态"
                 }
@@ -57,13 +64,18 @@ class DynamicDetailViewModel : ViewModel() {
         }
     }
 
-    fun loadReplies(reset: Boolean = false) {
+    fun loadReplies(
+        reset: Boolean = false,
+        focusedRootId: Long = 0L,
+        focusedReplyId: Long = 0L
+    ) {
         if (_isReplyLoading.value) return
         viewModelScope.launch {
             _isReplyLoading.value = true
             try {
                 if (reset) {
                     _replies.value = emptyList()
+                    _focusedReplyId.value = focusedRootId
                     replyNext = null
                     hasMoreReplies = true
                 }
@@ -73,10 +85,20 @@ class DynamicDetailViewModel : ViewModel() {
                 }
                 val dyn = _dynamic.value ?: return@launch
                 val result = ReplyApi.getRepliesLazy(dyn.comment_id, 0, replyNext, dyn.comment_type, 1)
+                val focusedReply = if (reset && focusedRootId > 0L) {
+                    ReplyApi.getReplyDetail(
+                        oid = dyn.comment_id,
+                        root = focusedRootId,
+                        targetReplyId = focusedReplyId,
+                        type = dyn.comment_type
+                    )
+                } else {
+                    null
+                }
                 replyNext = result.second
                 hasMoreReplies = result.second != null && result.second?.isNotBlank() == true
-                val newReplies = _replies.value.toMutableList().apply { addAll(result.third) }
-                _replies.value = newReplies
+                _replies.value = (_replies.value + listOfNotNull(focusedReply) + result.third)
+                    .distinctBy { it.rpid }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

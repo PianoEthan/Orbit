@@ -167,13 +167,13 @@ private fun notificationTargetRoute(message: MessageCard): String? {
     }
 
     uris.firstNotNullOfOrNull { uri -> OPUS_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { opusId ->
-        return "opus_detail/$opusId"
+        return contentTargetRoute("opus_detail/$opusId", message, uris)
     }
     uris.firstNotNullOfOrNull { uri -> DYNAMIC_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { dynamicId ->
-        return "dynamic_detail/$dynamicId"
+        return contentTargetRoute("dynamic_detail/$dynamicId", message, uris)
     }
     uris.firstNotNullOfOrNull { uri -> ARTICLE_ID_REGEX.find(uri)?.groupValues?.getOrNull(1) }?.let { articleId ->
-        return "article_detail/$articleId"
+        return contentTargetRoute("article_detail/$articleId", message, uris)
     }
 
     val subjectId = message.subjectId.takeIf { it > 0L } ?: return null
@@ -185,9 +185,17 @@ private fun notificationTargetRoute(message: MessageCard): String? {
             uris
         )
         message.itemType.lowercase() in DYNAMIC_ITEM_TYPES ||
-            message.businessId in DYNAMIC_BUSINESS_IDS -> "opus_detail/$subjectId"
+            message.businessId in DYNAMIC_BUSINESS_IDS -> contentTargetRoute(
+                "opus_detail/$subjectId",
+                message,
+                uris
+            )
         message.itemType.equals("article", ignoreCase = true) ||
-            message.businessId == ARTICLE_BUSINESS_ID -> "article_detail/$subjectId"
+            message.businessId == ARTICLE_BUSINESS_ID -> contentTargetRoute(
+                "article_detail/$subjectId",
+                message,
+                uris
+            )
         else -> null
     }
 }
@@ -197,7 +205,18 @@ private fun videoTargetRoute(
     aid: Long,
     message: MessageCard,
     uris: List<String>
+): String = contentTargetRoute("detail/$bvid/$aid", message, uris)
+
+private fun contentTargetRoute(
+    baseRoute: String,
+    message: MessageCard,
+    uris: List<String>
 ): String {
+    val target = commentTarget(message, uris) ?: return baseRoute
+    return "$baseRoute?commentRootId=${target.rootId}&commentReplyId=${target.replyId}"
+}
+
+private fun commentTarget(message: MessageCard, uris: List<String>): CommentTarget? {
     val queryRootId = uris.firstNotNullOfOrNull { uri ->
         COMMENT_ROOT_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
     }
@@ -210,21 +229,23 @@ private fun videoTargetRoute(
         message.itemType.equals("reply", ignoreCase = true) ||
         message.itemType.equals("comment", ignoreCase = true) ||
         message.getType == MessageCard.GET_TYPE_REPLY
-    if (!isCommentMessage) return "detail/$bvid/$aid"
+    if (!isCommentMessage) return null
 
     val rootId = queryRootId
         ?: message.rootId.takeIf { it > 0L }
         ?: message.sourceId.takeIf { it > 0L }
         ?: fragmentReplyId
         ?: message.targetId.takeIf { it > 0L }
-        ?: return "detail/$bvid/$aid"
+        ?: return null
     val secondaryId = uris.firstNotNullOfOrNull { uri ->
         COMMENT_SECONDARY_ID_REGEX.find(uri)?.groupValues?.getOrNull(1)?.toLongOrNull()
     } ?: message.sourceId.takeIf { it > 0L && it != rootId }
         ?: fragmentReplyId.takeIf { it != null && it != rootId }
         ?: 0L
-    return "detail/$bvid/$aid?commentRootId=$rootId&commentReplyId=$secondaryId"
+    return CommentTarget(rootId = rootId, replyId = secondaryId)
 }
+
+private data class CommentTarget(val rootId: Long, val replyId: Long)
 
 private val BV_ID_REGEX = Regex("BV[0-9A-Za-z]{10}", RegexOption.IGNORE_CASE)
 private val AV_ID_REGEX = Regex("(?:bilibili\\.com/video/av|bilibili://video/)(\\d+)", RegexOption.IGNORE_CASE)

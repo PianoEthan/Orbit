@@ -335,32 +335,71 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                 HomeScreen(viewModel, navController)
             }
             composable(
-                "dynamic_detail/{id}",
+                "dynamic_detail/{id}?commentRootId={commentRootId}&commentReplyId={commentReplyId}",
                 arguments = listOf(
-                    navArgument("id") { type = NavType.StringType }
+                    navArgument("id") { type = NavType.StringType },
+                    navArgument("commentRootId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    },
+                    navArgument("commentReplyId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    }
                 )
             ) { backStackEntry ->
                 val id = backStackEntry.arguments?.getString("id") ?: ""
-                DynamicDetailScreen(dynamicId = id, navController = navController)
+                DynamicDetailScreen(
+                    dynamicId = id,
+                    navController = navController,
+                    commentRootId = backStackEntry.arguments?.getLong("commentRootId") ?: 0L,
+                    commentReplyId = backStackEntry.arguments?.getLong("commentReplyId") ?: 0L
+                )
             }
             composable(
-                "opus_detail/{id}",
+                "opus_detail/{id}?commentRootId={commentRootId}&commentReplyId={commentReplyId}",
                 arguments = listOf(
-                    navArgument("id") { type = NavType.StringType }
+                    navArgument("id") { type = NavType.StringType },
+                    navArgument("commentRootId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    },
+                    navArgument("commentReplyId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    }
                 )
             ) { backStackEntry ->
                 val idStr = backStackEntry.arguments?.getString("id") ?: ""
                 val id = idStr.toLongOrNull() ?: 0L
-                OpusDetailScreen(opusId = id, navController = navController)
+                OpusDetailScreen(
+                    opusId = id,
+                    navController = navController,
+                    commentRootId = backStackEntry.arguments?.getLong("commentRootId") ?: 0L,
+                    commentReplyId = backStackEntry.arguments?.getLong("commentReplyId") ?: 0L
+                )
             }
             composable(
-                "article_detail/{id}",
+                "article_detail/{id}?commentRootId={commentRootId}&commentReplyId={commentReplyId}",
                 arguments = listOf(
-                    navArgument("id") { type = NavType.LongType }
+                    navArgument("id") { type = NavType.LongType },
+                    navArgument("commentRootId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    },
+                    navArgument("commentReplyId") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    }
                 )
             ) { backStackEntry ->
                 val id = backStackEntry.arguments?.getLong("id") ?: 0L
-                ArticleDetailScreen(articleId = id, navController = navController)
+                ArticleDetailScreen(
+                    articleId = id,
+                    navController = navController,
+                    commentRootId = backStackEntry.arguments?.getLong("commentRootId") ?: 0L,
+                    commentReplyId = backStackEntry.arguments?.getLong("commentReplyId") ?: 0L
+                )
             }
             composable(
                 "live_room/{roomId}",
