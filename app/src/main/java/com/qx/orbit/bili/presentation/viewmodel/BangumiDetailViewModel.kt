@@ -7,6 +7,7 @@ import com.qx.orbit.bili.data.api.EmoteApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Bangumi
 import com.qx.orbit.bili.data.model.Reply
+import com.qx.orbit.bili.data.model.withReplyTopState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -196,6 +197,10 @@ class BangumiDetailViewModel : ViewModel() {
 
     fun removeReplyLocally(reply: Reply) {
         _replies.value = _replies.value.filter { it.rpid != reply.rpid }
+    }
+
+    fun updateReplyTop(reply: Reply, isTop: Boolean) {
+        _replies.value = _replies.value.withReplyTopState(reply.rpid, isTop)
     }
 
     fun updateProgress(epid: Long, progress: Long) {

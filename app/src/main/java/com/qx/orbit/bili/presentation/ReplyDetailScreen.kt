@@ -101,6 +101,7 @@ fun ReplyDetailScreen(
                         navController = navController,
                         showReplyPreview = false,
                         isDetail = true,
+                        allowPinAction = false,
                         replyType = if (root.isDynamic) ReplyApi.REPLY_TYPE_DYNAMIC else ReplyApi.REPLY_TYPE_VIDEO,
                         onRemove = { 
                             navController.popBackStack() 

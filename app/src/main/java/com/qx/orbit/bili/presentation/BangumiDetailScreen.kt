@@ -489,7 +489,8 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                     viewModel.loadEmotes()
                                     showWriteReply = true
                                 },
-                                onRemove = { reply -> viewModel.removeReplyLocally(reply) }
+                                onRemove = { reply -> viewModel.removeReplyLocally(reply) },
+                                onTopChanged = viewModel::updateReplyTop
                             )
                         }
                     }

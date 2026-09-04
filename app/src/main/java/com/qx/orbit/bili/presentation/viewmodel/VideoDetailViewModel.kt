@@ -12,6 +12,7 @@ import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.api.WatchLaterApi
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
+import com.qx.orbit.bili.data.model.withReplyTopState
 import com.qx.orbit.bili.data.api.EmoteApi
 import android.content.Context
 import android.widget.Toast
@@ -357,6 +358,10 @@ class VideoDetailViewModel : ViewModel() {
 
     fun removeReplyLocally(reply: Reply) {
         _replies.value = _replies.value.filter { it.rpid != reply.rpid }
+    }
+
+    fun updateReplyTop(reply: Reply, isTop: Boolean) {
+        _replies.value = _replies.value.withReplyTopState(reply.rpid, isTop)
     }
 
     fun addToWatchLater(context: Context) {

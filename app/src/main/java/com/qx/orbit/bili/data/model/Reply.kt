@@ -34,7 +34,19 @@ data class Reply(
     val isDynamic: Boolean = false,
     val childMsgList: List<Reply> = emptyList(),
     val isTop: Boolean = false,
+    val canPin: Boolean = false,
     val isUp: Boolean = false,
     val emotes: Map<String, Emote> = emptyMap(),
     val members: Map<String, Long> = emptyMap()
 ) : Parcelable
+
+fun List<Reply>.withReplyTopState(rpid: Long, isTop: Boolean): List<Reply> {
+    val updated = map { reply ->
+        when {
+            reply.rpid == rpid -> reply.copy(isTop = isTop)
+            isTop && reply.isTop -> reply.copy(isTop = false)
+            else -> reply
+        }
+    }
+    return if (isTop) updated.sortedByDescending { it.rpid == rpid } else updated
+}

@@ -745,7 +745,8 @@ fun VideoDetailScreen(
                                 viewModel.loadEmotes()
                                 showWriteReply = true
                             },
-                            onRemove = { reply -> viewModel.removeReplyLocally(reply) }
+                            onRemove = { reply -> viewModel.removeReplyLocally(reply) },
+                            onTopChanged = viewModel::updateReplyTop
                         )
                         2 -> VideoRelatedPage(
                             relatedVideos = relatedVideos, 
@@ -1577,7 +1578,8 @@ fun VideoCommentsPage(
     onLikeClick: (Reply) -> Unit,
     onReplyClick: (Reply) -> Unit,
     onSendCommentClick: () -> Unit,
-    onRemove: (Reply) -> Unit
+    onRemove: (Reply) -> Unit,
+    onTopChanged: (Reply, Boolean) -> Unit = { _, _ -> }
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -1659,6 +1661,7 @@ fun VideoCommentsPage(
                         navController = navController,
                         replyType = ReplyApi.REPLY_TYPE_VIDEO,
                         onRemove = { onRemove(replies[index]) },
+                        onTopChanged = onTopChanged,
                         onLikeClick = { onLikeClick(replies[index]) },
                         onClick = { onClick(replies[index]) },
                         onReplyClick = { onReplyClick(replies[index]) }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,8 +87,10 @@ fun ReplyCard(
     showReplyPreview: Boolean = true,
     isDetail: Boolean = false,
     highlighted: Boolean = false,
+    allowPinAction: Boolean = true,
     replyType: Int = ReplyApi.REPLY_TYPE_VIDEO,
     onRemove: (Reply) -> Unit = {},
+    onTopChanged: (Reply, Boolean) -> Unit = { _, _ -> },
     onClick: () -> Unit = {},
     onLikeClick: () -> Unit = {},
     onReplyClick: () -> Unit = {}
@@ -167,7 +170,38 @@ fun ReplyCard(
         }
     }
 
+    val setReplyTop = { top: Boolean ->
+        coroutineScope.launch {
+            try {
+                val result = ReplyApi.setReplyTop(reply.oid, reply.rpid, top, replyType)
+                withContext(Dispatchers.Main) {
+                    when (result) {
+                        0 -> {
+                            RoundToast.show(context, if (top) "已置顶评论" else "已取消置顶")
+                            onTopChanged(reply, top)
+                        }
+                        12029 -> RoundToast.show(context, "请先取消原置顶评论")
+                        else -> RoundToast.show(context, "操作失败: 错误码 $result")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "操作失败: ${e.message}")
+                }
+            }
+        }
+    }
+
     val actionItems = buildList {
+        if (allowPinAction && reply.canPin) {
+            add(
+                WysActionMenuItem(
+                    label = if (reply.isTop) "取消置顶" else "置顶评论",
+                    icon = Icons.Default.PushPin,
+                    onClick = { setReplyTop(!reply.isTop) }
+                )
+            )
+        }
         if (isOwnComment) {
             add(
                 WysActionMenuItem(
@@ -345,6 +379,15 @@ fun ReplyCard(
                             .clickable { isExpanded = !isExpanded }
                             .padding(end = 8.dp)
                     )
+                }
+                if (reply.isTop) {
+                    Text(
+                        text = "置顶",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 Text(

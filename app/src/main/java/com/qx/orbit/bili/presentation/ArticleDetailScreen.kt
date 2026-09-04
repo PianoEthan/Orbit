@@ -407,6 +407,7 @@ fun ArticleCommentsPage(
                 navController = navController,
                 replyType = ReplyApi.REPLY_TYPE_ARTICLE,
                 onRemove = { viewModel.removeReplyLocally(replies[index]) },
+                onTopChanged = viewModel::updateReplyTop,
                 onLikeClick = { viewModel.likeReply(replies[index].rpid) },
                 onReplyClick = { onReplyClick(replies[index]) }
             )

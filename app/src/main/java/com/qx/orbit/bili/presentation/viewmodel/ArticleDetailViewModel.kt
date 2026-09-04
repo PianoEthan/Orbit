@@ -7,6 +7,7 @@ import com.qx.orbit.bili.data.api.EmoteApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.ArticleInfo
 import com.qx.orbit.bili.data.model.Reply
+import com.qx.orbit.bili.data.model.withReplyTopState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -169,5 +170,9 @@ class ArticleDetailViewModel : ViewModel() {
 
     fun removeReplyLocally(reply: Reply) {
         _replies.value = _replies.value.filter { it.rpid != reply.rpid }
+    }
+
+    fun updateReplyTop(reply: Reply, isTop: Boolean) {
+        _replies.value = _replies.value.withReplyTopState(reply.rpid, isTop)
     }
 }

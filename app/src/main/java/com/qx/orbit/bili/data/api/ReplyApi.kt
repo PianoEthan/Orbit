@@ -304,6 +304,18 @@ object ReplyApi {
         }
     }
 
+    suspend fun setReplyTop(
+        oid: Long,
+        rpid: Long,
+        top: Boolean,
+        type: Int = REPLY_TYPE_VIDEO
+    ): Int = withContext(Dispatchers.IO) {
+        when (val result = api.setReplyTop(oid, rpid, type, if (top) 1 else 0, CookieManager.getCsrf())) {
+            is Result.Success -> 0
+            is Result.Error -> result.exception.code
+        }
+    }
+
     suspend fun getReplyCount(oid: Long, type: Int = REPLY_TYPE_VIDEO): Long = withContext(Dispatchers.IO) {
         val jsonElement = when (val result = api.getReplyCount(oid, type)) {
             is Result.Success -> result.data
@@ -334,9 +346,10 @@ object ReplyApi {
             formatBiliTime(data.ctime)
         } else ""
         val childList = data.replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid, upMid) } ?: emptyList()
+        val currentMid = CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0L
         return Reply(
             rpid = data.rpid,
-            oid = data.oid,
+            oid = data.oid.takeIf { it > 0L } ?: oid,
             root = data.root,
             parent = data.parent,
             pubTime = pubTime,
@@ -351,6 +364,7 @@ object ReplyApi {
             isDynamic = isDynamic,
             childMsgList = childList,
             isTop = data.reply_control?.is_top ?: false,
+            canPin = data.root == 0L && data.parent == 0L && upMid > 0L && currentMid == upMid,
             isUp = upMid > 0L && mid == upMid,
             emotes = data.content?.emote?.mapValues { 
                 Emote(

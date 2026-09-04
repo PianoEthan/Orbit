@@ -438,6 +438,7 @@ fun DynamicDetailScreen(
                                 navController = navController,
                                 replyType = ReplyApi.REPLY_TYPE_DYNAMIC,
                                 onRemove = { viewModel.removeReplyLocally(replies[index]) },
+                                onTopChanged = viewModel::updateReplyTop,
                                 onLikeClick = { viewModel.likeReply(replies[index].rpid, replies[index].liked) },
                                 onClick = {
                                     navController.currentBackStackEntry?.savedStateHandle?.set("reply", replies[index])

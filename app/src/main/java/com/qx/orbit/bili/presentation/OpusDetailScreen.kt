@@ -568,6 +568,7 @@ fun OpusCommentsPage(
                 navController = navController,
                 replyType = opus?.commentType ?: ReplyApi.REPLY_TYPE_DYNAMIC,
                 onRemove = { viewModel.removeReplyLocally(replies[index]) },
+                onTopChanged = viewModel::updateReplyTop,
                 onClick = { onClick(replies[index]) },
                 onLikeClick = { viewModel.likeReply(replies[index].rpid) },
                 onReplyClick = { onReplyClick(replies[index]) }

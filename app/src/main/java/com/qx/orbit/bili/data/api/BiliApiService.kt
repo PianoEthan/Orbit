@@ -197,6 +197,16 @@ interface BiliApiService {
         @Field("csrf") csrf: String
     ): Result<JsonElement>
 
+    @FormUrlEncoded
+    @POST("https://api.bilibili.com/x/v2/reply/top")
+    suspend fun setReplyTop(
+        @Field("oid") oid: Long,
+        @Field("rpid") rpid: Long,
+        @Field("type") type: Int,
+        @Field("action") action: Int,
+        @Field("csrf") csrf: String
+    ): Result<JsonElement>
+
     // ===== Dynamic =====
 
     @GET("https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all")
