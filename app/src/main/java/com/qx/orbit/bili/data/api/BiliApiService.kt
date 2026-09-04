@@ -301,6 +301,9 @@ interface BiliApiService {
 
     // ===== Favorite =====
 
+    @GET("https://api.bilibili.com/x/v3/fav/folder/info")
+    suspend fun getFavFolderInfo(@Query("media_id") mediaId: Long): Result<JsonElement>
+
     @GET("https://api.bilibili.com/x/v3/fav/folder/created/list")
     suspend fun getFavFolders(
         @Query("up_mid") upMid: Long,

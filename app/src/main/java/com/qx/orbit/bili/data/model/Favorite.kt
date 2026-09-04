@@ -9,7 +9,9 @@ data class FavoriteFolder(
     val cover: String = "",
     @SerializedName("count") val videoCount: Int = 0,
     @SerializedName("max_count") val maxCount: Int = 0,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val intro: String = "",
+    val isPrivate: Boolean = false
 )
 
 data class Collection(

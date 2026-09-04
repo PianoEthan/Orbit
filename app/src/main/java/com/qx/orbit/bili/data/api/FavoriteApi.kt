@@ -20,7 +20,8 @@ object FavoriteApi {
 
 
     internal data class V3FavFolderData(
-        @SerializedName("list") val list: List<V3FavFolderItem>? = null
+        @SerializedName("list") val list: List<V3FavFolderItem>? = null,
+        @SerializedName("has_more") val hasMore: Boolean = false
     )
 
     internal data class V3FavFolderItem(
@@ -28,8 +29,20 @@ object FavoriteApi {
         @SerializedName("title") val title: String? = null,
         @SerializedName("cover") val cover: String? = null,
         @SerializedName("media_count") val media_count: Int = 0,
-        @SerializedName("attr") val attr: Int = 0
-    )
+        @SerializedName("attr") val attr: Int = 0,
+        @SerializedName("intro") val intro: String? = null
+    ) {
+        fun toFolder() = FavoriteFolder(
+            id = id,
+            mediaId = id,
+            name = title.orEmpty(),
+            cover = cover.orEmpty().replace("http://", "https://"),
+            videoCount = media_count,
+            isDefault = attr and 2 == 0,
+            intro = intro.orEmpty(),
+            isPrivate = attr and 1 != 0
+        )
+    }
 
     internal data class FavFolderVideosData(
         @SerializedName("count") val count: Int = 0,
@@ -119,19 +132,35 @@ object FavoriteApi {
     )
 
     suspend fun getFavoriteFolders(mid: Long): List<FavoriteFolder> = withContext(Dispatchers.IO) {
-        val v3List = try {
-            when (val resp = api.getFavFolders(mid, 1, 50)) {
+        val folders = mutableListOf<FavoriteFolder>()
+        var page = 1
+        do {
+            val data = when (val resp = api.getFavFolders(mid, page, 50)) {
                 is Result.Success -> {
-                    val parsed: ApiResponse<V3FavFolderData>? = GsonConfig.gson.fromJson(resp.data, object : TypeToken<ApiResponse<V3FavFolderData>>() {}.type)
-                    parsed?.data?.list?.filterNotNull()?.map {
-                        FavoriteFolder(id = it.id, mediaId = it.id, name = it.title ?: "", cover = (it.cover ?: "").replace("http://", "https://"), videoCount = it.media_count, isDefault = it.attr and 1 == 1)
-                    } ?: emptyList()
+                    val parsed: ApiResponse<V3FavFolderData> = GsonConfig.gson.fromJson(resp.data, object : TypeToken<ApiResponse<V3FavFolderData>>() {}.type)
+                    check(parsed.isSuccess) { parsed.message ?: "获取收藏夹失败" }
+                    parsed.data ?: error("收藏夹数据为空")
                 }
-                is Result.Error -> emptyList()
+                is Result.Error -> throw resp.exception
             }
-        } catch (_: Exception) { emptyList() }
+            folders += data.list.orEmpty().map { it.toFolder() }
+            page++
+        } while (data.hasMore && !data.list.isNullOrEmpty())
 
-        v3List.sortedByDescending { it.isDefault }
+        folders.distinctBy { it.mediaId }.sortedByDescending { it.isDefault }
+    }
+
+    suspend fun getFolderInfo(mediaId: Long): FavoriteFolder = withContext(Dispatchers.IO) {
+        when (val result = api.getFavFolderInfo(mediaId)) {
+            is Result.Success -> {
+                val response: ApiResponse<V3FavFolderItem> = GsonConfig.gson.fromJson(
+                    result.data, object : TypeToken<ApiResponse<V3FavFolderItem>>() {}.type
+                )
+                check(response.isSuccess) { response.message ?: "获取收藏夹信息失败" }
+                response.data?.toFolder() ?: error("收藏夹信息为空")
+            }
+            is Result.Error -> throw result.exception
+        }
     }
 
     suspend fun getFavoritedCollections(mid: Long, page: Int): Pair<Boolean, List<BiliCollection>> = withContext(Dispatchers.IO) {
@@ -258,12 +287,13 @@ object FavoriteApi {
         resp?.code ?: -1
     }
 
-    suspend fun editFolder(mediaId: Long, title: String, intro: String, privacy: Int): Int = withContext(Dispatchers.IO) {
+    suspend fun editFolder(mediaId: Long, title: String, intro: String, privacy: Int, cover: String): Int = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
             .add("media_id", mediaId.toString())
             .add("title", title)
             .add("intro", intro)
             .add("privacy", privacy.toString())
+            .add("cover", cover)
             .add("csrf", CookieManager.getCsrf())
             .build()
         val request = Request.Builder()
@@ -280,7 +310,7 @@ object FavoriteApi {
 
     suspend fun deleteFolder(mediaId: Long): Int = withContext(Dispatchers.IO) {
         val body = FormBody.Builder()
-            .add("media_id", mediaId.toString())
+            .add("media_ids", mediaId.toString())
             .add("csrf", CookieManager.getCsrf())
             .build()
         val request = Request.Builder()
