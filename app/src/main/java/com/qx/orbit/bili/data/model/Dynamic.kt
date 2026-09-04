@@ -14,6 +14,7 @@ data class Dynamic(
     val major_object: Any? = null,
     val dynamic_forward: Dynamic? = null,
     val canDelete: Boolean = false,
+    val isTop: Boolean = false,
     val images: List<String> = emptyList(),
     val cover: String = "",
     val bvid: String = "",

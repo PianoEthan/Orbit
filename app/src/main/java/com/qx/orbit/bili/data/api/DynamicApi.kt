@@ -416,6 +416,26 @@ object DynamicApi {
         resp?.code ?: -1
     }
 
+    suspend fun setDynamicTop(dynamicId: String, top: Boolean): Int = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        val jsonStr = "{\"dyn_str\":\"$dynamicId\"}"
+        val body = jsonStr.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+        val action = if (top) "set_top" else "rm_top"
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/dynamic/feed/space/$action?csrf=$csrf")
+            .post(body)
+            .addHeader("Cookie", CookieManager.getCookie())
+            .addHeader("User-Agent", USER_AGENT)
+            .addHeader("Referer", "https://space.bilibili.com/")
+            .build()
+        val json = HttpClient.client.newCall(request).execute().use { response ->
+            response.body.string()
+        }
+        val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
+        val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
+        resp?.code ?: -1
+    }
+
     suspend fun mentionAtFindUser(name: String): Long = withContext(Dispatchers.IO) {
         val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/mention/search?keyword=${java.net.URLEncoder.encode(name, "UTF-8")}"
         val json = httpGet(url)
@@ -658,6 +678,7 @@ object DynamicApi {
             major_object = null,
             dynamic_forward = dynamicForward,
             canDelete = canDelete,
+            isTop = author?.is_top ?: false,
             images = images,
             cover = cover,
             bvid = bvid,

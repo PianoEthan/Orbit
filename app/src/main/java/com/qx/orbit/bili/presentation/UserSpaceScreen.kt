@@ -278,7 +278,8 @@ fun UserDynamicsPage(
                         onUserClick = { mid -> navController.navigate("user_space/$mid") },
                         onArchiveClick = { bvid, aid -> navController.navigate("detail/$bvid/$aid") },
                         onLiveClick = { roomId -> navController.navigate("live_room/$roomId") },
-                        onRemove = viewModel::removeDynamicLocally
+                        onRemove = viewModel::removeDynamicLocally,
+                        onTopChanged = viewModel::updateDynamicTop
                     )
                 }
             }

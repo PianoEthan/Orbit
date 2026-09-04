@@ -140,6 +140,22 @@ class DynamicFeedViewModel(application: Application) : AndroidViewModel(applicat
         _dynamicList.value = _dynamicList.value.filterNot { it.dynamicId == dynamic.dynamicId }
     }
 
+    fun updateDynamicTop(dynamic: Dynamic, isTop: Boolean) {
+        val authorMid = dynamic.userInfo?.mid
+        val updated = _dynamicList.value.map { item ->
+            when {
+                item.dynamicId == dynamic.dynamicId -> item.copy(isTop = isTop)
+                isTop && authorMid != null && item.userInfo?.mid == authorMid -> item.copy(isTop = false)
+                else -> item
+            }
+        }
+        _dynamicList.value = if (isTop && selectedMid.value > 0L) {
+            updated.sortedByDescending { it.dynamicId == dynamic.dynamicId }
+        } else {
+            updated
+        }
+    }
+
     private suspend fun loadFeed(isRefresh: Boolean) {
         try {
             _errorMessage.value = null

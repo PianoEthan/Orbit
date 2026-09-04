@@ -102,6 +102,21 @@ class UserSpaceViewModel : ViewModel() {
         _dynamics.value = _dynamics.value.filterNot { it.dynamicId == dynamic.dynamicId }
     }
 
+    fun updateDynamicTop(dynamic: Dynamic, isTop: Boolean) {
+        val updated = _dynamics.value.map { item ->
+            when {
+                item.dynamicId == dynamic.dynamicId -> item.copy(isTop = isTop)
+                isTop && item.userInfo?.mid == dynamic.userInfo?.mid -> item.copy(isTop = false)
+                else -> item
+            }
+        }
+        _dynamics.value = if (isTop) {
+            updated.sortedByDescending { it.dynamicId == dynamic.dynamicId }
+        } else {
+            updated
+        }
+    }
+
     fun loadMoreVideos() {
         if (_isLoadingVideos.value || isVideoEnd) return
         _isLoadingVideos.value = true

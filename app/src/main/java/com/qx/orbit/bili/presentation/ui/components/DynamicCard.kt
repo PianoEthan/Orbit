@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
@@ -70,7 +71,8 @@ fun DynamicCard(
     onUserClick: (Long) -> Unit = {},
     onArchiveClick: (String, Long) -> Unit = { _, _ -> },
     onLiveClick: (Long) -> Unit = {},
-    onRemove: (Dynamic) -> Unit = {}
+    onRemove: (Dynamic) -> Unit = {},
+    onTopChanged: (Dynamic, Boolean) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -119,8 +121,35 @@ fun DynamicCard(
         }
     }
 
+    val setDynamicTop = { top: Boolean ->
+        coroutineScope.launch {
+            try {
+                val result = DynamicApi.setDynamicTop(item.dynamicId, top)
+                withContext(Dispatchers.Main) {
+                    if (result == 0) {
+                        RoundToast.show(context, if (top) "已置顶动态" else "已取消置顶")
+                        onTopChanged(item, top)
+                    } else {
+                        RoundToast.show(context, "操作失败: 错误码 $result")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "操作失败: ${e.message}")
+                }
+            }
+        }
+    }
+
     val actionItems = buildList {
         if (isOwnDynamic) {
+            add(
+                WysActionMenuItem(
+                    label = if (item.isTop) "取消置顶" else "置顶动态",
+                    icon = Icons.Default.PushPin,
+                    onClick = { setDynamicTop(!item.isTop) }
+                )
+            )
             add(
                 WysActionMenuItem(
                     label = "删除动态",
@@ -417,6 +446,14 @@ fun DynamicCard(
                 }
 
                 Spacer(modifier = Modifier.weight(1f))
+                if (item.isTop) {
+                    Text(
+                        text = "置顶",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
                 Text(
                     text = item.pubTime, 
                     fontSize = 10.sp, 
