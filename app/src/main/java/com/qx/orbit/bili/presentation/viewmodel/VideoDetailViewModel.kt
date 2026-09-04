@@ -75,9 +75,13 @@ class VideoDetailViewModel : ViewModel() {
             try {
                 val infoDeferred = async { VideoInfoApi.getVideoInfo(bvid) }
                 val tagsDeferred = async { VideoInfoApi.getTags(bvid) }
-                val relatedDeferred = async { RecommendApi.getRelated(aid) }
-                
+
                 val info = infoDeferred.await() ?: throw Exception("视频信息加载失败")
+                this@VideoDetailViewModel.bvid = info.bvid.ifBlank { bvid }
+                this@VideoDetailViewModel.aid = info.aid.takeIf { it > 0L } ?: aid
+                val relatedDeferred = async {
+                    RecommendApi.getRelated(this@VideoDetailViewModel.aid)
+                }
                 if (info.cids.isNotEmpty()) {
                     try {
                         val history = PlayerApi.getHistoryProgress(info.aid, info.cids.first())
