@@ -18,7 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,7 +42,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
@@ -118,46 +120,85 @@ fun ReplyCard(
         }
     }
     val coroutineScope = rememberCoroutineScope()
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showActionMenu by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<ReplyDestructiveAction?>(null) }
 
     val currentMid = remember { CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0 }
     val isOwnComment = reply.sender?.mid != null && reply.sender.mid == currentMid
 
-    val performAction = {
+    val deleteComment = {
         coroutineScope.launch {
-            if (isOwnComment) {
-                try {
-                    ReplyApi.deleteReply(reply.oid, reply.rpid, replyType)
-                    withContext(Dispatchers.Main) {
+            try {
+                val result = ReplyApi.deleteReply(reply.oid, reply.rpid, replyType)
+                withContext(Dispatchers.Main) {
+                    if (result == 0) {
                         RoundToast.show(context, "已删除评论")
                         onRemove(reply)
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        RoundToast.show(context, "删除失败: ${e.message}")
+                    } else {
+                        RoundToast.show(context, "删除失败: 错误码 $result")
                     }
                 }
-            } else {
-                try {
-                    reply.sender?.mid?.let { UserInfoApi.blockUser(it) }
-                    withContext(Dispatchers.Main) {
-                        RoundToast.show(context, "已拉黑该用户")
-                        onRemove(reply)
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        RoundToast.show(context, "拉黑失败: ${e.message}")
-                    }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "删除失败: ${e.message}")
                 }
             }
         }
     }
 
+    val blockCommentAuthor = {
+        coroutineScope.launch {
+            val mid = reply.sender?.mid ?: return@launch
+            try {
+                val result = UserInfoApi.blockUser(mid)
+                withContext(Dispatchers.Main) {
+                    if (result == 0) {
+                        RoundToast.show(context, "已拉黑该用户")
+                    } else {
+                        RoundToast.show(context, "拉黑失败: 错误码 $result")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "拉黑失败: ${e.message}")
+                }
+            }
+        }
+    }
+
+    val actionItems = buildList {
+        if (isOwnComment) {
+            add(
+                WysActionMenuItem(
+                    label = "删除评论",
+                    icon = Icons.Default.Delete,
+                    destructive = true,
+                    onClick = { pendingAction = ReplyDestructiveAction.Delete }
+                )
+            )
+        }
+        add(
+            WysActionMenuItem(
+                label = "隐藏评论",
+                icon = Icons.Default.VisibilityOff,
+                onClick = { onRemove(reply) }
+            )
+        )
+        if (!isOwnComment && reply.sender?.mid != null) {
+            add(
+                WysActionMenuItem(
+                    label = "拉黑用户",
+                    icon = Icons.Default.Block,
+                    destructive = true,
+                    onClick = { pendingAction = ReplyDestructiveAction.Block }
+                )
+            )
+        }
+    }
+
     Card(
         onClick = { if (!linkClicked) onClick() else linkClicked = false },
-        onLongClick = {
-            showDeleteConfirmDialog = true
-        },
+        onLongClick = { showActionMenu = true },
         modifier = modifier.fillMaxWidth(),
         transformation = transformation,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
@@ -416,19 +457,44 @@ fun ReplyCard(
         }
     }
 
+    WysActionMenu(
+        show = showActionMenu,
+        title = "评论操作",
+        items = actionItems,
+        onDismissRequest = { showActionMenu = false }
+    )
+
     WysAlertDialog(
-        show = showDeleteConfirmDialog,
-        title = "确认操作",
+        show = pendingAction != null,
+        title = when (pendingAction) {
+            ReplyDestructiveAction.Delete -> "删除评论"
+            ReplyDestructiveAction.Block -> "拉黑用户"
+            null -> "确认操作"
+        },
         content = {
             Text(
-                text = if (isOwnComment) "确定要删除这条评论吗？" else stringResource(R.string.clear_reply_warning),
+                text = when (pendingAction) {
+                    ReplyDestructiveAction.Delete -> "确定要删除这条评论吗？"
+                    ReplyDestructiveAction.Block -> "确定要拉黑该用户吗？"
+                    null -> ""
+                },
                 textAlign = TextAlign.Center
             )
         },
-        onDismissRequest = { showDeleteConfirmDialog = false },
+        onDismissRequest = { pendingAction = null },
         onConfirm = {
-            showDeleteConfirmDialog = false
-            performAction()
+            val action = pendingAction
+            pendingAction = null
+            when (action) {
+                ReplyDestructiveAction.Delete -> deleteComment()
+                ReplyDestructiveAction.Block -> blockCommentAuthor()
+                null -> Unit
+            }
         }
     )
+}
+
+private enum class ReplyDestructiveAction {
+    Delete,
+    Block
 }
