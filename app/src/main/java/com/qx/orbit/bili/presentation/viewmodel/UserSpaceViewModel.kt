@@ -98,6 +98,10 @@ class UserSpaceViewModel : ViewModel() {
         }
     }
 
+    fun removeDynamicLocally(dynamic: Dynamic) {
+        _dynamics.value = _dynamics.value.filterNot { it.dynamicId == dynamic.dynamicId }
+    }
+
     fun loadMoreVideos() {
         if (_isLoadingVideos.value || isVideoEnd) return
         _isLoadingVideos.value = true

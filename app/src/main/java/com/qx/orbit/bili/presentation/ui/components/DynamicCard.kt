@@ -14,11 +14,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,13 +47,19 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.qx.orbit.bili.util.fixCoverUrl
 import com.qx.orbit.bili.R
+import com.qx.orbit.bili.data.api.DynamicApi
+import com.qx.orbit.bili.data.api.UserInfoApi
 import com.qx.orbit.bili.data.model.Dynamic
 import com.qx.orbit.bili.data.model.VideoCard
+import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.theme.BiliPink
 import com.qx.orbit.bili.presentation.util.parseRichText
 import com.qx.orbit.bili.util.formatCount
 import androidx.compose.ui.unit.TextUnit
 import androidx.wear.compose.material3.Icon
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun DynamicCard(
@@ -57,9 +69,86 @@ fun DynamicCard(
     onClick: () -> Unit = {},
     onUserClick: (Long) -> Unit = {},
     onArchiveClick: (String, Long) -> Unit = { _, _ -> },
-    onLiveClick: (Long) -> Unit = {}
+    onLiveClick: (Long) -> Unit = {},
+    onRemove: (Dynamic) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var showActionMenu by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<DynamicDestructiveAction?>(null) }
+    val currentMid = remember { CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0L }
+    val isOwnDynamic = item.canDelete || (currentMid > 0L && item.userInfo?.mid == currentMid)
+
+    val deleteDynamic = {
+        coroutineScope.launch {
+            try {
+                val result = DynamicApi.deleteDynamic(item.dynamicId)
+                withContext(Dispatchers.Main) {
+                    if (result == 0) {
+                        RoundToast.show(context, "已删除动态")
+                        onRemove(item)
+                    } else {
+                        RoundToast.show(context, "删除失败: 错误码 $result")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "删除失败: ${e.message}")
+                }
+            }
+        }
+    }
+
+    val blockDynamicAuthor = {
+        coroutineScope.launch {
+            val mid = item.userInfo?.mid ?: return@launch
+            try {
+                val result = UserInfoApi.blockUser(mid)
+                withContext(Dispatchers.Main) {
+                    if (result == 0) {
+                        RoundToast.show(context, "已拉黑该用户")
+                    } else {
+                        RoundToast.show(context, "拉黑失败: 错误码 $result")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    RoundToast.show(context, "拉黑失败: ${e.message}")
+                }
+            }
+        }
+    }
+
+    val actionItems = buildList {
+        if (isOwnDynamic) {
+            add(
+                WysActionMenuItem(
+                    label = "删除动态",
+                    icon = Icons.Default.Delete,
+                    destructive = true,
+                    onClick = { pendingAction = DynamicDestructiveAction.Delete }
+                )
+            )
+        }
+        add(
+            WysActionMenuItem(
+                label = "隐藏动态",
+                icon = Icons.Default.VisibilityOff,
+                onClick = { onRemove(item) }
+            )
+        )
+        if (!isOwnDynamic && item.userInfo?.mid != null) {
+            add(
+                WysActionMenuItem(
+                    label = "拉黑用户",
+                    icon = Icons.Default.Block,
+                    destructive = true,
+                    onClick = { pendingAction = DynamicDestructiveAction.Block }
+                )
+            )
+        }
+    }
+
     val getImageRequest = { url: String, isCover: Boolean ->
         val fixedUrl = url.fixCoverUrl()
         val finalUrl = if (!fixedUrl.contains("@")) {
@@ -72,7 +161,8 @@ fun DynamicCard(
     }
 
     Card(
-        onClick = onClick, 
+        onClick = onClick,
+        onLongClick = { showActionMenu = true },
         modifier = modifier.fillMaxWidth(),
         transformation = transformation
     ) {
@@ -336,4 +426,45 @@ fun DynamicCard(
             }
         }
     }
+
+    WysActionMenu(
+        show = showActionMenu,
+        title = "动态操作",
+        items = actionItems,
+        onDismissRequest = { showActionMenu = false }
+    )
+
+    WysAlertDialog(
+        show = pendingAction != null,
+        title = when (pendingAction) {
+            DynamicDestructiveAction.Delete -> "删除动态"
+            DynamicDestructiveAction.Block -> "拉黑用户"
+            null -> "确认操作"
+        },
+        content = {
+            Text(
+                text = when (pendingAction) {
+                    DynamicDestructiveAction.Delete -> "确定要删除这条动态吗？"
+                    DynamicDestructiveAction.Block -> "确定要拉黑该用户吗？"
+                    null -> ""
+                },
+                textAlign = TextAlign.Center
+            )
+        },
+        onDismissRequest = { pendingAction = null },
+        onConfirm = {
+            val action = pendingAction
+            pendingAction = null
+            when (action) {
+                DynamicDestructiveAction.Delete -> deleteDynamic()
+                DynamicDestructiveAction.Block -> blockDynamicAuthor()
+                null -> Unit
+            }
+        }
+    )
+}
+
+private enum class DynamicDestructiveAction {
+    Delete,
+    Block
 }

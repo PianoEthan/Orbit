@@ -277,7 +277,8 @@ fun UserDynamicsPage(
                         onClick = { if (item.major_type == "MAJOR_TYPE_OPUS" || item.major_type == "MAJOR_TYPE_ARTICLE") navController.navigate("opus_detail/${item.dynamicId}") else navController.navigate("dynamic_detail/${item.dynamicId}") },
                         onUserClick = { mid -> navController.navigate("user_space/$mid") },
                         onArchiveClick = { bvid, aid -> navController.navigate("detail/$bvid/$aid") },
-                        onLiveClick = { roomId -> navController.navigate("live_room/$roomId") }
+                        onLiveClick = { roomId -> navController.navigate("live_room/$roomId") },
+                        onRemove = viewModel::removeDynamicLocally
                     )
                 }
             }

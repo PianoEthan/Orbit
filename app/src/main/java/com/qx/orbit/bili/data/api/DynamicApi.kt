@@ -397,19 +397,20 @@ object DynamicApi {
         resp?.code ?: -1
     }
 
-    suspend fun deleteDynamic(dyid: Long): Int = withContext(Dispatchers.IO) {
-        val body = FormBody.Builder()
-            .add("dynamic_id", dyid.toString())
-            .add("csrf", CookieManager.getCsrf())
-            .build()
+    suspend fun deleteDynamic(dynamicId: String): Int = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        val jsonStr = "{\"dyn_id_str\":\"$dynamicId\"}"
+        val body = jsonStr.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
         val request = Request.Builder()
-            .url("https://api.bilibili.com/x/dynamic/feed/dyn/delete")
+            .url("https://api.bilibili.com/x/dynamic/feed/operate/remove?csrf=$csrf&platform=web")
             .post(body)
             .addHeader("Cookie", CookieManager.getCookie())
             .addHeader("User-Agent", USER_AGENT)
             .addHeader("Referer", "https://www.bilibili.com/")
             .build()
-        val json = HttpClient.client.newCall(request).execute().body?.string() ?: ""
+        val json = HttpClient.client.newCall(request).execute().use { response ->
+            response.body.string()
+        }
         val typeToken = object : TypeToken<ApiResponse<*>>() {}.type
         val resp: ApiResponse<*>? = GsonConfig.gson.fromJson(json, typeToken)
         resp?.code ?: -1
@@ -513,7 +514,8 @@ object DynamicApi {
         val face = author?.face ?: ""
         val pubTs = author?.pub_ts ?: 0
         val pubTime = if (pubTs > 0) formatBiliTime(pubTs) else ""
-        val canDelete = author?.is_top ?: false
+        val currentMid = CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0L
+        val canDelete = mid > 0L && mid == currentMid
 
         val dynContent = modules?.module_dynamic
         val majorObj = dynContent?.major

@@ -136,6 +136,10 @@ class DynamicFeedViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun removeDynamicLocally(dynamic: Dynamic) {
+        _dynamicList.value = _dynamicList.value.filterNot { it.dynamicId == dynamic.dynamicId }
+    }
+
     private suspend fun loadFeed(isRefresh: Boolean) {
         try {
             _errorMessage.value = null
