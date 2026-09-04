@@ -315,9 +315,15 @@ object SearchApi {
     )
 
     suspend fun getSearchSuggestions(keyword: String): List<String> = withContext(Dispatchers.IO) {
-        val jsonElement = api.getSearchSuggest(keyword)
-        val resp: SuggestData? = GsonConfig.gson.fromJson(jsonElement, SuggestData::class.java)
-        resp?.tag?.mapNotNull { it.value?.takeIf { v -> v.isNotEmpty() } } ?: emptyList()
+        parseSearchSuggestions(api.getSearchSuggest(keyword))
+    }
+
+    internal fun parseSearchSuggestions(json: JsonElement): List<String> {
+        val response: ApiResponse<SuggestData> = GsonConfig.gson.fromJson(
+            json, object : TypeToken<ApiResponse<SuggestData>>() {}.type
+        )
+        if (!response.isSuccess) return emptyList()
+        return response.data?.tag?.mapNotNull { it.value?.takeIf(String::isNotBlank) }?.distinct() ?: emptyList()
     }
 
     suspend fun getDefaultSearchContent(): String? = withContext(Dispatchers.IO) {

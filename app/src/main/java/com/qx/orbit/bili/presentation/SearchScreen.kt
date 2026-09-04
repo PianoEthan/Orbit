@@ -71,6 +71,9 @@ import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.data.api.BilibiliIDConverter
 import com.qx.orbit.bili.util.formatCount
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import com.qx.orbit.bili.data.api.SearchApi
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -99,6 +102,7 @@ object SearchHistoryManager {
 @Composable
 fun SearchInputScreen(navController: NavHostController) {
     var searchText by remember { mutableStateOf("") }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var historyList by remember { mutableStateOf(SearchHistoryManager.getHistory()) }
     val focusRequester = remember { FocusRequester() }
     val listState = rememberTransformingLazyColumnState()
@@ -107,6 +111,21 @@ fun SearchInputScreen(navController: NavHostController) {
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
+    }
+
+    LaunchedEffect(searchText) {
+        suggestions = emptyList()
+        val keyword = searchText.trim()
+        if (keyword.isNotEmpty()) {
+            delay(300)
+            try {
+                suggestions = SearchApi.getSearchSuggestions(keyword)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                suggestions = emptyList()
+            }
+        }
     }
 
     val performSearch = { query: String ->
@@ -181,6 +200,24 @@ fun SearchInputScreen(navController: NavHostController) {
                 }
             }
             
+            if (suggestions.isNotEmpty()) {
+                item {
+                    ListHeader(modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)) {
+                        Text("搜索建议", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                items(suggestions, key = { "suggestion:$it" }) { suggestion ->
+                    Button(
+                        onClick = { performSearch(suggestion) },
+                        modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                    ) {
+                        Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+
             if (historyList.isNotEmpty()) {
                 item {
                     Text(
