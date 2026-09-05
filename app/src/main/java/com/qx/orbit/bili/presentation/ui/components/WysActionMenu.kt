@@ -80,12 +80,14 @@ fun WysActionMenu(
                         colors = if (action.destructive) {
                             ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                iconColor = MaterialTheme.colorScheme.onErrorContainer
                             )
                         } else {
                             ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                contentColor = MaterialTheme.colorScheme.onSurface
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                iconColor = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     ) {
