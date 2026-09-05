@@ -301,6 +301,12 @@ interface BiliApiService {
 
     // ===== Favorite =====
 
+    @POST("https://api.bilibili.com/x/community/cosmo/interface/simple_action")
+    suspend fun setOpusFavorite(
+        @Query("csrf") csrf: String,
+        @Body body: com.google.gson.JsonObject
+    ): Result<JsonElement>
+
     @GET("https://api.bilibili.com/x/v3/fav/folder/info")
     suspend fun getFavFolderInfo(@Query("media_id") mediaId: Long): Result<JsonElement>
 

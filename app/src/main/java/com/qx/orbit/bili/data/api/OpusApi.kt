@@ -4,6 +4,8 @@ import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.Result
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.util.fixCoverUrl
@@ -14,6 +16,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Request
 
 object OpusApi {
+
+    private val api by lazy { BiliApiService.create() }
 
     internal data class OpusRawItem(
         @SerializedName("id_str") val id_str: String? = null,
@@ -152,7 +156,7 @@ object OpusApi {
         }
     }
 
-    private fun parseOpusFromHtml(item: OpusRawItem, id: Long, rootOpusParas: List<ParagraphData>? = null): Opus {
+    internal fun parseOpusFromHtml(item: OpusRawItem, id: Long, rootOpusParas: List<ParagraphData>? = null): Opus {
         val dynId = item.id_str?.toLongOrNull() ?: id
         val type = item.type
 
@@ -202,7 +206,10 @@ object OpusApi {
             reply = stat?.comment?.count ?: 0,
             like = stat?.like?.count ?: 0,
             share = stat?.forward?.count ?: 0,
-            liked = stat?.like?.status ?: false
+            liked = stat?.like?.status ?: false,
+            favorite = stat?.favorite?.count ?: 0,
+            favoured = stat?.favorite?.status ?: false,
+            fav_disabled = stat?.favorite == null || stat.favorite.forbidden
         )
 
         val basic = item.basic
@@ -342,6 +349,20 @@ object OpusApi {
             }
         }
         return list
+    }
+
+    suspend fun setFavorite(opusId: Long, favorite: Boolean) {
+        val body = JsonObject().apply {
+            add("entity", JsonObject().apply {
+                addProperty("object_id_str", opusId.toString())
+                add("type", JsonObject().apply { addProperty("biz", 2) })
+            })
+            addProperty("action", if (favorite) 3 else 4)
+        }
+        when (val result = api.setOpusFavorite(CookieManager.getCsrf(), body)) {
+            is Result.Success -> Unit
+            is Result.Error -> throw result.exception
+        }
     }
 
     suspend fun likeOpus(dynId: Long, up: Boolean): Int = withContext(Dispatchers.IO) {

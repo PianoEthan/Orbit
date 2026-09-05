@@ -93,6 +93,7 @@ import androidx.core.graphics.toColorInt
 import com.google.gson.Gson
 import com.qx.orbit.bili.presentation.ui.components.ImageViewerDialog
 import com.qx.orbit.bili.presentation.ui.components.ReplyCard
+import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import java.net.URLEncoder
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
@@ -110,6 +111,15 @@ fun OpusDetailScreen(
 ) {
     val opus by viewModel.opus.collectAsState()
     val error by viewModel.error.collectAsState()
+    val actionMessage by viewModel.actionMessage.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(actionMessage) {
+        actionMessage?.let {
+            RoundToast.show(context, it)
+            viewModel.clearActionMessage()
+        }
+    }
     val pagerState = rememberPagerState(
         initialPage = if (commentRootId > 0L) 1 else 0,
         pageCount = { 2 }
@@ -221,6 +231,7 @@ fun OpusContentPage(
     
     val likeInteractionSource = remember { MutableInteractionSource() }
     val favInteractionSource = remember { MutableInteractionSource() }
+    val isFavoriteLoading by viewModel.isFavoriteLoading.collectAsState()
 
     val allImages = remember(item.topImages, item.paragraphs) {
         val list = mutableListOf<String>()
@@ -477,18 +488,19 @@ fun OpusContentPage(
                     }
                 }
                 FilledIconButton(
-                    onClick = { /* TODO */ },
+                    onClick = viewModel::toggleFavorite,
+                    enabled = !isFavoriteLoading && item.stats?.fav_disabled == false,
                     interactionSource = favInteractionSource,
                     modifier = Modifier.animateWidth(favInteractionSource),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentColor = if (item.stats?.favoured == true) BiliPink else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(painterResource(R.drawable.icon_fav_0), null)
+                        Icon(painterResource(R.drawable.icon_fav_0), if (item.stats?.favoured == true) "取消收藏" else "收藏")
                         Text(
-                            text = "收藏",
+                            text = if (isFavoriteLoading) "处理中…" else if (item.stats?.favoured == true) "已收藏" else "收藏",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp)
                         )
                     }

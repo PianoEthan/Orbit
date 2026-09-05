@@ -209,12 +209,14 @@ object DynamicApi {
     internal data class StatModule(
         @SerializedName("comment") val comment: StatItem? = null,
         @SerializedName("like") val like: StatItem? = null,
-        @SerializedName("forward") val forward: StatItem? = null
+        @SerializedName("forward") val forward: StatItem? = null,
+        @SerializedName("favorite") val favorite: StatItem? = null
     )
 
     internal data class StatItem(
         @SerializedName("count") val count: Int = 0,
-        @SerializedName("status") val status: Boolean = false
+        @SerializedName("status") val status: Boolean = false,
+        @SerializedName("forbidden") val forbidden: Boolean = false
     )
 
     internal data class MoreModule(

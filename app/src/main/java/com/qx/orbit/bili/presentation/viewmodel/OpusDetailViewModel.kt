@@ -8,9 +8,12 @@ import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Opus
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.withReplyTopState
+import com.qx.orbit.bili.data.remote.CookieManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class OpusDetailViewModel : ViewModel() {
@@ -19,6 +22,12 @@ class OpusDetailViewModel : ViewModel() {
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _isFavoriteLoading = MutableStateFlow(false)
+    val isFavoriteLoading = _isFavoriteLoading.asStateFlow()
+
+    private val _actionMessage = MutableStateFlow<String?>(null)
+    val actionMessage = _actionMessage.asStateFlow()
 
     private val _replies = MutableStateFlow<List<Reply>>(emptyList())
     val replies: StateFlow<List<Reply>> = _replies.asStateFlow()
@@ -151,16 +160,55 @@ class OpusDetailViewModel : ViewModel() {
                 val action = !isLiked
                 val resp = OpusApi.likeOpus(data.id, action)
                 if (resp == 0) {
-                    val newStats = data.stats?.copy(
-                        liked = !isLiked,
-                        like = data.stats.like + (if (isLiked) -1 else 1)
-                    )
-                    _opus.value = data.copy(stats = newStats)
+                    _opus.update { current ->
+                        if (current?.id != data.id) current else current.copy(
+                            stats = current.stats?.copy(
+                                liked = !isLiked,
+                                like = (current.stats.like + if (isLiked) -1 else 1).coerceAtLeast(0)
+                            )
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    fun toggleFavorite() {
+        val data = _opus.value ?: return
+        val stats = data.stats ?: return
+        if (_isFavoriteLoading.value || stats.fav_disabled) return
+        if (CookieManager.getCsrf().isBlank()) {
+            _actionMessage.value = "请先登录"
+            return
+        }
+        val favorite = !stats.favoured
+        _isFavoriteLoading.value = true
+        viewModelScope.launch {
+            try {
+                OpusApi.setFavorite(data.parsedId.takeIf { it > 0 } ?: data.id, favorite)
+                _opus.update { current ->
+                    if (current?.id != data.id) current else current.copy(
+                        stats = current.stats?.copy(
+                            favoured = favorite,
+                            favorite = (current.stats.favorite + if (favorite) 1 else -1).coerceAtLeast(0)
+                        )
+                    )
+                }
+                _actionMessage.value = if (favorite) "收藏成功" else "已取消收藏"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _actionMessage.value = e.message ?: "收藏操作失败，请重试"
+            } finally {
+                _isFavoriteLoading.value = false
+            }
+        }
+    }
+
+    fun clearActionMessage() {
+        _actionMessage.value = null
     }
 
     fun loadEmotes() {
