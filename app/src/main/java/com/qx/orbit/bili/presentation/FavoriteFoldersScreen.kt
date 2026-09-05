@@ -217,7 +217,12 @@ fun FavoriteFoldersScreen(
             show = true,
             onDismissRequest = { folderToDelete = null },
             title = "删除收藏夹？",
-            content = { Text("删除「${folder.name}」及其中的收藏记录，此操作无法撤销。") },
+            content = {
+                Text(
+                    "删除「${folder.name}」及其中的收藏记录，此操作无法撤销。",
+                    textAlign = TextAlign.Center
+                )
+            },
             onConfirm = {
                 folderToDelete = null
                 viewModel.deleteFolder(folder)

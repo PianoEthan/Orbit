@@ -1,13 +1,20 @@
 package com.qx.orbit.bili.presentation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -34,24 +41,46 @@ internal fun FavoriteFolderEditor(
     Dialog(visible = true, onDismissRequest = onDismiss) {
         val listState = rememberTransformingLazyColumnState()
         val transformationSpec = rememberTransformationSpec()
+        val focusManager = LocalFocusManager.current
+        val keyboardController = LocalSoftwareKeyboardController.current
+        val hideKeyboard = {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
         val fieldColors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = MaterialTheme.colorScheme.onSurface,
             unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+            focusedBorderColor = MaterialTheme.colorScheme.background,
+            unfocusedBorderColor = MaterialTheme.colorScheme.background
         )
-        ScreenScaffold(timeText = { WysTimeText() }, scrollState = listState) { padding ->
+        ScreenScaffold(
+            timeText = { WysTimeText() },
+            scrollState = listState,
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        ) { padding ->
             TransformingLazyColumn(
                 state = listState,
-                contentPadding = padding,
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding()
+                ),
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxSize().imePadding(),
                 rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
             ) {
                 item {
-                    ListHeader(modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)) {
-                        Text(if (folder.mediaId == 0L) "新建收藏夹" else "编辑收藏夹")
+                    ListHeader(
+                        modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = rememberAdaptiveSurfaceTransformation(transformationSpec)
+                    ) {
+                        Text(
+                            if (folder.mediaId == 0L) "新建收藏夹" else "编辑收藏夹",
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
                 item {
@@ -60,11 +89,11 @@ internal fun FavoriteFolderEditor(
                         onValueChange = { title = it },
                         enabled = !isSaving,
                         singleLine = true,
-                        label = { Text("名称") },
+                        placeholder = { Text("收藏夹名称", color = MaterialTheme.colorScheme.outline) },
+                        shape = RoundedCornerShape(24.dp),
                         colors = fieldColors,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                            .adaptiveTransformedHeight(this, transformationSpec)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     )
                 }
                 item {
@@ -74,10 +103,12 @@ internal fun FavoriteFolderEditor(
                         enabled = !isSaving,
                         minLines = 2,
                         maxLines = 4,
-                        label = { Text("简介") },
+                        placeholder = { Text("收藏夹简介", color = MaterialTheme.colorScheme.outline) },
+                        shape = RoundedCornerShape(24.dp),
                         colors = fieldColors,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                            .adaptiveTransformedHeight(this, transformationSpec)
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { hideKeyboard() }),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     )
                 }
                 item {
@@ -96,6 +127,7 @@ internal fun FavoriteFolderEditor(
                         Text(
                             error,
                             color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 12.dp)
                                 .adaptiveTransformedHeight(this, transformationSpec)
                         )
@@ -103,7 +135,10 @@ internal fun FavoriteFolderEditor(
                 }
                 item {
                     Button(
-                        onClick = { onSave(title, intro, isPrivate) },
+                        onClick = {
+                            hideKeyboard()
+                            onSave(title, intro, isPrivate)
+                        },
                         enabled = !isSaving && title.isNotBlank(),
                         modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
                         transformation = rememberAdaptiveSurfaceTransformation(transformationSpec)
