@@ -4,6 +4,7 @@ import com.qx.orbit.bili.data.model.*
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.data.remote.GsonConfig
 import com.qx.orbit.bili.data.remote.HttpClient
+import com.qx.orbit.bili.data.remote.BilibiliApiException
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.util.fixCoverUrl
@@ -229,8 +230,11 @@ object DynamicApi {
     )
 
     data class PublishDynReq(
-        @SerializedName("dyn_req") val dyn_req: DynReq
+        @SerializedName("dyn_req") val dyn_req: DynReq,
+        @SerializedName("web_repost_src") val web_repost_src: RepostSource? = null
     )
+
+    data class RepostSource(@SerializedName("dyn_id_str") val dyn_id_str: String)
 
     data class DynReq(
         @SerializedName("content") val content: DynContent,
@@ -379,6 +383,38 @@ object DynamicApi {
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    suspend fun repostDynamic(dynamicId: String, text: String) = withContext(Dispatchers.IO) {
+        val csrf = CookieManager.getCsrf()
+        if (CookieManager.getMid() <= 0L || csrf.isBlank()) {
+            throw BilibiliApiException(-101, "请先登录后再转发")
+        }
+        val payload = PublishDynReq(
+            dyn_req = DynReq(
+                content = DynContent(listOf(DynContentItem(text.ifBlank { "转发动态" }, 1, ""))),
+                scene = 4
+            ),
+            web_repost_src = RepostSource(dynamicId)
+        )
+        val request = Request.Builder()
+            .url("https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=$csrf")
+            .post(GsonConfig.gson.toJson(payload).toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull()))
+            .addHeader("Cookie", CookieManager.getCookie())
+            .addHeader("User-Agent", USER_AGENT)
+            .addHeader("Referer", "https://t.bilibili.com/")
+            .build()
+        HttpClient.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw BilibiliApiException(-1, "转发失败：HTTP ${response.code}")
+            }
+            val type = object : TypeToken<ApiResponse<CreateDynData>>() {}.type
+            val result: ApiResponse<CreateDynData>? = GsonConfig.gson.fromJson(response.body.string(), type)
+            if (result == null || !result.isSuccess) {
+                val message = result?.message?.takeIf { it.isNotBlank() && it != "0" } ?: "转发失败"
+                throw BilibiliApiException(result?.code ?: -1, "$message (${result?.code ?: -1})")
+            }
         }
     }
 
@@ -680,6 +716,7 @@ object DynamicApi {
             major_object = null,
             dynamic_forward = dynamicForward,
             canDelete = canDelete,
+            canForward = stat?.forward?.forbidden != true && dynType != "DYNAMIC_TYPE_NONE",
             isTop = author?.is_top ?: false,
             images = images,
             cover = cover,

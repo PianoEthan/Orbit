@@ -176,4 +176,6 @@ dependencies {
     implementation(libs.eventbus)
     debugImplementation(libs.ui.test.manifest)
     debugImplementation(libs.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${libs.versions.coroutines.get()}")
 }

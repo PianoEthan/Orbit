@@ -175,6 +175,10 @@ class DynamicDetailViewModel : ViewModel() {
         }
     }
 
+    fun onReposted() {
+        _dynamic.value = _dynamic.value?.withRepostAdded()
+    }
+
     fun loadEmotes() {
         if (_emotes.value != null) return
         viewModelScope.launch {

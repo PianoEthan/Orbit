@@ -1,6 +1,7 @@
 package com.qx.orbit.bili.presentation.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,11 +74,13 @@ fun DynamicCard(
     onArchiveClick: (String, Long) -> Unit = { _, _ -> },
     onLiveClick: (Long) -> Unit = {},
     onRemove: (Dynamic) -> Unit = {},
-    onTopChanged: (Dynamic, Boolean) -> Unit = { _, _ -> }
+    onTopChanged: (Dynamic, Boolean) -> Unit = { _, _ -> },
+    onReposted: (Dynamic) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var showActionMenu by remember { mutableStateOf(false) }
+    var showRepost by rememberSaveable(item.dynamicId) { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<DynamicDestructiveAction?>(null) }
     val currentMid = remember { CookieManager.getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0L }
     val isOwnDynamic = item.canDelete || (currentMid > 0L && item.userInfo?.mid == currentMid)
@@ -142,6 +146,9 @@ fun DynamicCard(
     }
 
     val actionItems = buildList {
+        if (item.canForward) {
+            add(WysActionMenuItem(label = "转发动态", icon = Icons.Default.Share, onClick = { showRepost = true }))
+        }
         if (isOwnDynamic) {
             add(
                 WysActionMenuItem(
@@ -413,11 +420,15 @@ fun DynamicCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                // Share
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(enabled = item.canForward, onClickLabel = "转发动态") {
+                        showRepost = true
+                    }.padding(vertical = 8.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Share,
-                        contentDescription = "Share",
+                        contentDescription = "转发动态",
                         modifier = Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -462,6 +473,17 @@ fun DynamicCard(
                 )
             }
         }
+    }
+
+    if (showRepost) {
+        RepostDynamicDialog(
+            dynamic = item,
+            onDismiss = { showRepost = false },
+            onSuccess = {
+                showRepost = false
+                onReposted(item)
+            }
+        )
     }
 
     WysActionMenu(

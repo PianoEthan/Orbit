@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +54,7 @@ import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
+import com.qx.orbit.bili.presentation.ui.components.RepostDynamicDialog
 import com.qx.orbit.bili.data.model.Reply
 
 @Composable
@@ -83,6 +85,7 @@ fun DynamicDetailScreen(
     val context = LocalContext.current
     var showImageDialog by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
     var showWriteReply by remember { mutableStateOf(false) }
+    var showRepost by rememberSaveable(dynamicId) { mutableStateOf(false) }
     var replyTarget by remember { mutableStateOf<Reply?>(null) }
 
     LaunchedEffect(dynamicId, commentRootId, commentReplyId) {
@@ -371,11 +374,13 @@ fun DynamicDetailScreen(
                                     
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable { /* Share */ }.padding(4.dp)
+                                        modifier = Modifier.clickable(enabled = item.canForward, onClickLabel = "转发动态") {
+                                            showRepost = true
+                                        }.padding(horizontal = 4.dp, vertical = 8.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Share,
-                                            contentDescription = "Share",
+                                            contentDescription = "转发动态",
                                             modifier = Modifier.size(14.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -464,6 +469,19 @@ fun DynamicDetailScreen(
                     item { Spacer(modifier = Modifier.height(32.dp)) }
                 }
             }
+        }
+    }
+
+    if (showRepost) {
+        dynamic?.let { item ->
+            RepostDynamicDialog(
+                dynamic = item,
+                onDismiss = { showRepost = false },
+                onSuccess = {
+                    showRepost = false
+                    viewModel.onReposted()
+                }
+            )
         }
     }
 

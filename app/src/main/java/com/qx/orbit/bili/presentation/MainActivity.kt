@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -458,6 +459,15 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                     val followListViewModel: FollowListViewModel = viewModel()
                     FollowListScreen(viewModel = followListViewModel, navController = navController)
                 }
+                composable(
+                    "following_list/{mid}",
+                    arguments = listOf(navArgument("mid") { type = NavType.LongType })
+                ) { entry ->
+                    FollowingListScreen(
+                        mid = entry.arguments?.getLong("mid") ?: 0L,
+                        navController = navController
+                    )
+                }
                 composable("favorite_folders") {
                     val favoriteFolderViewModel: FavoriteFolderViewModel = viewModel()
                     FavoriteFoldersScreen(viewModel = favoriteFolderViewModel, navController = navController)
@@ -804,6 +814,25 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                                 }
                             }
                             if (navInfo?.isLogin == true) {
+                                item {
+                                    Button(
+                                        onClick = {
+                                            showTabMenu = false
+                                            navController.navigate("following_list/${navInfo!!.mid}")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                            .adaptiveTransformedHeight(this, menuTransformationSpec),
+                                        transformation = if (isRound) SurfaceTransformation(menuTransformationSpec) else null
+                                    ) {
+                                        Icon(Icons.Default.People, modifier = Modifier.size(20.dp), contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("关注列表")
+                                    }
+                                }
                                 item {
                                     Button(
                                         onClick = {

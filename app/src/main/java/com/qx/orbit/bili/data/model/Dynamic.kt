@@ -21,8 +21,14 @@ data class Dynamic(
     val archiveTitle: String = "",
     val emotes: Map<String, Emote> = emptyMap(),
     val members: Map<String, Long> = emptyMap(),
-    val liveState: Int = 0
+    val liveState: Int = 0,
+    val canForward: Boolean = true
 ) {
+    fun withRepostAdded(): Dynamic {
+        val currentStats = stats ?: Stats()
+        return copy(stats = currentStats.copy(share = currentStats.share + 1))
+    }
+
     companion object {
         const val DYNAMIC_TYPE_UGC_SEASON = "DYNAMIC_TYPE_UGC_SEASON"
     }

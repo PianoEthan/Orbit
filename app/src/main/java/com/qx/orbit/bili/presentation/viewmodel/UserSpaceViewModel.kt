@@ -102,6 +102,12 @@ class UserSpaceViewModel : ViewModel() {
         _dynamics.value = _dynamics.value.filterNot { it.dynamicId == dynamic.dynamicId }
     }
 
+    fun onReposted(dynamic: Dynamic) {
+        _dynamics.value = _dynamics.value.map {
+            if (it.dynamicId == dynamic.dynamicId) it.withRepostAdded() else it
+        }
+    }
+
     fun updateDynamicTop(dynamic: Dynamic, isTop: Boolean) {
         val updated = _dynamics.value.map { item ->
             when {

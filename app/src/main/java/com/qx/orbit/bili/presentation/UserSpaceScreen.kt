@@ -47,6 +47,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.data.model.Dynamic
@@ -234,7 +235,13 @@ fun UserDynamicsPage(
                             LevelIcon(level = info.level, isSenior = info.is_senior_member == 1)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = "${formatCount(info.fans)}粉丝  ${info.following}关注", fontSize = 12.sp, color = Color.Gray)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "${formatCount(info.fans)}粉丝", fontSize = 12.sp, color = Color.Gray)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(onClick = { navController.navigate("following_list/${info.mid}") }) {
+                                Text(text = "${info.following}关注", fontSize = 12.sp)
+                            }
+                        }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = info.sign,
@@ -279,7 +286,8 @@ fun UserDynamicsPage(
                         onArchiveClick = { bvid, aid -> navController.navigate("detail/$bvid/$aid") },
                         onLiveClick = { roomId -> navController.navigate("live_room/$roomId") },
                         onRemove = viewModel::removeDynamicLocally,
-                        onTopChanged = viewModel::updateDynamicTop
+                        onTopChanged = viewModel::updateDynamicTop,
+                        onReposted = viewModel::onReposted
                     )
                 }
             }

@@ -300,6 +300,7 @@ fun DynamicFeedScreen(
                             },
                             onRemove = viewModel::removeDynamicLocally,
                             onTopChanged = viewModel::updateDynamicTop,
+                            onReposted = viewModel::onReposted,
                             onClick = {
                                 navController.navigate("dynamic_detail/${dynamic.dynamicId}")
                             }

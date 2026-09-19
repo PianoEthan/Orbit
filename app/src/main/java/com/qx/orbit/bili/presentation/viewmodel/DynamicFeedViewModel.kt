@@ -140,6 +140,12 @@ class DynamicFeedViewModel(application: Application) : AndroidViewModel(applicat
         _dynamicList.value = _dynamicList.value.filterNot { it.dynamicId == dynamic.dynamicId }
     }
 
+    fun onReposted(dynamic: Dynamic) {
+        _dynamicList.value = _dynamicList.value.map {
+            if (it.dynamicId == dynamic.dynamicId) it.withRepostAdded() else it
+        }
+    }
+
     fun updateDynamicTop(dynamic: Dynamic, isTop: Boolean) {
         val authorMid = dynamic.userInfo?.mid
         val updated = _dynamicList.value.map { item ->
