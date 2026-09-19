@@ -11,8 +11,8 @@ object RotaryUtils {
     val isWearHapticsAvailable: Boolean by lazy {
         val model = Build.MODEL
         if (model == "M2505W1" || model == "M2501W1") {
-            Log.d("WearHapticsUtil","XIAOMI WATCH 5 DETECTED, TURN OFF WEAR HAPTICS!")
-            false
+            Log.d("WearHapticsUtil","XIAOMI WATCH 5 DETECTED!")
+            true
         } else {
             try {
                 Class.forName("com.google.wear.input.WearHapticFeedbackConstants")

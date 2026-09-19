@@ -23,7 +23,7 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 - **视频播放**: ijkplayer(可选)/ExoPlayer
 - **弹幕**: DanmakuFlameMaster/DFM-Next
 - **图片加载**: Coil
-
+- **小米手表5系列震动**：miwearhaptics
 
 ## 构建
 
@@ -50,6 +50,7 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 - 本项目参考了[哔哩终端](https://github.com/huanli233/BiliClient)的API调用逻辑。
 - 本项目使用了[IJKPlayer](https://github.com/bilibili/ijkplayer)和[Media3-ExoPlayer](https://github.com/androidx/media)作为视频播放器。
 - 本项目使用了[烈焰弹幕使](https://github.com/bilibili/danmakuflamemaster)和[DFM-Next](https://github.com/YNotBili/DFMNext)作为弹幕引擎。
+- 本项目使用了[miwearhaptics](https://github.com/Star-ZER0/miwearhaptics)作为小米手表5系列的震动库兼容层。
 - 本项目与 [BiliZepam](https://github.com/Re-BiliTerminal/BiliZepam-Compose) 没有任何关系。
 - 本项目与 [Re-WearBili](https://github.com/SpaceXC/Re-WearBili) 没有任何关系。
 
