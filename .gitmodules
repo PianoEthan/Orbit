@@ -1,6 +1,6 @@
 [submodule "DFMNext"]
 	path = DFMNext
-	url = https://github.com/YNotBili/DFMNext.git
+	url = https://github.com/CryNet-Studio/DFMNext.git
 [submodule "miwearhaptics"]
 	path = miwearhaptics
 	url = https://github.com/Star-ZER0/miwearhaptics.git
