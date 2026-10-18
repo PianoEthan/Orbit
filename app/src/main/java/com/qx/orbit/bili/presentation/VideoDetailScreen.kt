@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -124,6 +125,7 @@ import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.StringUtil
 import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
+import com.qx.orbit.bili.data.model.Collection
 import com.qx.orbit.bili.presentation.theme.ActiveDynamicTheme
 import com.qx.orbit.bili.presentation.theme.extractSeedColorFromBitmap
 import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
@@ -179,9 +181,14 @@ fun VideoDetailScreen(
     var showCoinDialog by remember { mutableStateOf(false) }
     var showFavDialog by remember { mutableStateOf(false) }
     var showCacheDialog by remember { mutableStateOf(false) }
+    var showCachePageDialog by remember { mutableStateOf(false) }
+    var showCacheCollectionDialog by remember { mutableStateOf(false) }
+    var targetCollectionEpisodeForCache by remember { mutableStateOf<Collection.Episode?>(null) }
+    var cachePageIndex by remember { mutableIntStateOf(0) }
     var showPlayerSelectionDialog by remember { mutableStateOf(false) }
     var playConfig by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var showEpisodeDialog by remember { mutableStateOf(false) }
+    var showCollectionDialog by remember { mutableStateOf(false) }
     var showTripleSuccessOverlay by remember { mutableStateOf(false) }
     var cacheQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
     var cacheAudioQualities by remember { mutableStateOf<List<Pair<String, Int>>>(emptyList()) }
@@ -238,8 +245,165 @@ fun VideoDetailScreen(
             isColorExtracted = true
         }
     }
+
+    fun openCacheDialogForPage(pageIndex: Int) {
+        val info = videoInfo ?: return
+        val cid = info.cids.getOrNull(pageIndex) ?: return
+        val requestAid = info.aid.takeIf { it > 0 } ?: aid
+
+        targetCollectionEpisodeForCache = null
+        cachePageIndex = pageIndex
+        showCachePageDialog = false
+        showCacheCollectionDialog = false
+        showAudioQualitiesInCacheDialog = false
+        cacheQualities = emptyList()
+        cacheAudioQualities = emptyList()
+        isFetchingQualities = true
+        showCacheDialog = true
+
+        viewModel.viewModelScope.launch {
+            try {
+                val playerData = PlayerApi.getVideoDash(
+                    PlayerData(aid = requestAid, cid = cid, qn = 112)
+                )
+                if (cachePageIndex != pageIndex) return@launch
+
+                val names = playerData.qnStrList
+                val values = playerData.qnValueList
+                cacheQualities = if (names != null && values != null && names.size == values.size) {
+                    names.zip(values.toTypedArray())
+                } else {
+                    emptyList()
+                }
+
+                val audioQualities = mutableListOf<Pair<String, Int>>()
+                playerData.dashData?.let { dash ->
+                    dash.audioStreams.forEach { stream ->
+                        val name = when (stream.id) {
+                            30216 -> "64K"
+                            30232 -> "132K"
+                            30280 -> "192K"
+                            else -> "${stream.id}"
+                        }
+                        audioQualities.add(name to stream.id)
+                    }
+                    if (dash.dolbyAudio != null) audioQualities.add("杜比全景声" to 30250)
+                    if (dash.flacAudio != null) audioQualities.add("Hi-Res无损" to 30251)
+                }
+                cacheAudioQualities = audioQualities
+            } catch (_: Exception) {
+                if (cachePageIndex == pageIndex) {
+                    cacheQualities = emptyList()
+                    cacheAudioQualities = emptyList()
+                    RoundToast.show(context, "获取缓存清晰度失败")
+                }
+            } finally {
+                if (cachePageIndex == pageIndex) {
+                    isFetchingQualities = false
+                }
+            }
+        }
+    }
+
+    fun openCacheDialogForCollectionEpisode(ep: Collection.Episode) {
+        targetCollectionEpisodeForCache = ep
+        showCacheCollectionDialog = false
+        showCachePageDialog = false
+        showAudioQualitiesInCacheDialog = false
+        cacheQualities = emptyList()
+        cacheAudioQualities = emptyList()
+        isFetchingQualities = true
+        showCacheDialog = true
+
+        viewModel.viewModelScope.launch {
+            try {
+                val playerData = PlayerApi.getVideoDash(
+                    PlayerData(aid = ep.aid, cid = ep.cid, qn = 112)
+                )
+                if (targetCollectionEpisodeForCache != ep) return@launch
+
+                val names = playerData.qnStrList
+                val values = playerData.qnValueList
+                cacheQualities = if (names != null && values != null && names.size == values.size) {
+                    names.zip(values.toTypedArray())
+                } else {
+                    emptyList()
+                }
+
+                val audioQualities = mutableListOf<Pair<String, Int>>()
+                playerData.dashData?.let { dash ->
+                    dash.audioStreams.forEach { stream ->
+                        val name = when (stream.id) {
+                            30216 -> "64K"
+                            30232 -> "132K"
+                            30280 -> "192K"
+                            else -> "${stream.id}"
+                        }
+                        audioQualities.add(name to stream.id)
+                    }
+                    if (dash.dolbyAudio != null) audioQualities.add("杜比全景声" to 30250)
+                    if (dash.flacAudio != null) audioQualities.add("Hi-Res无损" to 30251)
+                }
+                cacheAudioQualities = audioQualities
+            } catch (_: Exception) {
+                if (targetCollectionEpisodeForCache == ep) {
+                    cacheQualities = emptyList()
+                    cacheAudioQualities = emptyList()
+                    RoundToast.show(context, "获取缓存清晰度失败")
+                }
+            } finally {
+                if (targetCollectionEpisodeForCache == ep) {
+                    isFetchingQualities = false
+                }
+            }
+        }
+    }
     
     MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
+    Dialog(
+        visible = showCachePageDialog,
+        onDismissRequest = { showCachePageDialog = false }
+    ) {
+        val listState = rememberTransformingLazyColumnState()
+        val transformationSpec = rememberTransformationSpec()
+        val isRound = LocalScreenRound.current
+        val info = videoInfo
+
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            item {
+                ListHeader(
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                ) {
+                    Text("选择要缓存的分P", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            items(info?.cids?.size ?: 0) { index ->
+                val pageName = info?.pagenames?.getOrNull(index).orEmpty()
+                    .ifBlank { "分P${index + 1}" }
+                Button(
+                    onClick = { openCacheDialogForPage(index) },
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    colors = ButtonDefaults.filledTonalButtonColors()
+                ) {
+                    Text(
+                        text = "P${index + 1} $pageName",
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            item { Spacer(modifier = Modifier.height(20.dp)) }
+        }
+    }
+
     // Cache Dialog
     Dialog(
         visible = showCacheDialog,
@@ -271,19 +435,47 @@ fun VideoDetailScreen(
                             onClick = {
                                 val info = videoInfo
                                 if (info != null) {
-                                    val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    val targetEp = targetCollectionEpisodeForCache
+                                    val cid = targetEp?.cid ?: info.cids.getOrNull(cachePageIndex) ?: return@Button
+                                    val pageName = info.pagenames.getOrNull(cachePageIndex).orEmpty()
+                                        .ifBlank { "分P${cachePageIndex + 1}" }
+                                    val isMultiPage = info.cids.size > 1
+                                    val taskTitle = if (targetEp != null) {
+                                        "${info.title} - ${targetEp.title}"
+                                    } else if (isMultiPage) {
+                                        "${info.title} - P${cachePageIndex + 1} $pageName"
+                                    } else {
+                                        info.title
+                                    }
+                                    val fileTitle = if (targetEp != null) {
+                                        "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
+                                    } else if (isMultiPage) {
+                                        "${info.title}_P${cachePageIndex + 1}_$cid"
+                                    } else {
+                                        info.title
+                                    }
+                                    val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    val duration = if (targetEp != null) {
+                                        0
+                                    } else {
+                                        info.pageDurations.getOrNull(cachePageIndex)
+                                            ?.takeIf { it > 0 }
+                                            ?: StringUtil.parseTime(info.duration)
+                                    }
+                                    val finalAid = targetEp?.aid ?: info.aids.getOrNull(cachePageIndex) ?: info.aid.takeIf { it > 0 } ?: aid
+                                    val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
                                     VideoDownloadManager.enqueue(
                                         url = "",
-                                        title = info.title,
+                                        title = taskTitle,
                                         filename = "${safeTitle}_audio.m4s",
                                         context = context,
-                                        aid = aid,
-                                        cid = info.cids.firstOrNull() ?: 0L,
-                                        bvid = bvid,
+                                        aid = finalAid,
+                                        cid = cid,
+                                        bvid = finalBvid,
                                         qn = qn,
                                         type = "AUDIO_AND_SUBTITLE",
                                         coverUrl = info.cover.replace("http://", "https://"),
-                                        duration = StringUtil.parseTime(info.duration)
+                                        duration = duration
                                     )
                                     RoundToast.show(context, "正在下载音频...")
                                     showAudioQualitiesInCacheDialog = false
@@ -313,19 +505,47 @@ fun VideoDetailScreen(
                             onClick = {
                                 val info = videoInfo
                                 if (info != null) {
-                                    val safeTitle = info.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    val targetEp = targetCollectionEpisodeForCache
+                                    val cid = targetEp?.cid ?: info.cids.getOrNull(cachePageIndex) ?: return@Button
+                                    val pageName = info.pagenames.getOrNull(cachePageIndex).orEmpty()
+                                        .ifBlank { "分P${cachePageIndex + 1}" }
+                                    val isMultiPage = info.cids.size > 1
+                                    val taskTitle = if (targetEp != null) {
+                                        "${info.title} - ${targetEp.title}"
+                                    } else if (isMultiPage) {
+                                        "${info.title} - P${cachePageIndex + 1} $pageName"
+                                    } else {
+                                        info.title
+                                    }
+                                    val fileTitle = if (targetEp != null) {
+                                        "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
+                                    } else if (isMultiPage) {
+                                        "${info.title}_P${cachePageIndex + 1}_$cid"
+                                    } else {
+                                        info.title
+                                    }
+                                    val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                    val duration = if (targetEp != null) {
+                                        0
+                                    } else {
+                                        info.pageDurations.getOrNull(cachePageIndex)
+                                            ?.takeIf { it > 0 }
+                                            ?: StringUtil.parseTime(info.duration)
+                                    }
+                                    val finalAid = targetEp?.aid ?: info.aids.getOrNull(cachePageIndex) ?: info.aid.takeIf { it > 0 } ?: aid
+                                    val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
                                     VideoDownloadManager.enqueue(
                                         url = "", // Will be fetched inside manager
-                                        title = info.title,
+                                        title = taskTitle,
                                         filename = "${safeTitle}_$qn.mp4",
                                         context = context,
-                                        aid = aid,
-                                        cid = info.cids.firstOrNull() ?: 0L,
-                                        bvid = bvid,
+                                        aid = finalAid,
+                                        cid = cid,
+                                        bvid = finalBvid,
                                         qn = qn,
                                         type = "MP4",
                                         coverUrl = info.cover.replace("http://", "https://"),
-                                        duration = StringUtil.parseTime(info.duration)
+                                        duration = duration
                                     )
                                     RoundToast.show(context, "正在下载视频...")
                                     showCacheDialog = false
@@ -401,6 +621,7 @@ fun VideoDetailScreen(
                                     aid = aid,
                                     cid = cidToPlay,
                                     cids = info.cids,
+                                    aids = info.aids,
                                     pagenames = info.pagenames,
                                     type = if (info.epid > 0) PlayerData.TYPE_BANGUMI else PlayerData.TYPE_VIDEO,
                                     qn = if (tempSelectedPlayer == "pureAudioPlayer") -1 else tempSelectedQn,
@@ -532,6 +753,7 @@ fun VideoDetailScreen(
                             aid = if (info.aid > 0) info.aid else aid, // Fallback to provided aid if needed
                             cid = cidToPlay,
                             cids = info.cids,
+                            aids = info.aids,
                             pagenames = info.pagenames,
                             type = if (info.epid > 0) PlayerData.TYPE_BANGUMI else PlayerData.TYPE_VIDEO,
                             qn = if (playerChoice == "pureAudioPlayer") -1 else qn,
@@ -548,6 +770,105 @@ fun VideoDetailScreen(
                     modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
                 ) {
                     Text(text = name)
+                }
+            }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
+    }
+
+    // Collection videos selection dialog
+    Dialog(
+        visible = showCollectionDialog,
+        onDismissRequest = { showCollectionDialog = false }
+    ) {
+        val listState = rememberTransformingLazyColumnState()
+        val transformationSpec = rememberTransformationSpec()
+        val isRound = LocalScreenRound.current
+        val collection = videoInfo?.collection
+        val collectionEpisodes = collection?.sections?.flatMap { it.episodes } ?: emptyList()
+
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            item {
+                ListHeader(
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                ) {
+                    Text(collection?.title?.ifBlank { "合集视频" } ?: "合集视频", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            items(collectionEpisodes.size) { index ->
+                val ep = collectionEpisodes[index]
+                val isCurrent = ep.aid == videoInfo?.aid || (ep.bvid.isNotBlank() && ep.bvid == videoInfo?.bvid)
+                val epTitle = "第 ${index + 1} 集  ${ep.title}${if (isCurrent) " (当前播放)" else ""}"
+                Button(
+                    onClick = {
+                        showCollectionDialog = false
+                        if (!isCurrent) {
+                            navController.navigate("detail/${ep.bvid.ifBlank { "0" }}/${ep.aid}")
+                        }
+                    },
+                    colors = if (isCurrent) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors()
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                ) {
+                    Text(text = epTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
+        }
+    }
+
+    // Cache dialog for collection episodes
+    Dialog(
+        visible = showCacheCollectionDialog,
+        onDismissRequest = { showCacheCollectionDialog = false }
+    ) {
+        val listState = rememberTransformingLazyColumnState()
+        val transformationSpec = rememberTransformationSpec()
+        val isRound = LocalScreenRound.current
+        val collection = videoInfo?.collection
+        val collectionEpisodes = collection?.sections?.flatMap { it.episodes } ?: emptyList()
+
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp),
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            item {
+                ListHeader(
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                ) {
+                    Text("选择要缓存的合集视频", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            items(collectionEpisodes.size) { index ->
+                val ep = collectionEpisodes[index]
+                val epTitle = "第 ${index + 1} 集  ${ep.title}"
+                Button(
+                    onClick = {
+                        openCacheDialogForCollectionEpisode(ep)
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                ) {
+                    Text(text = epTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
@@ -616,6 +937,7 @@ fun VideoDetailScreen(
                                         aid = aid,
                                         cid = cidToPlay,
                                         cids = info.cids,
+                                    aids = info.aids,
                                         pagenames = info.pagenames,
                                         type = if (info.epid > 0) PlayerData.TYPE_BANGUMI else PlayerData.TYPE_VIDEO,
                                         qn = if (playerChoice == "pureAudioPlayer") -1 else qn,
@@ -688,37 +1010,17 @@ fun VideoDetailScreen(
                             },
                             onWatchLaterClick = { viewModel.addToWatchLater(context) },
                             onUpClick = { mid -> navController.navigate("user_space/$mid") },
+                            onCollectionClick = { showCollectionDialog = true },
                             onCacheClick = {
-                                showCacheDialog = true
-                                if (cacheQualities.isEmpty()) {
-                                    isFetchingQualities = true
-                                    viewModel.viewModelScope.launch {
-                                        val info = videoInfo
-                                        if (info != null) {
-                                            val pd = PlayerApi.getVideoDash(PlayerData(aid = aid, cid = info.cids.firstOrNull() ?: 0L, qn = 112))
-                                            val names = pd.qnStrList
-                                            val vals = pd.qnValueList
-                                            if (names != null && vals != null && names.size == vals.size) {
-                                                cacheQualities = names.zip(vals.toTypedArray())
-                                            }
-                                            val audioList = mutableListOf<Pair<String, Int>>()
-                                            pd.dashData?.let { dash ->
-                                                dash.audioStreams.forEach {
-                                                    val name = when(it.id) {
-                                                        30216 -> "64K"
-                                                        30232 -> "132K"
-                                                        30280 -> "192K"
-                                                        else -> "${it.id}"
-                                                    }
-                                                    audioList.add(name to it.id)
-                                                }
-                                                if (dash.dolbyAudio != null) audioList.add("杜比全景声" to 30250)
-                                                if (dash.flacAudio != null) audioList.add("Hi-Res无损" to 30251)
-                                            }
-                                            cacheAudioQualities = audioList
-                                        }
-                                        isFetchingQualities = false
-                                    }
+                                val info = videoInfo ?: return@VideoInfoPage
+                                val collectionEpisodes = info.collection?.sections?.flatMap { it.episodes } ?: emptyList()
+                                if (info.cids.size > 1) {
+                                    showCachePageDialog = true
+                                } else if (collectionEpisodes.size > 1) {
+                                    showCacheCollectionDialog = true
+                                } else {
+                                    targetCollectionEpisodeForCache = null
+                                    openCacheDialogForPage(0)
                                 }
                             }
                         )
@@ -1067,7 +1369,8 @@ fun VideoInfoPage(
     onFavClick: () -> Unit,
     onWatchLaterClick: () -> Unit,
     onCacheClick: () -> Unit,
-    onUpClick: (Long) -> Unit
+    onUpClick: (Long) -> Unit,
+    onCollectionClick: () -> Unit = {}
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -1076,6 +1379,10 @@ fun VideoInfoPage(
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
+    val collection = videoInfo?.collection
+    val collectionEpisodes = remember(collection) {
+        collection?.sections?.flatMap { it.episodes } ?: emptyList()
+    }
     ScreenScaffold(scrollState = listState, modifier = Modifier.focusRequester(focusRequester)) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -1352,6 +1659,54 @@ fun VideoInfoPage(
                     }
                 }
                 item { Spacer(modifier = Modifier.height(4.dp)) }
+                
+                // Collection Entry Card
+                if (collectionEpisodes.isNotEmpty()) {
+                    item {
+                        val currentEpIndex = collectionEpisodes.indexOfFirst { it.aid == videoInfo.aid || (it.bvid.isNotBlank() && it.bvid == videoInfo.bvid) }
+                        val epCountText = if (currentEpIndex != -1) "第 ${currentEpIndex + 1}/${collectionEpisodes.size} 集" else "共 ${collectionEpisodes.size} 集"
+                        Button(
+                            onClick = onCollectionClick,
+                            modifier = Modifier
+                                .adaptiveTransformedHeight(this, transformationSpec)
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Filled.VideoLibrary,
+                                    contentDescription = "Collection",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(
+                                    text = "合集 · ${collection?.title}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = epCountText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    item { Spacer(modifier = Modifier.height(2.dp)) }
+                }
+
                 // 6. Play Button
                 item {
                     Button(

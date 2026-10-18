@@ -38,4 +38,8 @@ class DFMItem(internal val engine: master.flame.danmaku.danmaku.model.BaseDanmak
     override var obj: Any?
         get() = engine.obj
         set(v) { engine.obj = v }
+
+    override var isLive: Boolean
+        get() = engine.isLive
+        set(v) { engine.isLive = v }
 }

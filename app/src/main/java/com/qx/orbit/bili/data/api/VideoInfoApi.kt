@@ -53,7 +53,11 @@ object VideoInfoApi {
 
     internal data class DescV2(@SerializedName("type") val type: Int = 0, @SerializedName("raw_text") val raw_text: String? = null, @SerializedName("biz_id") val biz_id: Long = 0)
     internal data class StatData(@SerializedName("view") val view: Int = 0, @SerializedName("like") val like: Int = 0, @SerializedName("coin") val coin: Int = 0, @SerializedName("reply") val reply: Int = 0, @SerializedName("danmaku") val danmaku: Int = 0, @SerializedName("favorite") val favorite: Int = 0)
-    internal data class PageData(@SerializedName("part") val part: String? = null, @SerializedName("cid") val cid: Long = 0)
+    internal data class PageData(
+        @SerializedName("part") val part: String? = null,
+        @SerializedName("cid") val cid: Long = 0,
+        @SerializedName("duration") val duration: Int = 0
+    )
     internal data class RightsData(@SerializedName("is_cooperation") val is_cooperation: Int = 0, @SerializedName("is_stein_gate") val is_stein_gate: Int = 0, @SerializedName("is_360") val is_360: Int = 0)
     internal data class OfficialData(@SerializedName("role") val role: Int = -1, @SerializedName("title") val title: String? = null, @SerializedName("desc") val desc: String? = null, @SerializedName("type") val type: Int = -1)
     internal data class VipData(@SerializedName("type") val type: Int = 0, @SerializedName("vipType") val vipType: Int = 0, @SerializedName("status") val status: Int = 0, @SerializedName("vipStatus") val vipStatus: Int = 0)
@@ -226,8 +230,10 @@ object VideoInfoApi {
             )
         }
 
-        val pagenames = data.pages?.filterNotNull()?.map { it.part ?: "" } ?: emptyList()
-        val cids = data.pages?.filterNotNull()?.map { it.cid } ?: emptyList()
+        val pages = data.pages?.filterNotNull() ?: emptyList()
+        val pagenames = pages.map { it.part ?: "" }
+        val cids = pages.map { it.cid }
+        val pageDurations = pages.map { it.duration }
 
         val isCooperation = data.rights?.is_cooperation == 1
         val isSteinGate = data.rights?.is_stein_gate == 1
@@ -295,6 +301,7 @@ object VideoInfoApi {
         } catch (_: Exception) { -1 }
 
         val collection = data.ugc_season?.let { analyzeUgcSeason(it) }
+        val aids = List(cids.size) { data.aid }
 
         return VideoInfo(
             bvid = data.bvid ?: "",
@@ -308,6 +315,8 @@ object VideoInfoApi {
             timeDesc = timeDesc,
             pagenames = pagenames,
             cids = cids,
+            aids = aids,
+            pageDurations = pageDurations,
             descAts = descAts,
             upowerExclusive = data.is_upower_exclusive,
             argueMsg = data.argue_info?.argue_msg,

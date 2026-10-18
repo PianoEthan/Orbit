@@ -262,9 +262,9 @@ class PlayerViewModel : ViewModel() {
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "infbuf", 1)
         }
         if (BuildConfig.HAS_IJK) {
-            _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (useAudioOnlySource) 1 else 0)
+            _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (isAudioOnlyMode) 1 else 0)
         }
-        if (isAudioOnlyMode && !isLocal) {
+        if (isAudioOnlyMode) {
             // Power-saving: disable video decode (IJK only), minimize buffer
             _player.setOption(OrbitPlayer.OPT_CATEGORY_FORMAT, "reconnect_delay_max", 2)
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 1024 * 1024)

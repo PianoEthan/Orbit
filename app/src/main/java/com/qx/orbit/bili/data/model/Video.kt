@@ -14,6 +14,8 @@ data class VideoInfo(
     val timeDesc: String = "",
     val pagenames: List<String> = emptyList(),
     val cids: List<Long> = emptyList(),
+    val aids: List<Long> = emptyList(),
+    val pageDurations: List<Int> = emptyList(),
     val descAts: List<At> = emptyList(),
     val upowerExclusive: Boolean = false,
     val argueMsg: String? = null,

@@ -197,7 +197,8 @@ fun PlayerScreen(
     }
     var backPressedTime by remember { mutableLongStateOf(0L) }
     var isExiting by remember { mutableStateOf(false) }
-    var isAudioOnlyMode by remember { mutableStateOf(false) }
+    var lastTitleClickTime by remember { mutableStateOf(0L) }
+    var isAudioOnlyMode by remember { mutableStateOf(initialData.audioUrl == "audio") }
 
     val isAudioPlayer = isAudioOnlyMode || initialData.audioUrl == "audio"
     BackHandler(enabled = !isAudioPlayer) {
@@ -586,6 +587,12 @@ fun PlayerScreen(
                 while (isActive) {
                     currentProgress = viewModel.player.currentPosition
                     viewModel.updateCurrentSubtitle(currentProgress)
+                    if (!isLive) {
+                        val currentDanmakuTime = danmakuPlayer.getCurrentTime()
+                        if (kotlin.math.abs(currentDanmakuTime - currentProgress) > 1000L) {
+                            danmakuPlayer.seekTo(currentProgress)
+                        }
+                    }
                     // Player chrome and subtitles do not need display-refresh-rate updates.
                     // Keeping this at 4 Hz avoids recomposing the full player on every frame.
                     delay(250.milliseconds)
@@ -910,6 +917,9 @@ fun PlayerScreen(
                                 item.textColor = color
                                 item.textSize = textSize * liveDanmakuDensityScale
                                 item.time = danmakuPlayer.getCurrentTime() + 100
+                                if (isLive) {
+                                    item.isLive = true
+                                }
                                 
                                 if (borderColor != 0) {
                                     item.borderColor = borderColor
@@ -965,15 +975,18 @@ fun PlayerScreen(
     val view = LocalView.current
     val viewConfiguration = LocalViewConfiguration.current
     
+    var wasBackgroundAudioOnlyToggled by remember { mutableStateOf(false) }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 if (!isExiting && SharedPreferencesUtil.getBoolean("player_background", false)) {
                     val audioOnly = SharedPreferencesUtil.getBoolean("player_background_audio_only", false)
-                    if (audioOnly && !isLive && !isLocal) {
+                    if (audioOnly && !isLive && !isAudioOnlyMode) {
                         viewModel.pendingSeekTo(viewModel.savePosition())
                         isAudioOnlyMode = true
+                        wasBackgroundAudioOnlyToggled = true
                     } else {
                         mediaPlayer.setSurface(null)
                     }
@@ -984,9 +997,10 @@ fun PlayerScreen(
                     }
                 }
             } else if (event == Lifecycle.Event.ON_START) {
-                if (isAudioOnlyMode) {
+                if (wasBackgroundAudioOnlyToggled) {
                     viewModel.pendingSeekTo(viewModel.savePosition())
                     isAudioOnlyMode = false
+                    wasBackgroundAudioOnlyToggled = false
                 } else {
                     if (effectiveUseTexture) {
                         if (textureSurface != null) mediaPlayer.setSurface(textureSurface)
@@ -1471,8 +1485,14 @@ fun PlayerScreen(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            isExiting = true
-                            onBack()
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastTitleClickTime < 2000) {
+                                isExiting = true
+                                onBack()
+                            } else {
+                                lastTitleClickTime = currentTime
+                                RoundToast.show(context, "再次点击退出播放")
+                            }
                         }
                         .basicMarquee()
                 )

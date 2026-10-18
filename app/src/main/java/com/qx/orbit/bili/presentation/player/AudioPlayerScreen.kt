@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,6 +101,7 @@ fun AudioPlayerScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    var lastTitleClickTime by remember { mutableStateOf(0L) }
 
     // Dialog states
     var showVolumeScreen by remember { mutableStateOf(false) }
@@ -142,7 +144,13 @@ fun AudioPlayerScreen(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        onBack()
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastTitleClickTime < 2000) {
+                            onBack()
+                        } else {
+                            lastTitleClickTime = currentTime
+                            RoundToast.show(context, "再次点击退出播放")
+                        }
                     }
                     .padding(horizontal = 36.dp),
             ){
@@ -172,7 +180,8 @@ fun AudioPlayerScreen(
                         maxLines = 1,
                         modifier = Modifier.basicMarquee(
                             iterations = Int.MAX_VALUE,
-                            initialDelayMillis = if (currentSubtitle != null) 0 else 2000
+                            initialDelayMillis = if (currentSubtitle != null) 0 else 2000,
+                            velocity = if (currentSubtitle != null) 80.dp else 30.dp
                         )
                     )
                     Row(

@@ -15,6 +15,7 @@ interface DanmakuItem {
     var borderColor: Int
     var userHash: String
     var obj: Any?
+    var isLive: Boolean
 }
 
 fun createDanmaku(config: DanmakuConfig, type: Int): DanmakuItem? {

@@ -38,4 +38,8 @@ class DFMNextItem(internal val engine: io.github.ynotbili.dfmnext.danmaku.model.
     override var obj: Any?
         get() = engine.obj
         set(v) { engine.obj = v }
+
+    override var isLive: Boolean
+        get() = engine.isLive
+        set(v) { engine.isLive = v }
 }
