@@ -31,8 +31,8 @@ android {
         applicationId = "com.qx.orbit.bili"
         minSdk = 23
         targetSdk = 36
-        versionCode = 521
-        versionName = "0.5.21-Alpha"
+        versionCode = 522
+        versionName = "0.5.22-Alpha"
         resValue("string", "app_verCode", versionCode.toString())
         resValue("string", "app_version", versionName.toString())
     }

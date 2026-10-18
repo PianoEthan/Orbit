@@ -110,6 +110,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -981,7 +982,10 @@ fun PlayerScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                if (!isExiting && SharedPreferencesUtil.getBoolean("player_background", false)) {
+                val activity = context.findActivity()
+                val activityLifecycle = (activity as? LifecycleOwner)?.lifecycle
+                val isActivityGoingBackground = activity != null && (activity.isFinishing || activityLifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == false)
+                if (!isExiting && isActivityGoingBackground && SharedPreferencesUtil.getBoolean("player_background", false)) {
                     val audioOnly = SharedPreferencesUtil.getBoolean("player_background_audio_only", false)
                     if (audioOnly && !isLive && !isAudioOnlyMode) {
                         viewModel.pendingSeekTo(viewModel.savePosition())
@@ -1012,6 +1016,7 @@ fun PlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            isExiting = true
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
@@ -1019,6 +1024,7 @@ fun PlayerScreen(
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         onDispose {
+            isExiting = true
             view.keepScreenOn = false
 
             if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
@@ -1028,9 +1034,24 @@ fun PlayerScreen(
 
             liveWebSocket?.close(1000, "bye")
             liveWebSocket = null
+
+            try {
+                mediaPlayer.setSurface(null)
+                mediaPlayer.setDisplay(null)
+                textureSurface?.release()
+                textureSurface = null
+                surfaceHolder = null
+            } catch (_: Exception) {}
+
+            try {
+                danmakuPlayer.pause()
+                danmakuPlayer.enableDrawingCache(false)
+                danmakuPlayer.removeAllDanmakus(true)
+                danmakuPlayer.release()
+            } catch (_: Exception) {}
+
             viewModel.release()
-            danmakuPlayer.removeAllDanmakus(true)
-            danmakuPlayer.release()
+            mediaArt = null
         }
     }
 
@@ -1320,7 +1341,13 @@ fun PlayerScreen(
                         .aspectRatio(
                             ratio = if (videoWidth > 0 && videoHeight > 0) videoWidth / videoHeight else 16f / 9f,
                             matchHeightConstraintsFirst = videoHeight > videoWidth
-                        )
+                        ),
+                    onRelease = {
+                        try {
+                            mediaPlayer.setSurface(null)
+                            mediaPlayer.setDisplay(null)
+                        } catch (_: Exception) {}
+                    }
                 )
                 }
             }
@@ -1329,7 +1356,13 @@ fun PlayerScreen(
         // DanmakuView outside scaling container to prevent scaling with video
         AndroidView(
             factory = { danmakuPlayer.view },
-            modifier = if (isRound) { Modifier.fillMaxSize().padding(vertical = 16.dp) } else { Modifier.fillMaxSize() }
+            modifier = if (isRound) { Modifier.fillMaxSize().padding(vertical = 16.dp) } else { Modifier.fillMaxSize() },
+            onRelease = {
+                try {
+                    danmakuPlayer.enableDrawingCache(false)
+                    danmakuPlayer.removeAllDanmakus(true)
+                } catch (_: Exception) {}
+            }
         )
 
         // Gesture overlay for pinch-to-zoom, placed above danmaku but below controls

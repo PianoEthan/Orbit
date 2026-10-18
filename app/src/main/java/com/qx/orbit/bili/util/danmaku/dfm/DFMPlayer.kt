@@ -46,6 +46,11 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
     override fun release() {
         ready = false
         readyListener = null
+        try {
+            engine.stop()
+            engine.removeAllDanmakus(true)
+            engine.enableDanmakuDrawingCache(false)
+        } catch (_: Exception) {}
         engine.release()
     }
     override fun addDanmaku(item: DanmakuItem) { engine.addDanmaku((item as DFMItem).engine) }

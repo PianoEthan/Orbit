@@ -15,6 +15,7 @@ import com.qx.orbit.bili.data.model.SubtitleLink
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.util.player.OrbitPlayer
 import com.qx.orbit.bili.util.player.createOrbitPlayer
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -457,11 +458,29 @@ class PlayerViewModel : ViewModel() {
         if (_isPrepared.value) {
             try { _currentProgress.value = _player.currentPosition } catch (_: Exception) {}
         }
+        _isPlaying.value = false
+        _isPrepared.value = false
+        _isLoading.value = false
         reportProgress()
         heartbeatJob?.cancel()
+        heartbeatJob = null
         bufferSpeedJob?.cancel()
+        bufferSpeedJob = null
         liveElapsedJob?.cancel()
-        _player.release()
+        liveElapsedJob = null
+
+        val p = _player
+        try {
+            p.setSurface(null)
+            p.setDisplay(null)
+            p.pause()
+        } catch (_: Exception) {}
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                p.release()
+            } catch (_: Exception) {}
+        }
     }
 
     // --- Private ---

@@ -19,7 +19,13 @@ class IjkPlayerWrapper : OrbitPlayer {
 
     override fun seekTo(ms: Long) = player.seekTo(ms)
 
-    override fun release() = player.release()
+    override fun release() {
+        try {
+            player.setSurface(null)
+            player.setDisplay(null)
+        } catch (_: Exception) {}
+        player.release()
+    }
 
     override var dataSource: String
         get() = player.dataSource

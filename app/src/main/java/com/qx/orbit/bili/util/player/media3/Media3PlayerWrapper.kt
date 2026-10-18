@@ -142,6 +142,9 @@ class Media3PlayerWrapper(context: Context) : OrbitPlayer {
     }
 
     override fun release() {
+        try {
+            player.clearVideoSurface()
+        } catch (_: Exception) {}
         player.release()
     }
 
