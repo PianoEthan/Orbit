@@ -38,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.CircularProgressIndicator
@@ -283,7 +285,7 @@ fun UserDynamicsPage(
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                         onClick = { if (item.major_type == "MAJOR_TYPE_OPUS" || item.major_type == "MAJOR_TYPE_ARTICLE") navController.navigate("opus_detail/${item.dynamicId}") else navController.navigate("dynamic_detail/${item.dynamicId}") },
                         onUserClick = { mid -> navController.navigate("user_space/$mid") },
-                        onArchiveClick = { bvid, aid -> navController.navigate("detail/$bvid/$aid") },
+                        onArchiveClick = { bvid, aid -> navController.navigateToVideoDetail(bvid, aid) },
                         onLiveClick = { roomId -> navController.navigate("live_room/$roomId") },
                         onRemove = viewModel::removeDynamicLocally,
                         onTopChanged = viewModel::updateDynamicTop,
@@ -336,7 +338,7 @@ fun UserVideosPage(
                     RecommendVideoCard(
                         item = item, 
                         onClick = {
-                            navController.navigate("detail/${item.bvid}/${item.aid}")
+                            navController.navigateToVideoDetail(item.bvid, item.aid, item.toPreview())
                         },
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
                     )

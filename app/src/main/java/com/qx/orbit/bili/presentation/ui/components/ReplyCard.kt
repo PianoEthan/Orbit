@@ -68,6 +68,7 @@ import com.qx.orbit.bili.data.api.UserInfoApi
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.theme.BiliPink
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.parseRichText
 import com.qx.orbit.bili.util.fixCoverUrl
 import com.qx.orbit.bili.util.LinkResolver
@@ -323,7 +324,7 @@ fun ReplyCard(
                                 val aid = if (videoId.startsWith("av", ignoreCase = true)) videoId.removePrefix("av").toLongOrNull() ?: 0L else 0L
                                 val bvid = if (videoId.startsWith("bv", ignoreCase = true)) videoId else BilibiliIDConverter.aidToBv(aid)
                                 if (aid > 0 || bvid.isNotEmpty()) {
-                                    navController.navigate("detail/$bvid/$aid")
+                                    navController.navigateToVideoDetail(bvid, aid)
                                 }
                             }
                             richText.getStringAnnotations(tag = "USER", start = pos, end = pos).firstOrNull()?.let { annotation ->

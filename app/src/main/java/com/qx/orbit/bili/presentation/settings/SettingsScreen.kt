@@ -337,6 +337,31 @@ fun SettingPreferenceScreen(navController: NavController) {
                 )
             }
 
+            item {
+                var checked by remember { mutableStateOf(SharedPreferencesUtil.getBoolean("ui_entrance_animation", true)) }
+                SwitchButton(
+                    checked = checked,
+                    onCheckedChange = { isChecked ->
+                        checked = isChecked
+                        SharedPreferencesUtil.putBoolean("ui_entrance_animation", isChecked)
+                    },
+                    label = {
+                        Text(text = "详情页元素渐显", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
+                    secondaryLabel = {
+                        Text(
+                            text = if (checked) "进入详情页时元素从上到下淡入" else "直接显示，不做入场动画",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
+
 
             item {
                 Button(
