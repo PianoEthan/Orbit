@@ -9,6 +9,7 @@
 4. 点赞/投币/收藏导致的 `videoInfo` 更新不再重新下载封面、不再重复取色；量化在后台线程执行。
 5. 评论不再被相关推荐阻塞（三路数据并行）。
 6. `:app:compileLiteReleaseKotlin` 与 `:app:compileFullReleaseKotlin` 通过（与 CI 一致）。
+7. 设置 → 偏好设置 → **"详情页元素渐显"**（`ui_entrance_animation`，默认开）可整体关闭入场动画。
 
 ## 现状（已核对行号）
 - `presentation/VideoDetailScreen.kt` 共 2068 行：
@@ -52,6 +53,7 @@ fun rememberEntranceWindow(trigger: Boolean, windowMillis: Long = 650L): Boolean
 - `graphicsLayer` 只改绘制层：不触发布局、LazyColumn 项高度不跳动；滚出屏幕后才首次组合的项拿到 `enabled=false`，直接以 1f 出现，不会"滚到哪慢半拍"。
 - `enabled` 仅在首次组合生效（`remember` + `LaunchedEffect(Unit)`），之后调用方翻转布尔值不会重置已播放元素。
 - `rememberEntranceWindow`：trigger 首次为 true 时返回 true，`windowMillis` 后转 false，并用 `remember` 记住"已播放"防止数据增量重播；内部只读一次 `Settings.Global.ANIMATOR_DURATION_SCALE`（try/catch），为 0 时始终返回 false（尊重系统"移除动画"）。
+- 用户开关：`rememberEntranceWindow` 在系统动画缩放之外再与一次 `SharedPreferencesUtil.getBoolean("ui_entrance_animation", true)`，三处接入点同时受控（`EntranceAnimation.kt` 内以字面量 key 读取，与项目既有偏好用法一致）。开关在 `remember` 中只读一次，改完设置返回详情页即生效；不追求"详情页开着时实时生效"。
 
 ## B. 三处接入（`presentation/VideoDetailScreen.kt`）
 
@@ -114,6 +116,7 @@ AnimatedContent(targetState = showLoading, transitionSpec = { fadeIn(tween(300))
 - 信息失败：`errorMessage != null && videoInfo == null` → 原失败页；点重试清空 error → 回转圈。
 - 快速进出/左右翻页：页面重组会重播一次入场（符合"进入即渐显"语义）。
 - 系统动画缩放为 0：整页不做入场动画。
+- 开关关闭：行为等同系统"移除动画"，三个页面都不播；再打开后重新进入详情页恢复。
 - 圆屏与非圆屏：入场只作用于绘制层，与 `transformedHeight` / `SurfaceTransformation` 可叠加，两形态都需验证。
 - 性能：单屏最多约 10 个 `Animatable` + 每项一个离屏层，Wear 可接受；刻意不用 `AnimatedVisibility`（会改布局高度、导致 Lazy 项跳动）。
 
@@ -129,7 +132,8 @@ AnimatedContent(targetState = showLoading, transitionSpec = { fadeIn(tween(300))
 3. VideoCommentsPage / VideoRelatedPage 接入。
 4. 首屏闸门重写 + 取色异步化 + 清理无用状态。
 5. ViewModel 渐进并行加载。
-6. 编译两变体 + 静态自查 + 提交（当前工作区干净；信息如 `feat:视频详情进入时元素渐显并异步加载`，如有本地改动并入同一次提交）。
+6. 设置页"偏好设置"段新增开关 `ui_entrance_animation`（默认开），`rememberEntranceWindow` 与之做与运算。
+7. 编译两变体 + 静态自查 + 提交（当前工作区干净；信息如 `feat:视频详情进入时元素渐显并异步加载`，如有本地改动并入同一次提交）。
 
 ## 显式不做
 - 不改 BangumiDetailScreen / ArticleDetailScreen / DynamicDetailScreen / LiveDetailScreen（组件已可复用，后续单独接入）。

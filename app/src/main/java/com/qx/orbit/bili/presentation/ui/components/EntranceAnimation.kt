@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.qx.orbit.bili.util.SharedPreferencesUtil
 import kotlinx.coroutines.delay
 
 /**
@@ -54,18 +55,21 @@ fun Modifier.staggeredEntrance(
  * 入场窗口：在 [trigger] 首次变为 true 后返回 true，持续 [windowMillis] 毫秒。
  *
  * 用于决定哪些元素参与入场动画；已播放过不会因数据增量重播。
- * 系统"移除动画"（动画缩放为 0）时始终返回 false。
+ * 系统"移除动画"（动画缩放为 0）或用户在设置里关闭"详情页元素渐显"时始终返回 false。
  */
 @Composable
 fun rememberEntranceWindow(trigger: Boolean, windowMillis: Long = 650L): Boolean {
     val context = LocalContext.current
     val animationsEnabled = remember(context) { areSystemAnimationsEnabled(context) }
+    // 用户开关与系统"移除动画"是"与"关系：任一为关则不播。
+    // 在 remember 中只读一次，改完设置返回详情页即生效。
+    val enabledByUser = remember { SharedPreferencesUtil.getBoolean("ui_entrance_animation", true) }
     var windowClosed by remember { mutableStateOf(false) }
 
     // 同步判定：trigger 首次为 true 的当帧就返回 true。
     // 若放到 LaunchedEffect 里再翻转，同一帧完成组合的 Lazy 子项会拿到 enabled = false，
     // 并把 Animatable 冻结在 1f，入场动画会静默失效。
-    val active = trigger && animationsEnabled && !windowClosed
+    val active = trigger && animationsEnabled && enabledByUser && !windowClosed
 
     LaunchedEffect(active) {
         if (active) {
