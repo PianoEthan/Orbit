@@ -95,34 +95,65 @@ object VideoInfoApi {
         val type = object : TypeToken<ApiResponse<VideoInfoData>>() {}.type
         val resp: ApiResponse<VideoInfoData>? = GsonConfig.gson.fromJson(jsonElement, type)
         if (resp == null || !resp.isSuccess || resp.data == null) return null
-        var videoInfo = buildVideoInfo(resp.data, fetchDetailedUser = true)
+        // 只解析基础信息就返回：UP 主详情与"我"的三连状态交给 enrichVideoInfo 后台补，
+        // 首屏少等两次网络往返。
+        return buildVideoInfo(resp.data)
+    }
 
-        try {
-            if (CookieManager.getCookie().isNotEmpty()) {
-                when (val statsResult = api.getVideoStats(videoInfo.aid)) {
-                    is Result.Success -> {
-                        val type = object : TypeToken<ApiResponse<RelationData>>() {}.type
-                        val apiResp: ApiResponse<RelationData>? = GsonConfig.gson.fromJson(statsResult.data, type)
-                        val rel = apiResp?.data
-                        if (rel != null) {
-                            val updatedStats = videoInfo.stats?.copy(
-                                followed = rel.attention == 1,
-                                liked = rel.like == 1,
-                                disliked = rel.dislike == 1,
-                                favoured = rel.favorite == 1,
-                                coined = rel.coin
-                            )
-                            videoInfo = videoInfo.copy(stats = updatedStats)
-                        }
-                    }
-                    is Result.Error -> {}
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+    /**
+     * 后台补齐"慢"字段：UP 主详情（VIP/官方认证）与当前账号的三连/关注状态。
+     *
+     * 两路并发，任一失败时保留原值；调用方拿到结果后自行 update 到 UI 状态，
+     * 不要阻塞首屏。
+     */
+    suspend fun enrichVideoInfo(info: VideoInfo): VideoInfo = withContext(Dispatchers.IO) {
+        val relationDeferred = async { runCatching { fetchRelation(info.aid) }.getOrNull() }
+        val staffDeferred = async { runCatching { enrichStaff(info.staff) }.getOrNull() }
+        val relation = relationDeferred.await()
+        val staff = staffDeferred.await() ?: info.staff
+        val stats = if (relation != null) {
+            info.stats?.copy(
+                followed = relation.attention == 1,
+                liked = relation.like == 1,
+                disliked = relation.dislike == 1,
+                favoured = relation.favorite == 1,
+                coined = relation.coin
+            )
+        } else {
+            info.stats
         }
+        info.copy(stats = stats, staff = staff)
+    }
 
-        return videoInfo
+    /** 当前账号对该视频的关注/点赞/投币/收藏状态；未登录或失败返回 null。 */
+    private suspend fun fetchRelation(aid: Long): RelationData? {
+        if (aid <= 0L || CookieManager.getCookie().isEmpty()) return null
+        val statsResult = api.getVideoStats(aid)
+        if (statsResult !is Result.Success) return null
+        val type = object : TypeToken<ApiResponse<RelationData>>() {}.type
+        val apiResp: ApiResponse<RelationData>? = GsonConfig.gson.fromJson(statsResult.data, type)
+        return apiResp?.data
+    }
+
+    /** 逐个补 UP 主/参演人员的 VIP 与官方认证信息。 */
+    private suspend fun enrichStaff(staff: List<UserInfo>): List<UserInfo> {
+        if (staff.isEmpty()) return staff
+        return kotlinx.coroutines.coroutineScope {
+            staff.map { member ->
+                async {
+                    try {
+                        val full = UserInfoApi.getUserInfo(member.mid)
+                        member.copy(
+                            vip_role = full?.vip_role ?: member.vip_role,
+                            official = full?.official ?: member.official,
+                            officialDesc = full?.officialDesc ?: member.officialDesc
+                        )
+                    } catch (e: Exception) {
+                        member
+                    }
+                }
+            }.awaitAll()
+        }
     }
 
     suspend fun getTags(bvid: String): String = withContext(Dispatchers.IO) {
@@ -181,7 +212,7 @@ object VideoInfoApi {
                             cid = epData.cid,
                             title = epData.title ?: "",
                             bvid = epData.bvid ?: "",
-                            arc = epData.arc?.let { buildVideoInfo(it, fetchDetailedUser = false) }
+                            arc = epData.arc?.let { buildVideoInfo(it) }
                         )
                     } ?: emptyList()
                 )
@@ -189,7 +220,7 @@ object VideoInfoApi {
         )
     }
 
-    private suspend fun buildVideoInfo(data: VideoInfoData, fetchDetailedUser: Boolean): VideoInfo {
+    private suspend fun buildVideoInfo(data: VideoInfoData): VideoInfo {
         val description: String
         val descAts: List<At>
 
@@ -256,22 +287,7 @@ object VideoInfoApi {
                     vip_role = vipStatus
                 )
             }
-            if (fetchDetailedUser) {
-                kotlinx.coroutines.coroutineScope {
-                    list.map { s ->
-                        async {
-                            try {
-                                val full = UserInfoApi.getUserInfo(s.mid)
-                                s.copy(
-                                    vip_role = full?.vip_role ?: s.vip_role,
-                                    official = full?.official ?: s.official,
-                                    officialDesc = full?.officialDesc ?: s.officialDesc
-                                )
-                            } catch (e: Exception) { s }
-                        }
-                    }.awaitAll()
-                }
-            } else list
+            list
         } else if (data.owner != null) {
             val vipStatus = if (data.owner.vip?.status != null && data.owner.vip.status != 0) data.owner.vip.status else data.owner.vip?.vipStatus ?: 0
             val officialRole = when (data.owner.official_verify?.type) {
@@ -281,17 +297,7 @@ object VideoInfoApi {
             }
             val officialDesc = data.owner.official_verify?.title ?: data.owner.official_verify?.desc ?: ""
             val ownerInfo = listOf(UserInfo(name = data.owner.name ?: "", avatar = data.owner.face ?: "", mid = data.owner.mid, sign = "UP主", vip_role = vipStatus, official = officialRole, officialDesc = officialDesc))
-            
-            if (fetchDetailedUser) {
-                try {
-                    val full = UserInfoApi.getUserInfo(data.owner.mid)
-                    listOf(ownerInfo[0].copy(
-                        vip_role = full?.vip_role ?: ownerInfo[0].vip_role,
-                        official = full?.official ?: ownerInfo[0].official,
-                        officialDesc = full?.officialDesc ?: ownerInfo[0].officialDesc
-                    ))
-                } catch (e: Exception) { ownerInfo }
-            } else ownerInfo
+            ownerInfo
         } else emptyList()
 
         val epid = try {

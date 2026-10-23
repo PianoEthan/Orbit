@@ -118,6 +118,8 @@ import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.api.UserInfoApi
+import com.qx.orbit.bili.data.cache.VideoDetailCache
+import com.qx.orbit.bili.data.cache.VideoPreview
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.StringUtil
@@ -135,7 +137,9 @@ import com.qx.orbit.bili.presentation.ui.components.staggeredEntrance
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import com.qx.orbit.bili.presentation.viewmodel.VideoDetailViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.VideoDownloadManager
@@ -816,7 +820,11 @@ fun VideoDetailScreen(
                     onClick = {
                         showCollectionDialog = false
                         if (!isCurrent) {
-                            navController.navigate("detail/${ep.bvid.ifBlank { "0" }}/${ep.aid}")
+                            navController.navigateToVideoDetail(
+                                ep.bvid.ifBlank { "0" },
+                                ep.aid,
+                                VideoPreview(title = ep.title, cover = ep.arc?.cover ?: "")
+                            )
                         }
                     },
                     colors = if (isCurrent) {
@@ -888,8 +896,13 @@ fun VideoDetailScreen(
                 label = "LoadingAnimation"
             ) { isInitialLoading ->
                 if (isInitialLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    val preview = remember(bvid) { VideoDetailCache.preview(bvid) }
+                    if (preview != null) {
+                        VideoDetailSkeleton(preview)
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
                 } else if (errorMessage != null && videoInfo == null) {
                     Box(
@@ -2079,7 +2092,11 @@ fun VideoRelatedPage(
                 RecommendVideoCard(
                     item = relatedVideos[index],
                     onClick = { 
-                        navController.navigate("detail/${relatedVideos[index].bvid}/${relatedVideos[index].aid}")
+                        navController.navigateToVideoDetail(
+                            relatedVideos[index].bvid,
+                            relatedVideos[index].aid,
+                            relatedVideos[index].toPreview()
+                        )
                     },
                     modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)
                         .staggeredEntrance(index + 1, enabled = entranceActive && index < 6),
@@ -2087,5 +2104,46 @@ fun VideoRelatedPage(
                 )
             }
         }
+    }
+}
+
+/**
+ * 首屏骨架：有点击处带来的预览信息时，直接画真封面 + 真标题 + 小转圈，
+ * 尺寸与 [VideoInfoPage] 里的封面 item 保持一致，加载完成切换时不会跳动。
+ */
+@Composable
+private fun VideoDetailSkeleton(preview: VideoPreview) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(20.dp))
+        val secureCover = preview.cover.replace("http://", "https://")
+        val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@480w_270h_1c.webp"
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(coverUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = "Cover",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .height(120.dp)
+                .clip(RoundedCornerShape(16.dp))
+        )
+        if (preview.title.isNotEmpty()) {
+            Text(
+                text = preview.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        CircularProgressIndicator()
     }
 }

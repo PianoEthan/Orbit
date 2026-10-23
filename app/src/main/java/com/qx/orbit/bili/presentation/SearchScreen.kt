@@ -43,7 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -137,7 +139,7 @@ fun SearchInputScreen(navController: NavHostController) {
                 val isBv = trimmed.lowercase().startsWith("bv")
                 val bvid = if (isBv) trimmed else BilibiliIDConverter.aidToBv(trimmed.lowercase().removePrefix("av").toLong())
                 val aid = if (!isBv) trimmed.lowercase().removePrefix("av").toLong() else BilibiliIDConverter.bvToAid(trimmed)
-                navController.navigate("detail/$bvid/$aid")
+                navController.navigateToVideoDetail(bvid, aid)
             } else {
                 val encodedQuery = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.toString())
                 navController.navigate("search_result/$encodedQuery")
@@ -400,7 +402,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                                         if (item.type == "bangumi") {
                                             navController.navigate("bangumi_detail/${item.aid}")
                                         } else if (item.bvid.isNotEmpty() || item.aid > 0) {
-                                            navController.navigate("detail/${item.bvid}/${item.aid}")
+                                            navController.navigateToVideoDetail(item.bvid, item.aid, item.toPreview())
                                         }
                                     },
                                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
@@ -563,7 +565,7 @@ fun SearchResultScreen(viewModel: SearchViewModel, query: String, navController:
                                             val isBv = trimmed.lowercase().startsWith("bv")
                                             val bvid = if (isBv) trimmed else BilibiliIDConverter.aidToBv(trimmed.lowercase().removePrefix("av").toLong())
                                             val aid = if (!isBv) trimmed.lowercase().removePrefix("av").toLong() else BilibiliIDConverter.bvToAid(trimmed)
-                                            navController.navigate("detail/$bvid/$aid")
+                                            navController.navigateToVideoDetail(bvid, aid)
                                         } else {
                                             val encodedQuery = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.toString())
                                             navController.navigate("search_result/$encodedQuery") {

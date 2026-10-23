@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -290,7 +291,7 @@ fun DynamicFeedScreen(
                             onUserClick = { mid -> navController.navigate("user_space/$mid") },
                             onArchiveClick = { bvid, aid ->
                                 if (bvid.isNotEmpty()) {
-                                    navController.navigate("detail/$bvid/$aid")
+                                    navController.navigateToVideoDetail(bvid, aid)
                                 } else if (aid > 0) {
                                     navController.navigate("article_detail/$aid")
                                 }

@@ -14,12 +14,13 @@ import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
 import com.qx.orbit.bili.data.model.withReplyTopState
 import com.qx.orbit.bili.data.api.EmoteApi
+import com.qx.orbit.bili.data.cache.VideoDetailCache
 import android.content.Context
 import android.widget.Toast
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -73,20 +74,23 @@ class VideoDetailViewModel : ViewModel() {
         this.bvid = bvid
         this.aid = aid
 
+        // 命中内存缓存直接上屏，随后仍然静默刷新
+        val cached = VideoDetailCache.info(bvid)
+        if (cached != null) _videoInfo.value = cached
+
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            // 复用点击预取发起的在途请求（按 bvid 去重）
             val info = try {
-                VideoInfoApi.getVideoInfo(bvid)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
+                VideoDetailCache.load(bvid, aid)
             } finally {
                 // 语义收窄为"首次信息加载中"，信息一到就结束
                 _isLoading.value = false
             }
             if (info == null) {
-                _errorMessage.value = "视频信息加载失败"
+                // 已有缓存内容就静默降级，只有内容为空才报错
+                if (_videoInfo.value == null) _errorMessage.value = "视频信息加载失败"
                 return@launch
             }
 
@@ -96,14 +100,16 @@ class VideoDetailViewModel : ViewModel() {
             this@VideoDetailViewModel.aid = realAid
             // 信息到达即上屏，不再等待封面取色、历史进度、评论
             _videoInfo.value = info
+            VideoDetailCache.putInfo(realBvid, info)
 
-            // 以下三路并行，互不取消、互不阻塞
+            // 以下四路并行，互不取消、互不阻塞
             launch {
                 runCatching {
                     val cid = info.cids.firstOrNull()
                     if (cid != null) {
                         val history = PlayerApi.getHistoryProgress(realAid, cid)
-                        _videoInfo.update { (it ?: info).copy(history = history) }
+                        val merged = _videoInfo.updateAndGet { (it ?: info).copy(history = history) }
+                        merged?.let { VideoDetailCache.putInfo(realBvid, it) }
                     }
                 }
             }
@@ -112,6 +118,16 @@ class VideoDetailViewModel : ViewModel() {
             }
             launch {
                 runCatching { _relatedVideos.value = RecommendApi.getRelated(realAid) }
+            }
+            // 后台补 UP 主详情与三连状态，合并时保留已经拿到的历史进度
+            launch {
+                runCatching {
+                    val enriched = VideoInfoApi.enrichVideoInfo(info)
+                    val merged = _videoInfo.updateAndGet { current ->
+                        if (current == null) enriched else enriched.copy(history = current.history)
+                    }
+                    merged?.let { VideoDetailCache.putInfo(realBvid, it) }
+                }
             }
             // 评论在 info 就绪后立即开始，不再被相关推荐阻塞
             loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
