@@ -15,3 +15,11 @@ app/release/
 /.kotlin/
 /.mimocode/
 /bilibili-API-collect-main/
+
+# 签名材料一律不入库（release keystore 放在仓库外，如 ~/.orbit/）
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+/signing/

@@ -2108,42 +2108,74 @@ fun VideoRelatedPage(
 }
 
 /**
- * 首屏骨架：有点击处带来的预览信息时，直接画真封面 + 真标题 + 小转圈，
- * 尺寸与 [VideoInfoPage] 里的封面 item 保持一致，加载完成切换时不会跳动。
+ * 首屏骨架：有点击处带来的预览信息时，直接画真封面 + 真标题 + 小转圈。
+ *
+ * 刻意复用与 [VideoInfoPage] 完全相同的容器（ScreenScaffold + TransformingLazyColumn）
+ * 与相同的 item 顺序 / 修饰符，因此骨架和真实内容的位置逐像素对齐，
+ * 加载完成切换时封面与标题不会跳动。
  */
 @Composable
 private fun VideoDetailSkeleton(preview: VideoPreview) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(20.dp))
-        val secureCover = preview.cover.replace("http://", "https://")
-        val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@480w_270h_1c.webp"
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(coverUrl)
-                .crossfade(true)
-                .build(),
-            contentDescription = "Cover",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .height(120.dp)
-                .clip(RoundedCornerShape(16.dp))
-        )
-        if (preview.title.isNotEmpty()) {
-            Text(
-                text = preview.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val isRound = LocalScreenRound.current
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            contentPadding = contentPadding,
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            // 与 VideoInfoPage 一致：顶部 20dp 热区
+            item {
+                Spacer(modifier = Modifier.fillMaxWidth().height(20.dp))
+            }
+            // 1. 封面
+            item {
+                val secureCover = preview.cover.replace("http://", "https://")
+                val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@480w_270h_1c.webp"
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                        .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
+                        .fillMaxWidth(0.95f)
+                        .height(120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+            }
+            // 2. 标题
+            item {
+                if (preview.title.isNotEmpty()) {
+                    Text(
+                        text = preview.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier
+                            .adaptiveTransformedHeight(this, transformationSpec)
+                            .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
+                            .fillMaxWidth()
+                    )
+                }
+            }
+            // 3. 加载指示，占住 UP 主胶囊的位置，避免内容到位时整页上跳
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .adaptiveTransformedHeight(this, transformationSpec),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        CircularProgressIndicator()
     }
 }
