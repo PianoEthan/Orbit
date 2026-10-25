@@ -25,6 +25,7 @@ data class PlayerData(
     val cids: List<Long> = emptyList(),
     val epids: List<Long> = emptyList(),
     val aids: List<Long> = emptyList(),
+    val localUrls: List<String> = emptyList(),
     val currentPageIndex: Int = 0,
     val dashData: DashData? = null,
     val audioUrl: String = "",

@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -46,8 +47,38 @@ fun DownloadManagerScreen(navController: NavController) {
     val coroutineScope = rememberCoroutineScope()
     var allDownloads by remember { mutableStateOf(VideoDownloadManager.getAllDownloads()) }
     var downloadToDelete by remember { mutableStateOf<Long?>(null) }
+    var groupToDelete by remember { mutableStateOf<CachedGroup?>(null) }
+    var selectedGroupForEpisodes by remember { mutableStateOf<CachedGroup?>(null) }
     var showPlayerSelectionDialog by remember { mutableStateOf(false) }
     var selectedDownloadForPlayer by remember { mutableStateOf<VideoDownloadManager.DownloadInfo?>(null) }
+    var selectedGroupForPlayer by remember { mutableStateOf<CachedGroup?>(null) }
+    var selectedEpisodeIndexForPlayer by remember { mutableIntStateOf(0) }
+
+    val playCachedEpisode: (VideoDownloadManager.DownloadInfo, List<VideoDownloadManager.DownloadInfo>, Int, String?) -> Unit = { download, allInGroup, index, playerKey ->
+        val pagenames = allInGroup.map { d ->
+            if (d.title.contains(" - ")) d.title.substringAfter(" - ").trim() else d.title
+        }
+        val cids = allInGroup.map { it.cid }
+        val aids = allInGroup.map { it.aid }
+        val localUrls = allInGroup.map { it.localUri ?: "" }
+        val playerData = PlayerData(
+            title = download.title,
+            aid = download.aid,
+            cid = download.cid,
+            bvid = download.bvid,
+            type = PlayerData.TYPE_LOCAL,
+            videoUrl = download.localUri ?: "",
+            audioUrl = if (download.type == "AUDIO_AND_SUBTITLE") "audio" else "",
+            cover = download.coverUrl,
+            pagenames = pagenames,
+            cids = cids,
+            aids = aids,
+            localUrls = localUrls,
+            currentPageIndex = index
+        )
+        PlayerApi.jumpToPlayer(context, navController, playerData, playerKey)
+    }
+
     val handleDelete: (Long) -> Unit = { id ->
         allDownloads = allDownloads.filter { it.id != id }
         coroutineScope.launch(Dispatchers.IO) {
@@ -70,6 +101,34 @@ fun DownloadManagerScreen(navController: NavController) {
     }
     
     val completedDownloads = allDownloads.filter { it.status == DownloadManager.STATUS_SUCCESSFUL }
+
+    val groupedCompleted = remember(completedDownloads) {
+        val map = linkedMapOf<String, MutableList<VideoDownloadManager.DownloadInfo>>()
+        for (d in completedDownloads) {
+            val groupKey = when {
+                d.bvid.isNotBlank() -> "bvid_${d.bvid}"
+                d.aid > 0 -> "aid_${d.aid}"
+                d.title.contains(" - ") -> "title_${d.title.substringBefore(" - ").trim()}"
+                else -> "id_${d.id}"
+            }
+            map.getOrPut(groupKey) { mutableListOf() }.add(d)
+        }
+        map.map { (key, list) ->
+            val sortedList = list.sortedWith(compareBy({ extractPartNumber(it.title) }, { it.id }))
+            val first = sortedList.first()
+            val commonTitle = if (sortedList.size > 1 && first.title.contains(" - ")) {
+                first.title.substringBefore(" - ").trim()
+            } else {
+                first.title
+            }
+            CachedGroup(
+                key = key,
+                title = commonTitle,
+                coverUrl = sortedList.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl ?: "",
+                downloads = sortedList
+            )
+        }
+    }
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -192,13 +251,14 @@ fun DownloadManagerScreen(navController: NavController) {
                         )
                     }*/
 
-                    items(completedDownloads, key = { it.id }) { download ->
+                    items(groupedCompleted, key = { it.key }) { group ->
                         val revealState = rememberRevealState()
-                        LaunchedEffect(downloadToDelete) {
-                            if (downloadToDelete == null && revealState.currentValue != RevealValue.Covered) {
+                        LaunchedEffect(downloadToDelete, groupToDelete) {
+                            if (downloadToDelete == null && groupToDelete == null && revealState.currentValue != RevealValue.Covered) {
                                 revealState.animateTo(RevealValue.Covered)
                             }
                         }
+                        val isMulti = group.downloads.size > 1
                         SwipeToReveal(
                             revealState = revealState,
                             modifier = Modifier
@@ -207,33 +267,53 @@ fun DownloadManagerScreen(navController: NavController) {
                                 .adaptiveTransformedHeight(this, transformationSpec),
                             primaryAction = {
                                 PrimaryActionButton(
-                                    onClick = { downloadToDelete = download.id },
+                                    onClick = {
+                                        if (isMulti) {
+                                            groupToDelete = group
+                                        } else {
+                                            downloadToDelete = group.downloads.first().id
+                                        }
+                                    },
                                     icon = { Icon(Icons.Default.Delete, "Delete") },
-                                    text = { Text("删除") },
+                                    text = { Text(if (isMulti) "删除全部" else "删除") },
                                     modifier = Modifier.fillMaxHeight()
                                 )
                             },
-                            onSwipePrimaryAction = { downloadToDelete = download.id }
+                            onSwipePrimaryAction = {
+                                if (isMulti) {
+                                    groupToDelete = group
+                                } else {
+                                    downloadToDelete = group.downloads.first().id
+                                }
+                            }
                         ) {
+                            val displayItem = remember(group) {
+                                if (isMulti) {
+                                    group.downloads.first().copy(title = group.title)
+                                } else {
+                                    group.downloads.first()
+                                }
+                            }
                             CacheVideoCard(
-                                item = download,
+                                item = displayItem,
+                                statusText = if (isMulti) "共 ${group.downloads.size} 集" else null,
                                 transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                                 onClick = {
-                                    val playerData = PlayerData(
-                                        title = download.title,
-                                        aid = download.aid,
-                                        cid = download.cid,
-                                        bvid = download.bvid,
-                                        type = PlayerData.TYPE_LOCAL,
-                                        videoUrl = download.localUri ?: "",
-                                        audioUrl = if (download.type == "AUDIO_AND_SUBTITLE") "audio" else "",
-                                        cover = download.coverUrl
-                                    )
-                                    PlayerApi.jumpToPlayer(context, navController, playerData)
+                                    if (isMulti) {
+                                        selectedGroupForEpisodes = group
+                                    } else {
+                                        playCachedEpisode(group.downloads.first(), group.downloads, 0, null)
+                                    }
                                 },
                                 onLongClick = {
-                                    selectedDownloadForPlayer = download
-                                    showPlayerSelectionDialog = true
+                                    if (isMulti) {
+                                        selectedGroupForEpisodes = group
+                                    } else {
+                                        selectedDownloadForPlayer = group.downloads.first()
+                                        selectedGroupForPlayer = group
+                                        selectedEpisodeIndexForPlayer = 0
+                                        showPlayerSelectionDialog = true
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -242,7 +322,7 @@ fun DownloadManagerScreen(navController: NavController) {
                     }
                 }
 
-                if (activeDownloads.isEmpty() && completedDownloads.isEmpty()) {
+                if (activeDownloads.isEmpty() && groupedCompleted.isEmpty()) {
                     item {
                         Column(
                             modifier = Modifier
@@ -275,12 +355,125 @@ fun DownloadManagerScreen(navController: NavController) {
                 show = (downloadToDelete != null),
                 onDismissRequest = { downloadToDelete = null },
                 title = "确认删除",
-                content = { Text("确定要删除该缓存视频吗？", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+                content = { Text("确定要删除该缓存视频吗？", textAlign = TextAlign.Center) },
                 onConfirm = {
-                    downloadToDelete?.let { handleDelete(it) }
+                    val id = downloadToDelete
+                    if (id != null) {
+                        handleDelete(id)
+                        selectedGroupForEpisodes?.let { g ->
+                            val remaining = g.downloads.filter { it.id != id }
+                            if (remaining.isEmpty()) {
+                                selectedGroupForEpisodes = null
+                            } else {
+                                selectedGroupForEpisodes = g.copy(downloads = remaining)
+                            }
+                        }
+                    }
                     downloadToDelete = null
                 }
             )
+
+            WysAlertDialog(
+                show = (groupToDelete != null),
+                onDismissRequest = { groupToDelete = null },
+                title = "确认删除",
+                content = {
+                    Text(
+                        "确定要删除该视频的全部 ${groupToDelete?.downloads?.size ?: 0} 个缓存吗？",
+                        textAlign = TextAlign.Center
+                    )
+                },
+                onConfirm = {
+                    val targetGroup = groupToDelete
+                    targetGroup?.downloads?.forEach { d ->
+                        handleDelete(d.id)
+                    }
+                    if (selectedGroupForEpisodes?.key == targetGroup?.key) {
+                        selectedGroupForEpisodes = null
+                    }
+                    groupToDelete = null
+                }
+            )
+
+            Dialog(
+                visible = (selectedGroupForEpisodes != null),
+                onDismissRequest = { selectedGroupForEpisodes = null }
+            ) {
+                val group = selectedGroupForEpisodes ?: return@Dialog
+                val epDialogListState = rememberTransformingLazyColumnState()
+                TransformingLazyColumn(
+                    state = epDialogListState,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(epDialogListState)
+                ) {
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
+                    item {
+                        ListHeader {
+                            Text(
+                                text = "选集 (共${group.downloads.size}集)",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    items(group.downloads.size, key = { group.downloads[it].id }) { index ->
+                        val download = group.downloads[index]
+                        val epTitle = if (download.title.contains(" - ")) {
+                            download.title.substringAfter(" - ").trim()
+                        } else {
+                            download.title
+                        }
+                        val isAudio = download.type == "AUDIO_AND_SUBTITLE"
+                        val typeTag = if (isAudio) " [音频]" else ""
+                        val displayText = if (epTitle.matches(Regex("^P\\d+.*"))) epTitle else "P${index + 1} $epTitle"
+
+                        val epRevealState = rememberRevealState()
+                        SwipeToReveal(
+                            revealState = epRevealState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .adaptiveTransformedHeight(this, transformationSpec),
+                            primaryAction = {
+                                PrimaryActionButton(
+                                    onClick = { downloadToDelete = download.id },
+                                    icon = { Icon(Icons.Default.Delete, "Delete") },
+                                    text = { Text("删除") },
+                                    modifier = Modifier.fillMaxHeight()
+                                )
+                            },
+                            onSwipePrimaryAction = { downloadToDelete = download.id }
+                        ) {
+                            Button(
+                                onClick = {
+                                    playCachedEpisode(download, group.downloads, index, null)
+                                    selectedGroupForEpisodes = null
+                                },
+                                onLongClick = {
+                                    selectedDownloadForPlayer = download
+                                    selectedGroupForPlayer = group
+                                    selectedEpisodeIndexForPlayer = index
+                                    showPlayerSelectionDialog = true
+                                },
+                                colors = ButtonDefaults.filledTonalButtonColors(),
+                                transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .adaptiveTransformedHeight(this, transformationSpec)
+                            ) {
+                                Text(
+                                    text = "$displayText$typeTag",
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(32.dp)) }
+                }
+            }
             
             Dialog(
                 visible = showPlayerSelectionDialog,
@@ -312,17 +505,9 @@ fun DownloadManagerScreen(navController: NavController) {
                         Button(
                             onClick = {
                                 selectedDownloadForPlayer?.let { download ->
-                                    val playerData = PlayerData(
-                                        title = download.title,
-                                        aid = download.aid,
-                                        cid = download.cid,
-                                        bvid = download.bvid,
-                                        type = PlayerData.TYPE_LOCAL,
-                                        videoUrl = download.localUri ?: "",
-                                        audioUrl = if (download.type == "AUDIO_AND_SUBTITLE") "audio" else "",
-                                        cover = download.coverUrl
-                                    )
-                                    PlayerApi.jumpToPlayer(context, navController, playerData, playerKey)
+                                    val allInGroup = selectedGroupForPlayer?.downloads ?: listOf(download)
+                                    val epIdx = selectedEpisodeIndexForPlayer
+                                    playCachedEpisode(download, allInGroup, epIdx, playerKey)
                                 }
                                 showPlayerSelectionDialog = false
                             },
@@ -338,4 +523,16 @@ fun DownloadManagerScreen(navController: NavController) {
             }
         }
     }
+}
+
+private data class CachedGroup(
+    val key: String,
+    val title: String,
+    val coverUrl: String,
+    val downloads: List<VideoDownloadManager.DownloadInfo>
+)
+
+private fun extractPartNumber(title: String): Int {
+    val match = Regex("""(?i)[Pp](\d+)""").find(title)
+    return match?.groupValues?.get(1)?.toIntOrNull() ?: 0
 }

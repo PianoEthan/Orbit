@@ -185,6 +185,8 @@ fun VideoDetailScreen(
     var showCacheCollectionDialog by remember { mutableStateOf(false) }
     var targetCollectionEpisodeForCache by remember { mutableStateOf<Collection.Episode?>(null) }
     var cachePageIndex by remember { mutableIntStateOf(0) }
+    var selectedCachePageIndices by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var isPageMultiSelect by remember { mutableStateOf(false) }
     var showPlayerSelectionDialog by remember { mutableStateOf(false) }
     var playConfig by remember { mutableStateOf<Pair<Int, String>?>(null) }
     var showEpisodeDialog by remember { mutableStateOf(false) }
@@ -251,6 +253,8 @@ fun VideoDetailScreen(
         val cid = info.cids.getOrNull(pageIndex) ?: return
         val requestAid = info.aid.takeIf { it > 0 } ?: aid
 
+        selectedCachePageIndices = emptySet()
+        isPageMultiSelect = false
         targetCollectionEpisodeForCache = null
         cachePageIndex = pageIndex
         showCachePageDialog = false
@@ -305,7 +309,69 @@ fun VideoDetailScreen(
         }
     }
 
+    fun openCacheDialogForMultiPages(pages: Set<Int>) {
+        val info = videoInfo ?: return
+        val firstIndex = pages.firstOrNull() ?: return
+        val cid = info.cids.getOrNull(firstIndex) ?: return
+        val requestAid = info.aid.takeIf { it > 0 } ?: aid
+
+        targetCollectionEpisodeForCache = null
+        cachePageIndex = firstIndex
+        showCachePageDialog = false
+        showCacheCollectionDialog = false
+        showAudioQualitiesInCacheDialog = false
+        cacheQualities = emptyList()
+        cacheAudioQualities = emptyList()
+        isFetchingQualities = true
+        showCacheDialog = true
+
+        viewModel.viewModelScope.launch {
+            try {
+                val playerData = PlayerApi.getVideoDash(
+                    PlayerData(aid = requestAid, cid = cid, qn = 112)
+                )
+                if (cachePageIndex != firstIndex) return@launch
+
+                val names = playerData.qnStrList
+                val values = playerData.qnValueList
+                cacheQualities = if (names != null && values != null && names.size == values.size) {
+                    names.zip(values.toTypedArray())
+                } else {
+                    emptyList()
+                }
+
+                val audioQualities = mutableListOf<Pair<String, Int>>()
+                playerData.dashData?.let { dash ->
+                    dash.audioStreams.forEach { stream ->
+                        val name = when (stream.id) {
+                            30216 -> "64K"
+                            30232 -> "132K"
+                            30280 -> "192K"
+                            else -> "${stream.id}"
+                        }
+                        audioQualities.add(name to stream.id)
+                    }
+                    if (dash.dolbyAudio != null) audioQualities.add("杜比全景声" to 30250)
+                    if (dash.flacAudio != null) audioQualities.add("Hi-Res无损" to 30251)
+                }
+                cacheAudioQualities = audioQualities
+            } catch (_: Exception) {
+                if (cachePageIndex == firstIndex) {
+                    cacheQualities = emptyList()
+                    cacheAudioQualities = emptyList()
+                    RoundToast.show(context, "获取缓存清晰度失败")
+                }
+            } finally {
+                if (cachePageIndex == firstIndex) {
+                    isFetchingQualities = false
+                }
+            }
+        }
+    }
+
     fun openCacheDialogForCollectionEpisode(ep: Collection.Episode) {
+        selectedCachePageIndices = emptySet()
+        isPageMultiSelect = false
         targetCollectionEpisodeForCache = ep
         showCacheCollectionDialog = false
         showCachePageDialog = false
@@ -362,12 +428,17 @@ fun VideoDetailScreen(
     MaterialTheme(colorScheme = dynamicColorScheme ?: defaultColorScheme) {
     Dialog(
         visible = showCachePageDialog,
-        onDismissRequest = { showCachePageDialog = false }
+        onDismissRequest = { 
+            showCachePageDialog = false
+            isPageMultiSelect = false
+            selectedCachePageIndices = emptySet()
+        }
     ) {
         val listState = rememberTransformingLazyColumnState()
         val transformationSpec = rememberTransformationSpec()
         val isRound = LocalScreenRound.current
         val info = videoInfo
+        val totalPages = info?.cids?.size ?: 0
 
         TransformingLazyColumn(
             state = listState,
@@ -381,20 +452,105 @@ fun VideoDetailScreen(
                     modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                 ) {
-                    Text("选择要缓存的分P", color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        text = if (isPageMultiSelect) "已选 ${selectedCachePageIndices.size}/$totalPages 个分P" else "选择要缓存的分P",
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
-            items(info?.cids?.size ?: 0) { index ->
+            if (isPageMultiSelect) {
+                item {
+                    val isAllSelected = selectedCachePageIndices.size == totalPages && totalPages > 0
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                selectedCachePageIndices = if (isAllSelected) {
+                                    emptySet()
+                                } else {
+                                    (0 until totalPages).toSet()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.filledTonalButtonColors()
+                        ) {
+                            Text(if (isAllSelected) "全不选" else "全选", maxLines = 1)
+                        }
+                        Button(
+                            onClick = {
+                                isPageMultiSelect = false
+                                selectedCachePageIndices = emptySet()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.filledTonalButtonColors()
+                        ) {
+                            Text("取消", maxLines = 1)
+                        }
+                    }
+                }
+                if (selectedCachePageIndices.isNotEmpty()) {
+                    item {
+                        Button(
+                            onClick = {
+                                openCacheDialogForMultiPages(selectedCachePageIndices)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .adaptiveTransformedHeight(this, transformationSpec),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            colors = ButtonDefaults.buttonColors()
+                        ) {
+                            Text("确定缓存 (${selectedCachePageIndices.size})", maxLines = 1)
+                        }
+                    }
+                }
+            }
+            items(totalPages) { index ->
                 val pageName = info?.pagenames?.getOrNull(index).orEmpty()
                     .ifBlank { "分P${index + 1}" }
+                val isSelected = selectedCachePageIndices.contains(index)
                 Button(
-                    onClick = { openCacheDialogForPage(index) },
+                    onClick = {
+                        if (isPageMultiSelect) {
+                            selectedCachePageIndices = if (isSelected) {
+                                selectedCachePageIndices - index
+                            } else {
+                                selectedCachePageIndices + index
+                            }
+                        } else {
+                            selectedCachePageIndices = emptySet()
+                            openCacheDialogForPage(index)
+                        }
+                    },
+                    onLongClick = {
+                        if (!isPageMultiSelect) {
+                            isPageMultiSelect = true
+                            selectedCachePageIndices = setOf(index)
+                        } else {
+                            selectedCachePageIndices = if (isSelected) {
+                                selectedCachePageIndices - index
+                            } else {
+                                selectedCachePageIndices + index
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                    colors = ButtonDefaults.filledTonalButtonColors()
+                    colors = if (isPageMultiSelect && isSelected) {
+                        ButtonDefaults.buttonColors()
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors()
+                    }
                 ) {
+                    val prefix = if (isPageMultiSelect) {
+                        if (isSelected) "✓ " else "○ "
+                    } else ""
                     Text(
-                        text = "P${index + 1} $pageName",
+                        text = "$prefix P${index + 1} $pageName",
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -410,6 +566,8 @@ fun VideoDetailScreen(
         onDismissRequest = { 
             showCacheDialog = false
             showAudioQualitiesInCacheDialog = false
+            selectedCachePageIndices = emptySet()
+            isPageMultiSelect = false
         }
     ) {
         if (isFetchingQualities) {
@@ -426,7 +584,8 @@ fun VideoDetailScreen(
                         modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                     ) {
-                        Text(if (showAudioQualitiesInCacheDialog) "选择音质" else "选择清晰度", color = MaterialTheme.colorScheme.primary)
+                        val countTag = if (targetCollectionEpisodeForCache == null && selectedCachePageIndices.size > 1) " (共${selectedCachePageIndices.size}集)" else ""
+                        Text(if (showAudioQualitiesInCacheDialog) "选择音质$countTag" else "选择清晰度$countTag", color = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (showAudioQualitiesInCacheDialog) {
@@ -436,50 +595,64 @@ fun VideoDetailScreen(
                                 val info = videoInfo
                                 if (info != null) {
                                     val targetEp = targetCollectionEpisodeForCache
-                                    val cid = targetEp?.cid ?: info.cids.getOrNull(cachePageIndex) ?: return@Button
-                                    val pageName = info.pagenames.getOrNull(cachePageIndex).orEmpty()
-                                        .ifBlank { "分P${cachePageIndex + 1}" }
-                                    val isMultiPage = info.cids.size > 1
-                                    val taskTitle = if (targetEp != null) {
-                                        "${info.title} - ${targetEp.title}"
-                                    } else if (isMultiPage) {
-                                        "${info.title} - P${cachePageIndex + 1} $pageName"
+                                    val pagesToDownload = if (targetEp == null && selectedCachePageIndices.isNotEmpty()) {
+                                        selectedCachePageIndices.sorted()
                                     } else {
-                                        info.title
+                                        listOf(cachePageIndex)
                                     }
-                                    val fileTitle = if (targetEp != null) {
-                                        "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
-                                    } else if (isMultiPage) {
-                                        "${info.title}_P${cachePageIndex + 1}_$cid"
+
+                                    pagesToDownload.forEach { pIndex ->
+                                        val cid = targetEp?.cid ?: info.cids.getOrNull(pIndex) ?: return@forEach
+                                        val pageName = info.pagenames.getOrNull(pIndex).orEmpty()
+                                            .ifBlank { "分P${pIndex + 1}" }
+                                        val isMultiPage = info.cids.size > 1
+                                        val taskTitle = if (targetEp != null) {
+                                            "${info.title} - ${targetEp.title}"
+                                        } else if (isMultiPage) {
+                                            "${info.title} - P${pIndex + 1} $pageName"
+                                        } else {
+                                            info.title
+                                        }
+                                        val fileTitle = if (targetEp != null) {
+                                            "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
+                                        } else if (isMultiPage) {
+                                            "${info.title}_P${pIndex + 1}_$cid"
+                                        } else {
+                                            info.title
+                                        }
+                                        val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                        val duration = if (targetEp != null) {
+                                            0
+                                        } else {
+                                            info.pageDurations.getOrNull(pIndex)
+                                                ?.takeIf { it > 0 }
+                                                ?: StringUtil.parseTime(info.duration)
+                                        }
+                                        val finalAid = targetEp?.aid ?: info.aids.getOrNull(pIndex) ?: info.aid.takeIf { it > 0 } ?: aid
+                                        val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
+                                        VideoDownloadManager.enqueue(
+                                            url = "",
+                                            title = taskTitle,
+                                            filename = "${safeTitle}_audio.m4s",
+                                            context = context,
+                                            aid = finalAid,
+                                            cid = cid,
+                                            bvid = finalBvid,
+                                            qn = qn,
+                                            type = "AUDIO_AND_SUBTITLE",
+                                            coverUrl = info.cover.replace("http://", "https://"),
+                                            duration = duration
+                                        )
+                                    }
+                                    if (pagesToDownload.size > 1) {
+                                        RoundToast.show(context, "已添加 ${pagesToDownload.size} 个音频缓存任务")
                                     } else {
-                                        info.title
+                                        RoundToast.show(context, "正在下载音频...")
                                     }
-                                    val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                    val duration = if (targetEp != null) {
-                                        0
-                                    } else {
-                                        info.pageDurations.getOrNull(cachePageIndex)
-                                            ?.takeIf { it > 0 }
-                                            ?: StringUtil.parseTime(info.duration)
-                                    }
-                                    val finalAid = targetEp?.aid ?: info.aids.getOrNull(cachePageIndex) ?: info.aid.takeIf { it > 0 } ?: aid
-                                    val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
-                                    VideoDownloadManager.enqueue(
-                                        url = "",
-                                        title = taskTitle,
-                                        filename = "${safeTitle}_audio.m4s",
-                                        context = context,
-                                        aid = finalAid,
-                                        cid = cid,
-                                        bvid = finalBvid,
-                                        qn = qn,
-                                        type = "AUDIO_AND_SUBTITLE",
-                                        coverUrl = info.cover.replace("http://", "https://"),
-                                        duration = duration
-                                    )
-                                    RoundToast.show(context, "正在下载音频...")
                                     showAudioQualitiesInCacheDialog = false
                                     showCacheDialog = false
+                                    selectedCachePageIndices = emptySet()
+                                    isPageMultiSelect = false
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
@@ -506,49 +679,63 @@ fun VideoDetailScreen(
                                 val info = videoInfo
                                 if (info != null) {
                                     val targetEp = targetCollectionEpisodeForCache
-                                    val cid = targetEp?.cid ?: info.cids.getOrNull(cachePageIndex) ?: return@Button
-                                    val pageName = info.pagenames.getOrNull(cachePageIndex).orEmpty()
-                                        .ifBlank { "分P${cachePageIndex + 1}" }
-                                    val isMultiPage = info.cids.size > 1
-                                    val taskTitle = if (targetEp != null) {
-                                        "${info.title} - ${targetEp.title}"
-                                    } else if (isMultiPage) {
-                                        "${info.title} - P${cachePageIndex + 1} $pageName"
+                                    val pagesToDownload = if (targetEp == null && selectedCachePageIndices.isNotEmpty()) {
+                                        selectedCachePageIndices.sorted()
                                     } else {
-                                        info.title
+                                        listOf(cachePageIndex)
                                     }
-                                    val fileTitle = if (targetEp != null) {
-                                        "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
-                                    } else if (isMultiPage) {
-                                        "${info.title}_P${cachePageIndex + 1}_$cid"
+
+                                    pagesToDownload.forEach { pIndex ->
+                                        val cid = targetEp?.cid ?: info.cids.getOrNull(pIndex) ?: return@forEach
+                                        val pageName = info.pagenames.getOrNull(pIndex).orEmpty()
+                                            .ifBlank { "分P${pIndex + 1}" }
+                                        val isMultiPage = info.cids.size > 1
+                                        val taskTitle = if (targetEp != null) {
+                                            "${info.title} - ${targetEp.title}"
+                                        } else if (isMultiPage) {
+                                            "${info.title} - P${pIndex + 1} $pageName"
+                                        } else {
+                                            info.title
+                                        }
+                                        val fileTitle = if (targetEp != null) {
+                                            "${info.title}_ep_${targetEp.aid}_${targetEp.cid}"
+                                        } else if (isMultiPage) {
+                                            "${info.title}_P${pIndex + 1}_$cid"
+                                        } else {
+                                            info.title
+                                        }
+                                        val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                                        val duration = if (targetEp != null) {
+                                            0
+                                        } else {
+                                            info.pageDurations.getOrNull(pIndex)
+                                                ?.takeIf { it > 0 }
+                                                ?: StringUtil.parseTime(info.duration)
+                                        }
+                                        val finalAid = targetEp?.aid ?: info.aids.getOrNull(pIndex) ?: info.aid.takeIf { it > 0 } ?: aid
+                                        val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
+                                        VideoDownloadManager.enqueue(
+                                            url = "", // Will be fetched inside manager
+                                            title = taskTitle,
+                                            filename = "${safeTitle}_$qn.mp4",
+                                            context = context,
+                                            aid = finalAid,
+                                            cid = cid,
+                                            bvid = finalBvid,
+                                            qn = qn,
+                                            type = "MP4",
+                                            coverUrl = info.cover.replace("http://", "https://"),
+                                            duration = duration
+                                        )
+                                    }
+                                    if (pagesToDownload.size > 1) {
+                                        RoundToast.show(context, "已添加 ${pagesToDownload.size} 个视频缓存任务")
                                     } else {
-                                        info.title
+                                        RoundToast.show(context, "正在下载视频...")
                                     }
-                                    val safeTitle = fileTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                                    val duration = if (targetEp != null) {
-                                        0
-                                    } else {
-                                        info.pageDurations.getOrNull(cachePageIndex)
-                                            ?.takeIf { it > 0 }
-                                            ?: StringUtil.parseTime(info.duration)
-                                    }
-                                    val finalAid = targetEp?.aid ?: info.aids.getOrNull(cachePageIndex) ?: info.aid.takeIf { it > 0 } ?: aid
-                                    val finalBvid = targetEp?.bvid?.ifBlank { info.bvid.ifBlank { bvid } } ?: info.bvid.ifBlank { bvid }
-                                    VideoDownloadManager.enqueue(
-                                        url = "", // Will be fetched inside manager
-                                        title = taskTitle,
-                                        filename = "${safeTitle}_$qn.mp4",
-                                        context = context,
-                                        aid = finalAid,
-                                        cid = cid,
-                                        bvid = finalBvid,
-                                        qn = qn,
-                                        type = "MP4",
-                                        coverUrl = info.cover.replace("http://", "https://"),
-                                        duration = duration
-                                    )
-                                    RoundToast.show(context, "正在下载视频...")
                                     showCacheDialog = false
+                                    selectedCachePageIndices = emptySet()
+                                    isPageMultiSelect = false
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
@@ -1014,6 +1201,8 @@ fun VideoDetailScreen(
                             onCacheClick = {
                                 val info = videoInfo ?: return@VideoInfoPage
                                 val collectionEpisodes = info.collection?.sections?.flatMap { it.episodes } ?: emptyList()
+                                isPageMultiSelect = false
+                                selectedCachePageIndices = emptySet()
                                 if (info.cids.size > 1) {
                                     showCachePageDialog = true
                                 } else if (collectionEpisodes.size > 1) {

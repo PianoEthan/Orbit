@@ -1,6 +1,7 @@
 package com.qx.orbit.bili.presentation.viewmodel
 
 import android.content.Context
+import java.io.File
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qx.orbit.bili.BuildConfig
@@ -275,13 +276,23 @@ class PlayerViewModel : ViewModel() {
         }
         // Local cached videos: keep video URL (surface already detached → video decode stops, saves battery)
         // Network videos: use audio-only stream to save bandwidth
-        val playUrl = if (isLocal) {
+        val rawPlayUrl = if (isLocal) {
             data.videoUrl
         } else if (isAudioOnlyMode && data.audioUrl.isNotEmpty()) {
             data.audioUrl
         } else {
             data.videoUrl
         }
+        val playUrl = if (isLocal) {
+            val file = File(rawPlayUrl)
+            if (!file.exists()) {
+                val alt1 = File(rawPlayUrl.replace(" ", "+"))
+                val alt2 = File(rawPlayUrl.replace("+", " "))
+                if (alt1.exists()) alt1.absolutePath
+                else if (alt2.exists()) alt2.absolutePath
+                else rawPlayUrl
+            } else rawPlayUrl
+        } else rawPlayUrl
         _player.dataSource = playUrl
         _player.prepareAsync()
     }
@@ -312,17 +323,17 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun onCompletion() {
+        val data = _playerData.value
+        val isBangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
+        val isLocalMulti = data.type == PlayerData.TYPE_LOCAL && data.cids.size > 1
+        val isVideoMulti = data.type == PlayerData.TYPE_VIDEO && data.cids.size > 1
+        if ((isBangumi || isLocalMulti || isVideoMulti) && data.currentPageIndex + 1 < data.cids.size) {
+            switchToNextEpisode()
+            return
+        }
         if (!isLive && !isLocal) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val data = _playerData.value
-                    val isBangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
-                    if (isBangumi) {
-                        if (data.currentPageIndex + 1 < data.cids.size) {
-                            switchToNextEpisode()
-                            return@launch
-                        }
-                    }
                     HeartbeatApi.reportHeartbeat(
                         aid = data.aid, bvid = data.bvid, cid = data.cid,
                         playedTime = _totalDuration.value / 1000,
@@ -397,12 +408,16 @@ class PlayerViewModel : ViewModel() {
         val data = _playerData.value
         if (data.currentPageIndex + 1 >= data.cids.size) return
         val nextIndex = data.currentPageIndex + 1
+        val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > nextIndex) {
+            data.localUrls[nextIndex]
+        } else data.videoUrl
         val newData = data.copy(
             currentPageIndex = nextIndex,
             aid = if (data.aids.size > nextIndex) data.aids[nextIndex] else data.aid,
             cid = data.cids[nextIndex],
             epid = if (data.epids.size > nextIndex) data.epids[nextIndex] else data.epid,
             title = if (data.pagenames.size > nextIndex) data.pagenames[nextIndex] else data.title,
+            videoUrl = nextVideoUrl,
             progress = 0
         )
         _playerData.value = newData
@@ -415,12 +430,37 @@ class PlayerViewModel : ViewModel() {
         val data = _playerData.value
         if (data.currentPageIndex - 1 < 0) return
         val prevIndex = data.currentPageIndex - 1
+        val prevVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > prevIndex) {
+            data.localUrls[prevIndex]
+        } else data.videoUrl
         val newData = data.copy(
             currentPageIndex = prevIndex,
             aid = if (data.aids.size > prevIndex) data.aids[prevIndex] else data.aid,
             cid = data.cids[prevIndex],
             epid = if (data.epids.size > prevIndex) data.epids[prevIndex] else data.epid,
             title = if (data.pagenames.size > prevIndex) data.pagenames[prevIndex] else data.title,
+            videoUrl = prevVideoUrl,
+            progress = 0
+        )
+        _playerData.value = newData
+        switchPendingSeekMs = 0L
+        _isPrepared.value = false
+        _isLoading.value = true
+    }
+
+    fun switchToEpisode(index: Int) {
+        val data = _playerData.value
+        if (index < 0 || index >= data.cids.size || index == data.currentPageIndex) return
+        val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > index) {
+            data.localUrls[index]
+        } else data.videoUrl
+        val newData = data.copy(
+            currentPageIndex = index,
+            aid = if (data.aids.size > index) data.aids[index] else data.aid,
+            cid = data.cids[index],
+            epid = if (data.epids.size > index) data.epids[index] else data.epid,
+            title = if (data.pagenames.size > index) data.pagenames[index] else data.title,
+            videoUrl = nextVideoUrl,
             progress = 0
         )
         _playerData.value = newData

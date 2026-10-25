@@ -99,8 +99,12 @@ public class DanmakuView extends View implements IDanmakuView, IDanmakuViewContr
     }
 
     public void addDanmaku(BaseDanmaku item) {
-        if (handler != null) {
-            handler.addDanmaku(item);
+        DrawHandler h = handler;
+        if (h != null) {
+            try {
+                h.addDanmaku(item);
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -168,11 +172,14 @@ public class DanmakuView extends View implements IDanmakuView, IDanmakuViewContr
             HandlerThread handlerThread = this.mHandlerThread;
             mHandlerThread = null;
             try {
-                handlerThread.join();
+                handlerThread.join(200);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            handlerThread.quit();
+            try {
+                handlerThread.quit();
+            } catch (Exception ignored) {
+            }
         }
     }
 

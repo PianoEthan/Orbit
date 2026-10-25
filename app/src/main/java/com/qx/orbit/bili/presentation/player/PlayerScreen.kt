@@ -104,6 +104,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -200,6 +201,10 @@ fun PlayerScreen(
     var isExiting by remember { mutableStateOf(false) }
     var lastTitleClickTime by remember { mutableStateOf(0L) }
     var isAudioOnlyMode by remember { mutableStateOf(initialData.audioUrl == "audio") }
+    var lastSeekTimestamp by remember { mutableLongStateOf(0L) }
+    var liveWebSocket by remember { mutableStateOf<WebSocket?>(null) }
+    var liveClientListener by remember { mutableStateOf<PlayerDanmuClientListener?>(null) }
+    var liveReconnectTrigger by remember { mutableIntStateOf(0) }
 
     val isAudioPlayer = isAudioOnlyMode || initialData.audioUrl == "audio"
     BackHandler(enabled = !isAudioPlayer) {
@@ -238,6 +243,7 @@ fun PlayerScreen(
     
     var showVolumeScreen by remember { mutableStateOf(false) }
     var showMoreDialog by remember { mutableStateOf(false) }
+    var showEpisodeDialog by remember { mutableStateOf(false) }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val rotaryVolumeEnabled = remember {
         SharedPreferencesUtil.getBoolean(
@@ -392,6 +398,7 @@ fun PlayerScreen(
             }
 
             override fun onSeekTo(pos: Long) {
+                lastSeekTimestamp = System.currentTimeMillis()
                 viewModel.seekTo(pos)
                 danmakuPlayer.seekTo(pos)
             }
@@ -404,12 +411,16 @@ fun PlayerScreen(
                     val nextCid = data.cids[nextIndex]
                     val nextEpid = if (data.epids.size > nextIndex) data.epids[nextIndex] else data.epid
                     val nextTitle = if (data.pagenames.size > nextIndex) data.pagenames[nextIndex] else data.title
+                    val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > nextIndex) {
+                        data.localUrls[nextIndex]
+                    } else data.videoUrl
                     playerData = data.copy(
                         currentPageIndex = nextIndex,
                         aid = nextAid,
                         cid = nextCid,
                         epid = nextEpid,
                         title = nextTitle,
+                        videoUrl = nextVideoUrl,
                         progress = 0
                     )
                     viewModel.setData(playerData)
@@ -424,12 +435,16 @@ fun PlayerScreen(
                     val prevCid = data.cids[prevIndex]
                     val prevEpid = if (data.epids.size > prevIndex) data.epids[prevIndex] else data.epid
                     val prevTitle = if (data.pagenames.size > prevIndex) data.pagenames[prevIndex] else data.title
+                    val prevVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > prevIndex) {
+                        data.localUrls[prevIndex]
+                    } else data.videoUrl
                     playerData = data.copy(
                         currentPageIndex = prevIndex,
                         aid = prevAid,
                         cid = prevCid,
                         epid = prevEpid,
                         title = prevTitle,
+                        videoUrl = prevVideoUrl,
                         progress = 0
                     )
                     viewModel.setData(playerData)
@@ -548,7 +563,6 @@ fun PlayerScreen(
         }
     }
 
-    var liveWebSocket by remember { mutableStateOf<WebSocket?>(null) }
     var surfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
     var textureSurface by remember { mutableStateOf<Surface?>(null) }
     val isTextureViewOk = remember { mutableIntStateOf(SharedPreferencesUtil.getInt("isTextureViewOk", 0)) }
@@ -588,9 +602,10 @@ fun PlayerScreen(
                 while (isActive) {
                     currentProgress = viewModel.player.currentPosition
                     viewModel.updateCurrentSubtitle(currentProgress)
-                    if (!isLive) {
+                    if (!isLive && dragProgress < 0f && System.currentTimeMillis() - lastSeekTimestamp > 1000L) {
                         val currentDanmakuTime = danmakuPlayer.getCurrentTime()
-                        if (kotlin.math.abs(currentDanmakuTime - currentProgress) > 1000L) {
+                        val diff = kotlin.math.abs(currentDanmakuTime - currentProgress)
+                        if (diff > 500L) {
                             danmakuPlayer.seekTo(currentProgress)
                         }
                     }
@@ -665,6 +680,16 @@ fun PlayerScreen(
             }
 
             val danmakuTextScale = SharedPreferencesUtil.getFloat("player_danmaku_textsize", 1.0f) * 0.8f
+            val resolvedLocalPath = if (isLocal) {
+                val file = File(playerData.videoUrl)
+                if (!file.exists()) {
+                    val alt1 = File(playerData.videoUrl.replace(" ", "+"))
+                    val alt2 = File(playerData.videoUrl.replace("+", " "))
+                    if (alt1.exists()) alt1.absolutePath
+                    else if (alt2.exists()) alt2.absolutePath
+                    else playerData.videoUrl
+                } else playerData.videoUrl
+            } else playerData.videoUrl
 
             if (!isLive && !isLocal) {
                 val danmakuSegments = DanmakuApi.getVideoDanmakuSegments(playerData.aid, playerData.cid)
@@ -724,10 +749,10 @@ fun PlayerScreen(
                 var xmlFile = VideoDownloadManager.ensureLocalDanmakuCache(
                     aid = playerData.aid,
                     cid = playerData.cid,
-                    videoPath = playerData.videoUrl
-                ) ?: File("${playerData.videoUrl}.danmaku.xml")
+                    videoPath = resolvedLocalPath
+                ) ?: File("$resolvedLocalPath.danmaku.xml")
                 if (!xmlFile.exists()) {
-                    val fallbackPath = playerData.videoUrl.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
+                    val fallbackPath = resolvedLocalPath.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
                     xmlFile = File(fallbackPath.toUri().path ?: "")
                 }
                 if (xmlFile.exists()) {
@@ -756,7 +781,7 @@ fun PlayerScreen(
                 scope.launch {
                     try {
                         if (isLocal) {
-                            val links = viewModel.discoverLocalSubtitles(playerData.videoUrl)
+                            val links = viewModel.discoverLocalSubtitles(resolvedLocalPath)
                             viewModel.setSubtitleLinks(links)
                             if (links.isNotEmpty() && SharedPreferencesUtil.getBoolean("player_subtitle_default_show", false)) {
                                 val defaultLink = links.firstOrNull { !it.isAI } ?: links.first()
@@ -812,7 +837,17 @@ fun PlayerScreen(
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 1024 * 1024)
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "enable-accurate-seek", 0)
                 }
-                val playUrl = if (!isLocal && isAudioOnlyMode && result.audioUrl.isNotEmpty()) result.audioUrl else result.videoUrl
+                val rawPlayUrl = if (!isLocal && isAudioOnlyMode && result.audioUrl.isNotEmpty()) result.audioUrl else result.videoUrl
+                val playUrl = if (isLocal) {
+                    val file = File(rawPlayUrl)
+                    if (!file.exists()) {
+                        val alt1 = File(rawPlayUrl.replace(" ", "+"))
+                        val alt2 = File(rawPlayUrl.replace("+", " "))
+                        if (alt1.exists()) alt1.absolutePath
+                        else if (alt2.exists()) alt2.absolutePath
+                        else rawPlayUrl
+                    } else rawPlayUrl
+                } else rawPlayUrl
                 mediaPlayer.dataSource = playUrl
                 if (effectiveUseTexture) {
                     if (textureSurface != null) {
@@ -889,7 +924,7 @@ fun PlayerScreen(
     }
 
     // Live danmaku WebSocket connection
-    LaunchedEffect(isLive, isPrepared) {
+    LaunchedEffect(isLive, isPrepared, liveReconnectTrigger) {
         if (isLive && isPrepared) {
             try {
                 val danmuInfo = LiveApi.getDanmuInfo(playerData.aid)
@@ -907,6 +942,7 @@ fun PlayerScreen(
                         @SuppressLint("LocalContextResourcesRead")
                         override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?, id: String) {
                             try {
+                                if (isExiting) return
                                 val config = danmakuConfig ?: return
                                 val item = createDanmaku(config, type) ?: return
                                 val displayText = if (!showDanmakuSender && senderName.isNotEmpty()) {
@@ -917,10 +953,9 @@ fun PlayerScreen(
                                 item.priority = 1
                                 item.textColor = color
                                 item.textSize = textSize * liveDanmakuDensityScale
-                                item.time = danmakuPlayer.getCurrentTime() + 100
-                                if (isLive) {
-                                    item.isLive = true
-                                }
+                                val curTime = danmakuPlayer.getCurrentTime()
+                                item.time = if (curTime > 0) curTime + 100 else 100
+                                item.isLive = true
                                 
                                 if (borderColor != 0) {
                                     item.borderColor = borderColor
@@ -946,7 +981,17 @@ fun PlayerScreen(
                         uid = mid,
                         buvid = buvid,
                         key = token,
-                        callback = callback
+                        callback = callback,
+                        onReconnectRequest = {
+                            if (!isExiting) {
+                                scope.launch {
+                                    delay(3000)
+                                    if (!isExiting) {
+                                        liveReconnectTrigger++
+                                    }
+                                }
+                            }
+                        }
                     )
 
                     val request = Request.Builder()
@@ -955,7 +1000,9 @@ fun PlayerScreen(
                         .header("Origin", "https://live.bilibili.com")
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
                         .build()
-                    liveWebSocket?.close(1000, "reconnect")
+                    liveClientListener?.close()
+                    liveClientListener = listener
+                    liveWebSocket?.cancel()
                     liveWebSocket = HttpClient.client.newWebSocket(request, listener)
                     Log.d("BiliApi", "PlayerScreen danmaku WS connecting to $url, uid=$mid, roomid=${playerData.aid}")
                 }
@@ -1032,7 +1079,9 @@ fun PlayerScreen(
                 onDisposeAction(playerData.epid, currentPosSeconds)
             }
 
-            liveWebSocket?.close(1000, "bye")
+            liveClientListener?.close()
+            liveClientListener = null
+            liveWebSocket?.cancel()
             liveWebSocket = null
 
             try {
@@ -1239,6 +1288,7 @@ fun PlayerScreen(
                     val newProgress = (currentProgress + it.verticalScrollPixels * 100)
                         .toLong()
                         .coerceIn(0L, totalDuration)
+                    lastSeekTimestamp = System.currentTimeMillis()
                     viewModel.seekTo(newProgress)
                     danmakuPlayer.seekTo(newProgress)
                     if (isPlaying) {
@@ -1481,6 +1531,7 @@ fun PlayerScreen(
                                 onDragEnd = {
                                     if (dragProgress >= 0f) {
                                         val targetTime = (dragProgress * totalDuration).toLong()
+                                        lastSeekTimestamp = System.currentTimeMillis()
                                         viewModel.seekTo(targetTime)
                                         danmakuPlayer.seekTo(targetTime)
                                         dragProgress = -1f
@@ -1921,6 +1972,22 @@ fun PlayerScreen(
                         Text(text = "更多选项", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                 }
+                // Episode selection
+                if (playerData.cids.size > 1) {
+                    item {
+                        androidx.wear.compose.material3.Button(
+                            onClick = {
+                                showMoreDialog = false
+                                showEpisodeDialog = true
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(),
+                            transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                            modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                        ) {
+                            Text(text = "选集 (当前: P${playerData.currentPageIndex + 1})")
+                        }
+                    }
+                }
                 // Playback speed
                 item {
                     androidx.wear.compose.material3.Button(
@@ -1951,6 +2018,70 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
                     ) {
                         Text(text = if (isLooping.value) "循环播放: 开" else "循环播放: 关")
+                    }
+                }
+                item { Spacer(modifier = Modifier.height(32.dp)) }
+            }
+        }
+
+        Dialog(
+            visible = showEpisodeDialog,
+            onDismissRequest = { showEpisodeDialog = false }
+        ) {
+            val listState = rememberTransformingLazyColumnState()
+            val transformationSpec = rememberTransformationSpec()
+            val isRound = LocalScreenRound.current
+
+            TransformingLazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                item { Spacer(modifier = Modifier.height(16.dp)) }
+                item {
+                    ListHeader {
+                        Text(
+                            text = "选集 (共${playerData.cids.size}集)",
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                items(playerData.cids.size) { index ->
+                    val isSelected = index == playerData.currentPageIndex
+                    val pageName = playerData.pagenames.getOrNull(index).orEmpty().ifBlank { "分P${index + 1}" }
+                    androidx.wear.compose.material3.Button(
+                        onClick = {
+                            val targetAid = if (playerData.aids.size > index) playerData.aids[index] else playerData.aid
+                            val targetCid = playerData.cids[index]
+                            val targetEpid = if (playerData.epids.size > index) playerData.epids[index] else playerData.epid
+                            val targetTitle = if (playerData.pagenames.size > index) playerData.pagenames[index] else playerData.title
+                            val targetVideoUrl = if (playerData.type == PlayerData.TYPE_LOCAL && playerData.localUrls.size > index) {
+                                playerData.localUrls[index]
+                            } else playerData.videoUrl
+                            playerData = playerData.copy(
+                                currentPageIndex = index,
+                                aid = targetAid,
+                                cid = targetCid,
+                                epid = targetEpid,
+                                title = targetTitle,
+                                videoUrl = targetVideoUrl,
+                                progress = 0
+                            )
+                            viewModel.setData(playerData)
+                            showEpisodeDialog = false
+                        },
+                        colors = if (isSelected) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors(),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                        modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                    ) {
+                        Text(
+                            text = "P${index + 1} $pageName",
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 item { Spacer(modifier = Modifier.height(32.dp)) }

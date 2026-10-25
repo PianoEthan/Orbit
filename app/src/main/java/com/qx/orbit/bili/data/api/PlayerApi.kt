@@ -12,6 +12,7 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.util.AccountUtil
 import com.qx.orbit.bili.util.PlayerConfig
 import com.qx.orbit.bili.util.SharedPreferencesUtil
+import android.util.Base64
 import java.io.Serializable
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -518,12 +519,12 @@ object PlayerApi {
             "pureAudioPlayer" -> {
                 val pd = playerData.copy(audioUrl = "audio")
                 val jsonStr = GsonConfig.gson.toJson(pd)
-                val encodedJson = URLEncoder.encode(jsonStr, StandardCharsets.UTF_8.toString())
+                val encodedJson = Base64.encodeToString(jsonStr.toByteArray(StandardCharsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
                 navController.navigate("player/$encodedJson")
             }
             else -> { // apsisPlayer
                 val jsonStr = GsonConfig.gson.toJson(playerData)
-                val encodedJson = URLEncoder.encode(jsonStr, StandardCharsets.UTF_8.toString())
+                val encodedJson = Base64.encodeToString(jsonStr.toByteArray(StandardCharsets.UTF_8), Base64.URL_SAFE or Base64.NO_WRAP)
                 navController.navigate("player/$encodedJson")
             }
         }

@@ -62,13 +62,29 @@ class Media3PlayerWrapper(context: Context) : OrbitPlayer {
             }
         })
         player.addListener(object : Player.Listener {
+            private var isBuffering = false
+
             override fun onPlaybackStateChanged(state: Int) {
                 when (state) {
+                    Player.STATE_BUFFERING -> {
+                        if (!isBuffering) {
+                            isBuffering = true
+                            onInfoListener?.onInfo(this@Media3PlayerWrapper, OrbitPlayer.MEDIA_INFO_BUFFERING_START, 0)
+                        }
+                    }
                     Player.STATE_READY -> {
+                        if (isBuffering) {
+                            isBuffering = false
+                            onInfoListener?.onInfo(this@Media3PlayerWrapper, OrbitPlayer.MEDIA_INFO_BUFFERING_END, 0)
+                        }
                         onPreparedListener?.onPrepared(this@Media3PlayerWrapper)
                         onPreparedListener = null
                     }
                     Player.STATE_ENDED -> {
+                        if (isBuffering) {
+                            isBuffering = false
+                            onInfoListener?.onInfo(this@Media3PlayerWrapper, OrbitPlayer.MEDIA_INFO_BUFFERING_END, 0)
+                        }
                         onCompletionListener?.onCompletion(this@Media3PlayerWrapper)
                     }
                     else -> {}
@@ -77,12 +93,6 @@ class Media3PlayerWrapper(context: Context) : OrbitPlayer {
 
             override fun onPlayerError(error: PlaybackException) {
                 onErrorListener?.onError(this@Media3PlayerWrapper, error.errorCode, 0)
-            }
-
-            override fun onIsLoadingChanged(isLoading: Boolean) {
-                val what = if (isLoading) OrbitPlayer.MEDIA_INFO_BUFFERING_START
-                else OrbitPlayer.MEDIA_INFO_BUFFERING_END
-                onInfoListener?.onInfo(this@Media3PlayerWrapper, what, 0)
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {

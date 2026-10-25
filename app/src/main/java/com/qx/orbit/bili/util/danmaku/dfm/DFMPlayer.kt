@@ -14,6 +14,8 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var readyListener: (() -> Unit)? = null
     private var ready = false
+    @Volatile
+    private var released = false
 
     override val view: View get() = engine
 
@@ -45,15 +47,23 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
     override fun hide() = engine.hide()
     override fun release() {
         ready = false
+        released = true
         readyListener = null
         try {
             engine.stop()
             engine.removeAllDanmakus(true)
             engine.enableDanmakuDrawingCache(false)
         } catch (_: Exception) {}
-        engine.release()
+        try {
+            engine.release()
+        } catch (_: Exception) {}
     }
-    override fun addDanmaku(item: DanmakuItem) { engine.addDanmaku((item as DFMItem).engine) }
+    override fun addDanmaku(item: DanmakuItem) {
+        if (!ready || released) return
+        try {
+            engine.addDanmaku((item as DFMItem).engine)
+        } catch (_: Exception) {}
+    }
     override fun removeAllDanmakus(clearOnScreen: Boolean) = engine.removeAllDanmakus(clearOnScreen)
     override fun enableDrawingCache(enable: Boolean) = engine.enableDanmakuDrawingCache(enable)
     override fun getCurrentTime(): Long = engine.getCurrentTime()

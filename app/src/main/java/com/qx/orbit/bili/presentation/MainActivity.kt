@@ -111,6 +111,8 @@ import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
 import com.google.gson.Gson
 import java.net.URLDecoder
+import android.util.Base64
+import java.nio.charset.StandardCharsets
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
@@ -534,7 +536,23 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                 )
             ) { backStackEntry ->
                 val previousEntry = remember { navController.previousBackStackEntry }
-                val json = URLDecoder.decode(backStackEntry.arguments?.getString("playerDataJson") ?: "", "UTF-8")
+                val rawArg = backStackEntry.arguments?.getString("playerDataJson") ?: ""
+                val json = if (rawArg.startsWith("{")) {
+                    rawArg
+                } else if (rawArg.startsWith("%7B")) {
+                    URLDecoder.decode(rawArg, "UTF-8")
+                } else {
+                    try {
+                        val bytes = Base64.decode(rawArg, Base64.URL_SAFE or Base64.NO_WRAP)
+                        String(bytes, StandardCharsets.UTF_8)
+                    } catch (_: Exception) {
+                        try {
+                            URLDecoder.decode(rawArg, "UTF-8")
+                        } catch (_: Exception) {
+                            rawArg
+                        }
+                    }
+                }
                 val playerData = Gson().fromJson(json, PlayerData::class.java) ?: PlayerData(aid = 0L)
                 PlayerScreen(
                     initialData = playerData, 

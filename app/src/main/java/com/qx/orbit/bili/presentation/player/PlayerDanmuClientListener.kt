@@ -43,25 +43,33 @@ class PlayerDanmuClientListener(
     private val uid: Long,
     private val buvid: String,
     private val key: String,
-    private val callback: PlayerCallback
+    private val callback: PlayerCallback,
+    private val onReconnectRequest: (() -> Unit)? = null
 ) : WebSocketListener() {
 
     companion object {
         private const val TAG = "BiliApi"
-        private const val HEARTBEAT_INTERVAL = 32L
+        private const val HEARTBEAT_INTERVAL = 25L
     }
 
+    @Volatile
+    private var isClosed = false
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
     private var heartbeatFuture: ScheduledFuture<*>? = null
     private var webSocket: WebSocket? = null
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
+        if (isClosed) {
+            webSocket.cancel()
+            return
+        }
         Log.d(TAG, "Danmu WS onOpen: roomid=$roomId uid=$uid")
         this.webSocket = webSocket
         sendAuthPacket(webSocket)
     }
 
     override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+        if (isClosed) return
         try {
             parsePackage(bytes.toByteArray())
         } catch (e: Exception) {
@@ -72,17 +80,25 @@ class PlayerDanmuClientListener(
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
         Log.d(TAG, "Danmu WS onClosing: $code $reason")
         stopHeartbeat()
-        webSocket.close(code, reason)
+        try {
+            webSocket.close(code, reason)
+        } catch (_: Exception) {}
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
         Log.d(TAG, "Danmu WS onClosed: $code $reason")
         stopHeartbeat()
+        if (!isClosed && code != 1000) {
+            onReconnectRequest?.invoke()
+        }
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
         Log.e(TAG, "Danmu WS onFailure: ${t.message}")
         stopHeartbeat()
+        if (!isClosed) {
+            onReconnectRequest?.invoke()
+        }
     }
 
     private fun sendAuthPacket(ws: WebSocket) {
@@ -101,9 +117,12 @@ class PlayerDanmuClientListener(
 
     private fun startHeartbeat() {
         stopHeartbeat()
+        if (isClosed) return
         heartbeatFuture = scheduler.scheduleWithFixedDelay({
+            if (isClosed) return@scheduleWithFixedDelay
             try {
-                webSocket?.send(MessageData(ByteArray(0), actionCode = 2).toByteString())
+                val heartbeatData = "[object Object]".toByteArray(StandardCharsets.UTF_8)
+                webSocket?.send(MessageData(heartbeatData, actionCode = 2).toByteString())
             } catch (e: Exception) {
                 Log.e(TAG, "Heartbeat failed", e)
             }
@@ -116,8 +135,7 @@ class PlayerDanmuClientListener(
     }
 
     private fun parsePackage(data: ByteArray) {
-        if (data.size < 16) {
-            Log.w(TAG, "Package too small: ${data.size} bytes")
+        if (isClosed || data.size < 16) {
             return
         }
         val buffer = ByteBuffer.wrap(data)
@@ -126,8 +144,6 @@ class PlayerDanmuClientListener(
         val protocolVersion = buffer.short.toInt() and 0xFFFF
         val actionCode = buffer.int
         val sequence = buffer.int
-
-        //Log.d(TAG, "Package: action=$actionCode proto=$protocolVersion size=$totalSize headerSize=$headerSize")
 
         when (actionCode) {
             8 -> {
@@ -141,13 +157,13 @@ class PlayerDanmuClientListener(
                     3 -> {
                         val decompressed = decompressBrotli(payload)
                         if (decompressed != null) {
-                            handlePlainPackage(decompressed)
+                            parseDecompressedStream(decompressed)
                         }
                     }
                     2 -> {
                         val decompressed = inflate(payload)
                         if (decompressed != null) {
-                            handlePlainPackage(decompressed)
+                            parseDecompressedStream(decompressed)
                         }
                     }
                 }
@@ -159,54 +175,94 @@ class PlayerDanmuClientListener(
         }
     }
 
+    private fun parseDecompressedStream(data: ByteArray) {
+        if (isClosed) return
+        var offset = 0
+        while (offset + 16 <= data.size) {
+            val buffer = ByteBuffer.wrap(data, offset, 16)
+            val packetLen = buffer.int
+            val headerLen = buffer.short.toInt() and 0xFFFF
+            val protoVer = buffer.short.toInt() and 0xFFFF
+            val action = buffer.int
+            val seq = buffer.int
+
+            if (packetLen < 16 || offset + packetLen > data.size) {
+                break
+            }
+
+            val bodyOffset = offset + headerLen
+            val bodyLen = packetLen - headerLen
+            if (bodyLen > 0 && bodyOffset + bodyLen <= data.size) {
+                if (action == 5) {
+                    try {
+                        val jsonStr = String(data, bodyOffset, bodyLen, StandardCharsets.UTF_8)
+                        val obj = JSONObject(jsonStr)
+                        val cmd = obj.optString("cmd", "")
+                        handleCmd(cmd, obj)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to parse JSON packet", e)
+                    }
+                } else if (action == 3) {
+                    try {
+                        val viewers = ByteBuffer.wrap(data, bodyOffset, 4).int
+                        callback.onlineNumber = viewers.toString()
+                    } catch (_: Exception) {}
+                }
+            }
+            offset += packetLen
+        }
+    }
+
     private fun handlePlainPackage(data: ByteArray) {
+        if (isClosed) return
         try {
-            val text = String(data, StandardCharsets.UTF_8)
-            var pos = 0
-            while (pos < text.length) {
-                val jsonStart = text.indexOf('{', pos)
-                if (jsonStart < 0) break
-                var depth = 0
-                var inString = false
-                var escape = false
-                var jsonEnd = -1
-                for (i in jsonStart until text.length) {
-                    val c = text[i]
-                    if (escape) {
-                        escape = false
-                        continue
-                    }
-                    if (c == '\\' && inString) {
-                        escape = true
-                        continue
-                    }
-                    if (c == '"') {
-                        inString = !inString
-                        continue
-                    }
-                    if (inString) continue
-                    if (c == '{') depth++
-                    else if (c == '}') {
-                        depth--
-                        if (depth == 0) {
-                            jsonEnd = i
-                            break
+            val jsonStr = String(data, StandardCharsets.UTF_8)
+            val obj = JSONObject(jsonStr)
+            val cmd = obj.optString("cmd", "")
+            handleCmd(cmd, obj)
+        } catch (_: Exception) {
+            try {
+                val text = String(data, StandardCharsets.UTF_8)
+                var pos = 0
+                while (pos < text.length) {
+                    val jsonStart = text.indexOf('{', pos)
+                    if (jsonStart < 0) break
+                    var depth = 0
+                    var inString = false
+                    var escape = false
+                    var jsonEnd = -1
+                    for (i in jsonStart until text.length) {
+                        val c = text[i]
+                        if (escape) {
+                            escape = false
+                            continue
+                        }
+                        if (c == '\\' && inString) {
+                            escape = true
+                            continue
+                        }
+                        if (c == '"') {
+                            inString = !inString
+                            continue
+                        }
+                        if (inString) continue
+                        if (c == '{') depth++
+                        else if (c == '}') {
+                            depth--
+                            if (depth == 0) {
+                                jsonEnd = i
+                                break
+                            }
                         }
                     }
+                    if (jsonEnd < 0) break
+                    try {
+                        val obj = JSONObject(text.substring(jsonStart, jsonEnd + 1))
+                        handleCmd(obj.optString("cmd", ""), obj)
+                    } catch (_: Exception) {}
+                    pos = jsonEnd + 1
                 }
-                if (jsonEnd < 0) break
-                try {
-                    val jsonStr = text.substring(jsonStart, jsonEnd + 1)
-                    val obj = JSONObject(jsonStr)
-                    val cmd = obj.optString("cmd", "")
-                    handleCmd(cmd, obj)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to parse JSON object", e)
-                }
-                pos = jsonEnd + 1
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse plain package", e)
+            } catch (_: Exception) {}
         }
     }
 
@@ -359,10 +415,15 @@ class PlayerDanmuClientListener(
     }
 
     fun close() {
+        isClosed = true
         stopHeartbeat()
-        webSocket?.close(1000, "Normal closure")
+        try {
+            webSocket?.cancel()
+        } catch (_: Exception) {}
         webSocket = null
-        scheduler.shutdownNow()
+        try {
+            scheduler.shutdownNow()
+        } catch (_: Exception) {}
     }
 
     private class MessageData(
