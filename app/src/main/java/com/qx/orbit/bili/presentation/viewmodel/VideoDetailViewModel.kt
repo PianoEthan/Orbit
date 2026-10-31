@@ -14,12 +14,13 @@ import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
 import com.qx.orbit.bili.data.model.withReplyTopState
 import com.qx.orbit.bili.data.api.EmoteApi
+import com.qx.orbit.bili.data.cache.VideoDetailCache
 import android.content.Context
 import android.widget.Toast
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -73,44 +74,63 @@ class VideoDetailViewModel : ViewModel() {
         this.bvid = bvid
         this.aid = aid
 
+        // 命中内存缓存直接上屏，随后仍然静默刷新
+        val cached = VideoDetailCache.info(bvid)
+        if (cached != null) _videoInfo.value = cached
+
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
-            try {
-                val infoDeferred = async { VideoInfoApi.getVideoInfo(bvid) }
-                val tagsDeferred = async { VideoInfoApi.getTags(bvid) }
-
-                val info = infoDeferred.await() ?: throw Exception("视频信息加载失败")
-                this@VideoDetailViewModel.bvid = info.bvid.ifBlank { bvid }
-                this@VideoDetailViewModel.aid = info.aid.takeIf { it > 0L } ?: aid
-                val relatedDeferred = async {
-                    RecommendApi.getRelated(this@VideoDetailViewModel.aid)
-                }
-                if (info.cids.isNotEmpty()) {
-                    try {
-                        val history = PlayerApi.getHistoryProgress(info.aid, info.cids.first())
-                        _videoInfo.value = info.copy(history = history)
-                    } catch (e: Exception) {
-                        _videoInfo.value = info
-                    }
-                } else {
-                    _videoInfo.value = info
-                }
-
-                _tags.value = tagsDeferred.await()
-                _relatedVideos.value = relatedDeferred.await()
-                
-                loadReplies(
-                    reset = true,
-                    focusedRootId = commentRootId,
-                    focusedReplyId = commentReplyId
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _errorMessage.value = e.localizedMessage ?: "加载详情失败"
+            // 复用点击预取发起的在途请求（按 bvid 去重）
+            val info = try {
+                VideoDetailCache.load(bvid, aid)
             } finally {
+                // 语义收窄为"首次信息加载中"，信息一到就结束
                 _isLoading.value = false
             }
+            if (info == null) {
+                // 已有缓存内容就静默降级，只有内容为空才报错
+                if (_videoInfo.value == null) _errorMessage.value = "视频信息加载失败"
+                return@launch
+            }
+
+            val realBvid = info.bvid.ifBlank { bvid }
+            val realAid = info.aid.takeIf { it > 0L } ?: aid
+            this@VideoDetailViewModel.bvid = realBvid
+            this@VideoDetailViewModel.aid = realAid
+            // 信息到达即上屏，不再等待封面取色、历史进度、评论
+            _videoInfo.value = info
+            VideoDetailCache.putInfo(realBvid, info)
+
+            // 以下四路并行，互不取消、互不阻塞
+            launch {
+                runCatching {
+                    val cid = info.cids.firstOrNull()
+                    if (cid != null) {
+                        val history = PlayerApi.getHistoryProgress(realAid, cid)
+                        val merged = _videoInfo.updateAndGet { (it ?: info).copy(history = history) }
+                        merged?.let { VideoDetailCache.putInfo(realBvid, it) }
+                    }
+                }
+            }
+            launch {
+                runCatching { _tags.value = VideoInfoApi.getTags(realBvid) }
+            }
+            launch {
+                runCatching { _relatedVideos.value = RecommendApi.getRelated(realAid) }
+            }
+            // 后台补 UP 主详情与三连状态，合并时保留已经拿到的历史进度
+            launch {
+                runCatching {
+                    val enriched = VideoInfoApi.enrichVideoInfo(info)
+                    val merged = _videoInfo.updateAndGet { current ->
+                        if (current == null) enriched else enriched.copy(history = current.history)
+                    }
+                    merged?.let { VideoDetailCache.putInfo(realBvid, it) }
+                }
+            }
+            // 评论在 info 就绪后立即开始，不再被相关推荐阻塞
+            loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
         }
     }
     

@@ -20,7 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
+import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -31,7 +31,9 @@ import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.presentation.ui.components.WysAlertDialog
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import com.qx.orbit.bili.presentation.viewmodel.FavoriteDetailViewModel
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
@@ -40,7 +42,7 @@ import androidx.wear.compose.material3.SurfaceTransformation
 @Composable
 fun FavoriteDetailScreen(
     viewModel: FavoriteDetailViewModel,
-    navController: NavController,
+    navController: NavHostController,
     fid: Long
 ) {
     LaunchedEffect(fid) {
@@ -181,7 +183,7 @@ fun FavoriteDetailScreen(
                     RecommendVideoCard(
                         item = videoCard,
                         onClick = {
-                            navController.navigate("detail/${videoCard.bvid}/${videoCard.aid}")
+                            navController.navigateToVideoDetail(videoCard.bvid, videoCard.aid, videoCard.toPreview())
                         },
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
                     )
