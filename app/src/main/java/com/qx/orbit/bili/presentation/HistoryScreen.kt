@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
+import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -30,7 +30,9 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import com.qx.orbit.bili.presentation.viewmodel.HistoryViewModel
 import androidx.wear.compose.material3.SwipeToReveal
 import androidx.wear.compose.material3.SwipeToRevealDefaults
@@ -45,7 +47,7 @@ import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 @Composable
 fun HistoryScreen(
     viewModel: HistoryViewModel,
-    navController: NavController
+    navController: NavHostController
 ) {
     val items by viewModel.items.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -129,7 +131,7 @@ fun HistoryScreen(
                                     navController.navigate("article_detail/${item.aid}")
                                 }
                                 else -> {
-                                    navController.navigate("detail/${item.bvid}/${item.aid}")
+                                    navController.navigateToVideoDetail(item.bvid, item.aid, item.toPreview())
                                 }
                             }
                         }

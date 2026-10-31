@@ -14,12 +14,14 @@ import com.qx.orbit.bili.data.model.VideoCard
 import com.qx.orbit.bili.data.model.VideoInfo
 import com.qx.orbit.bili.data.model.withReplyTopState
 import com.qx.orbit.bili.data.api.EmoteApi
+import com.qx.orbit.bili.data.cache.VideoDetailCache
 import android.content.Context
 import android.widget.Toast
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -30,13 +32,20 @@ import com.qx.orbit.bili.data.model.History
 import kotlinx.coroutines.delay
 
 class VideoDetailViewModel(
-    private val loadVideoInfo: suspend (String) -> VideoInfo? = { VideoInfoApi.getVideoInfo(it) },
+    private val loadVideoInfo: (suspend (String) -> VideoInfo?)? = null,
     private val loadTags: suspend (String) -> String = { VideoInfoApi.getTags(it) },
     private val loadRelated: suspend (Long) -> List<VideoCard> = { RecommendApi.getRelated(it) },
     private val loadReplyPage: suspend (Long, Int) -> ReplyApi.ReplyPage = { oid, page -> ReplyApi.getRepliesPage(oid = oid, pageNumber = page) },
     private val loadReplyCount: suspend (Long) -> Long = { ReplyApi.getReplyCount(oid = it) },
     private val loadHistory: suspend (Long, Long) -> History? = { aid, cid -> PlayerApi.getHistoryProgress(aid, cid) },
-    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L }
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val readCachedVideoInfo: (String) -> VideoInfo? = { if (loadVideoInfo == null) VideoDetailCache.info(it) else null },
+    private val writeCachedVideoInfo: (String, VideoInfo) -> Unit = { key, info ->
+        if (loadVideoInfo == null) VideoDetailCache.putInfo(key, info)
+    },
+    private val enrichVideoInfo: suspend (VideoInfo) -> VideoInfo = {
+        if (loadVideoInfo == null) VideoInfoApi.enrichVideoInfo(it) else it
+    }
 ) : ViewModel() {
     private val _videoInfo = MutableStateFlow<VideoInfo?>(null)
     val videoInfo: StateFlow<VideoInfo?> = _videoInfo.asStateFlow()
@@ -107,8 +116,8 @@ class VideoDetailViewModel(
         loadJob?.cancel()
         replyJob?.cancel()
         lastHistoryRequestAt = null
-        this.bvid = bvid
-        this.aid = aid
+        this.bvid = bvid.ifBlank { if (sameVideo) this.bvid else "" }
+        this.aid = aid.takeIf { it > 0L } ?: if (sameVideo) this.aid else 0L
         loaded = false
         _isReplyLoading.value = false
         if (!sameVideo) {
@@ -123,28 +132,70 @@ class VideoDetailViewModel(
             _hasMoreReplies.value = true
             _replyErrorMessage.value = null
         }
+        val requestBvid = bvid.ifBlank { if (sameVideo) this.bvid else "" }
+        val cached = readCachedVideoInfo(requestBvid)
+        if (cached != null) _videoInfo.value = cached
         _isLoading.value = true
         _errorMessage.value = null
         loadJob = viewModelScope.launch {
-            try {
-                val infoDeferred = async { loadVideoInfo(bvid) }
-                val tagsDeferred = async { loadTags(bvid) }
-                val info = infoDeferred.await() ?: throw Exception("视频信息加载失败")
-                if (generation != requestGeneration) return@launch
-                this@VideoDetailViewModel.bvid = info.bvid.ifBlank { bvid }
-                this@VideoDetailViewModel.aid = info.aid.takeIf { it > 0L } ?: aid
-                val relatedDeferred = async { loadRelated(this@VideoDetailViewModel.aid) }
-                _videoInfo.value = info
-                _tags.value = tagsDeferred.await()
-                _relatedVideos.value = relatedDeferred.await()
-                loaded = true
-                loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
+            val info = try {
+                val result = if (loadVideoInfo != null) {
+                    loadVideoInfo.invoke(requestBvid)
+                } else {
+                    VideoDetailCache.load(requestBvid, aid, refresh)
+                }
+                result ?: _videoInfo.value ?: throw IllegalStateException("视频信息加载失败")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _errorMessage.value = e.localizedMessage ?: "加载详情失败"
+                if (generation != requestGeneration) return@launch
+                _videoInfo.value ?: run {
+                    _errorMessage.value = e.localizedMessage ?: "加载详情失败"
+                    return@launch
+                }
             } finally {
                 if (generation == requestGeneration) _isLoading.value = false
+            }
+            currentCoroutineContext().ensureActive()
+            if (generation != requestGeneration) return@launch
+            val realBvid = info.bvid.ifBlank { requestBvid }
+            val realAid = info.aid.takeIf { it > 0L } ?: aid
+            this@VideoDetailViewModel.bvid = realBvid
+            this@VideoDetailViewModel.aid = realAid
+            _videoInfo.value = info
+            writeCachedVideoInfo(realBvid, info)
+            loaded = true
+            loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
+            launch {
+                try {
+                    val tags = loadTags(realBvid)
+                    if (generation == requestGeneration) _tags.value = tags
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+            launch {
+                try {
+                    val related = loadRelated(realAid)
+                    if (generation == requestGeneration) _relatedVideos.value = related
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+            }
+            launch {
+                try {
+                    val enriched = enrichVideoInfo(info)
+                    if (generation != requestGeneration) return@launch
+                    val current = _videoInfo.value ?: return@launch
+                    val merged = mergeEnrichedInfo(info, current, enriched)
+                    _videoInfo.value = merged
+                    writeCachedVideoInfo(realBvid, merged)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
             }
         }
     }
@@ -165,7 +216,9 @@ class VideoDetailViewModel(
             lastHistoryRequestAt = monotonicMillis()
             val history = loadHistory(requestAid, cid) ?: return
             if (generation == requestGeneration) {
-                _videoInfo.value = _videoInfo.value?.copy(history = history)
+                val updated = _videoInfo.value?.copy(history = history) ?: return
+                _videoInfo.value = updated
+                writeCachedVideoInfo(bvid, updated)
             }
         } catch (e: CancellationException) {
             throw e
@@ -245,6 +298,25 @@ class VideoDetailViewModel(
     internal companion object {
         fun isSameVideo(currentBvid: String, currentAid: Long, bvid: String, aid: Long): Boolean =
             (bvid.isNotBlank() && bvid == currentBvid) || (aid > 0L && aid == currentAid)
+
+        fun mergeEnrichedInfo(initial: VideoInfo, current: VideoInfo, enriched: VideoInfo): VideoInfo {
+            val before = initial.stats
+            val latest = current.stats
+            val incoming = enriched.stats
+            val stats = if (before != null && latest != null && incoming != null) {
+                latest.copy(
+                    followed = if (latest.followed == before.followed) incoming.followed else latest.followed,
+                    liked = if (latest.liked == before.liked && latest.like == before.like) incoming.liked else latest.liked,
+                    disliked = if (latest.disliked == before.disliked) incoming.disliked else latest.disliked,
+                    coined = if (latest.coined == before.coined && latest.coin == before.coin) incoming.coined else latest.coined,
+                    favoured = if (latest.favoured == before.favoured && latest.favorite == before.favorite) incoming.favoured else latest.favoured
+                )
+            } else if (latest == before) incoming else latest
+            return current.copy(
+                stats = stats,
+                staff = if (current.staff == initial.staff) enriched.staff else current.staff
+            )
+        }
     }
 
     fun likeReply(rpid: Long, isLiked: Boolean) {

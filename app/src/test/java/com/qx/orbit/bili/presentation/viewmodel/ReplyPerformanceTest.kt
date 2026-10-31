@@ -18,6 +18,10 @@ import org.junit.Before
 import org.junit.Test
 import com.qx.orbit.bili.data.model.Bangumi
 import com.qx.orbit.bili.data.model.History
+import com.qx.orbit.bili.data.model.Stats
+import com.qx.orbit.bili.data.model.UserInfo
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -97,7 +101,9 @@ class ReplyPerformanceTest {
     fun switchingVideosCancelsPendingLoadAndNeverUsesOldComments() = runTest(dispatcher) {
         val pending = CompletableDeferred<VideoInfo?>()
         val model = VideoDetailViewModel(
-            loadVideoInfo = { if (it == "old") pending.await() else VideoInfo(bvid = it, aid = 20) },
+            loadVideoInfo = {
+                if (it == "old") withContext(NonCancellable) { pending.await() } else VideoInfo(bvid = it, aid = 20)
+            },
             loadTags = { "" },
             loadRelated = { emptyList() },
             loadReplyPage = { oid, _ -> ReplyApi.ReplyPage(listOf(Reply(rpid = oid)), false) },
@@ -106,6 +112,8 @@ class ReplyPerformanceTest {
         model.loadData("old", 10)
         runCurrent()
         model.loadData("new", 20)
+        runCurrent()
+        pending.complete(VideoInfo(bvid = "old", aid = 10))
         advanceUntilIdle()
         assertEquals("new", model.videoInfo.value?.bvid)
         assertEquals(listOf(20L), model.replies.value.map { it.rpid })
@@ -286,6 +294,140 @@ class ReplyPerformanceTest {
         assertEquals(2, requests)
         assertEquals(listOf(1L), model.replies.value.map { it.rpid })
         assertFalse(model.hasMoreReplies.value)
+    }
+
+    @Test
+    fun slowAuxiliaryRequestsDoNotBlockInfoRepliesOrHistory() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val initial = VideoInfo(bvid = "BV1", aid = 10, cids = listOf(100L))
+        val cached = mutableListOf<VideoInfo>()
+        val model = VideoDetailViewModel(
+            loadVideoInfo = { initial },
+            loadTags = { gate.await(); "标签" },
+            loadRelated = { gate.await(); emptyList() },
+            loadReplyPage = { _, _ -> ReplyApi.ReplyPage(listOf(Reply(rpid = 1)), false) },
+            loadReplyCount = { 1L },
+            loadHistory = { _, cid -> History(cid, 80) },
+            writeCachedVideoInfo = { _, info -> cached += info },
+            enrichVideoInfo = { gate.await(); it.copy(staff = listOf(UserInfo(mid = 1, vip_role = 1))) }
+        )
+        model.loadData("BV1", 10)
+        runCurrent()
+        assertEquals(initial, model.videoInfo.value)
+        assertFalse(model.isLoading.value)
+        assertEquals(listOf(1L), model.replies.value.map { it.rpid })
+        model.refreshHistory()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(80, model.videoInfo.value?.history?.progress)
+        assertEquals(1, model.videoInfo.value?.staff?.first()?.vip_role)
+        assertEquals("标签", model.tags.value)
+        assertEquals(model.videoInfo.value, cached.last())
+    }
+
+    @Test
+    fun failedAuxiliaryRequestsKeepCachedContentAndSameVideoGuard() = runTest(dispatcher) {
+        var infoRequests = 0
+        var replyRequests = 0
+        val cached = VideoInfo(bvid = "BV1", aid = 10)
+        val model = VideoDetailViewModel(
+            loadVideoInfo = {
+                infoRequests++
+                if (infoRequests == 1) cached else throw IllegalStateException("offline")
+            },
+            loadTags = { throw IllegalStateException("tags offline") },
+            loadRelated = { throw IllegalStateException("related offline") },
+            loadReplyPage = { _, _ -> replyRequests++; ReplyApi.ReplyPage(listOf(Reply(rpid = 1)), false) },
+            loadReplyCount = { 1L },
+            readCachedVideoInfo = { cached },
+            enrichVideoInfo = { throw IllegalStateException("enrich offline") }
+        )
+        model.loadData("BV1", 10)
+        assertEquals(cached, model.videoInfo.value)
+        advanceUntilIdle()
+        model.loadData("BV1", 10)
+        advanceUntilIdle()
+        assertEquals(1, infoRequests)
+        assertEquals(1, replyRequests)
+        assertNull(model.errorMessage.value)
+        assertEquals(cached, model.videoInfo.value)
+        model.loadData("BV1", 10, refresh = true)
+        advanceUntilIdle()
+        assertEquals(2, infoRequests)
+        assertEquals(2, replyRequests)
+    }
+
+    @Test
+    fun oldAuxiliaryResultsCannotOverwriteNewVideoEvenIfTheyIgnoreCancellation() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val writes = mutableListOf<VideoInfo>()
+        val model = VideoDetailViewModel(
+            loadVideoInfo = { VideoInfo(bvid = it, aid = if (it == "old") 10 else 20) },
+            loadTags = { key ->
+                if (key == "old") withContext(NonCancellable) { gate.await() }
+                key
+            },
+            loadRelated = { id ->
+                if (id == 10L) withContext(NonCancellable) { gate.await() }
+                emptyList()
+            },
+            loadReplyPage = { id, _ -> ReplyApi.ReplyPage(listOf(Reply(rpid = id)), false) },
+            loadReplyCount = { 1L },
+            writeCachedVideoInfo = { _, info -> writes += info },
+            enrichVideoInfo = { info ->
+                if (info.bvid == "old") withContext(NonCancellable) { gate.await() }
+                info.copy(title = "enriched ${info.bvid}")
+            }
+        )
+        model.loadData("old", 10)
+        runCurrent()
+        model.loadData("new", 20)
+        runCurrent()
+        val writesBefore = writes.toList()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("new", model.videoInfo.value?.bvid)
+        assertEquals("new", model.tags.value)
+        assertEquals(listOf(20L), model.replies.value.map { it.rpid })
+        assertEquals(writesBefore, writes)
+        assertFalse(model.isLoading.value)
+    }
+
+    @Test
+    fun lateEnrichmentPatchesOnlyUnchangedRelationFieldsAndKeepsLatestContent() {
+        val initial = VideoInfo(stats = Stats(like = 10, coin = 20, favorite = 30))
+        val current = initial.copy(
+            title = "latest",
+            history = History(100, 80),
+            stats = initial.stats!!.copy(liked = true, like = 11, coined = 2, coin = 22, favoured = true, favorite = 31)
+        )
+        val enriched = initial.copy(
+            title = "stale",
+            stats = initial.stats.copy(followed = true, disliked = true),
+            staff = listOf(UserInfo(mid = 1, vip_role = 1))
+        )
+        val merged = VideoDetailViewModel.mergeEnrichedInfo(initial, current, enriched)
+        assertEquals(current.title, merged.title)
+        assertEquals(current.history, merged.history)
+        assertEquals(current.stats!!.copy(followed = true, disliked = true), merged.stats)
+        assertEquals(enriched.staff, merged.staff)
+    }
+
+    @Test
+    fun injectedLoaderDoesNotUseProductionCacheOrEnrichmentAndDefaultConstructorExists() = runTest(dispatcher) {
+        assertNotNull(VideoDetailViewModel::class.java.getConstructor().newInstance())
+        val initial = VideoInfo(bvid = "injected", aid = 10, staff = listOf(UserInfo(mid = 1)), stats = Stats())
+        val model = VideoDetailViewModel(
+            loadVideoInfo = { initial },
+            loadTags = { "" },
+            loadRelated = { emptyList() },
+            loadReplyPage = { _, _ -> ReplyApi.ReplyPage(emptyList(), false) },
+            loadReplyCount = { 0L }
+        )
+        model.loadData("injected", 10)
+        advanceUntilIdle()
+        assertEquals(initial, model.videoInfo.value)
+        assertNull(model.errorMessage.value)
     }
 
     @Test

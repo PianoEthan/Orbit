@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.rotary.rotaryScrollable
@@ -256,7 +257,7 @@ fun DynamicDetailScreen(
                                         ),
                                         onClick = {
                                             if (item.bvid.isNotEmpty() || item.comment_id > 0) {
-                                                navController.navigate("detail/${item.bvid}/${item.comment_id}")
+                                                navController.navigateToVideoDetail(item.bvid, item.comment_id)
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
@@ -290,7 +291,7 @@ fun DynamicDetailScreen(
                                             .background(Color.DarkGray.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                                             .clickable {
                                                 if (forward.major_type == "MAJOR_TYPE_ARCHIVE" && (forward.bvid.isNotEmpty() || forward.comment_id > 0)) {
-                                                    navController.navigate("detail/${forward.bvid}/${forward.comment_id}")
+                                                    navController.navigateToVideoDetail(forward.bvid, forward.comment_id)
                                                 } else if (forward.dynamicId.isNotEmpty()) {
                                                     navController.navigate("dynamic_detail/${forward.dynamicId}")
                                                 }
@@ -332,7 +333,7 @@ fun DynamicDetailScreen(
                                                 ),
                                                 onClick = {
                                                     if (forward.bvid.isNotEmpty() || forward.comment_id > 0) {
-                                                        navController.navigate("detail/${forward.bvid}/${forward.comment_id}")
+                                                        navController.navigateToVideoDetail(forward.bvid, forward.comment_id)
                                                     }
                                                 },
                                                 modifier = Modifier.fillMaxWidth()

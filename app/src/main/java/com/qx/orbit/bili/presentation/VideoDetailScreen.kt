@@ -1,7 +1,6 @@
 package com.qx.orbit.bili.presentation
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -75,7 +74,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -120,6 +118,8 @@ import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.api.UserInfoApi
+import com.qx.orbit.bili.data.cache.VideoDetailCache
+import com.qx.orbit.bili.data.cache.VideoPreview
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.StringUtil
@@ -132,16 +132,22 @@ import com.qx.orbit.bili.presentation.theme.generateWearColorSchemeFromSeed
 import com.qx.orbit.bili.presentation.ui.components.RecommendVideoCard
 import com.qx.orbit.bili.presentation.ui.components.ReplyCard
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
+import com.qx.orbit.bili.presentation.ui.components.rememberEntranceWindow
+import com.qx.orbit.bili.presentation.ui.components.staggeredEntrance
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import com.qx.orbit.bili.presentation.viewmodel.VideoDetailViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.VideoDownloadManager
 import com.qx.orbit.bili.util.formatCount
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
@@ -156,8 +162,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.wear.compose.material3.ColorScheme
 import com.qx.orbit.bili.presentation.util.ReplyPaginationEffect
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
@@ -192,7 +196,6 @@ fun VideoDetailScreen(
     val replies by viewModel.replies.collectAsState()
     val replyCount by viewModel.replyCount.collectAsState()
     val relatedVideos by viewModel.relatedVideos.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val replyErrorMessage by viewModel.replyErrorMessage.collectAsState()
     val isReplyLoading by viewModel.isReplyLoading.collectAsState()
@@ -1011,7 +1014,11 @@ fun VideoDetailScreen(
                     onClick = {
                         showCollectionDialog = false
                         if (!isCurrent) {
-                            navController.navigate("detail/${ep.bvid.ifBlank { "0" }}/${ep.aid}")
+                            navController.navigateToVideoDetail(
+                                ep.bvid.ifBlank { "0" },
+                                ep.aid,
+                                VideoPreview(title = ep.title, cover = ep.arc?.cover ?: "")
+                            )
                         }
                     },
                     colors = if (isCurrent) {
@@ -1078,13 +1085,18 @@ fun VideoDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             AnimatedContent(
-                targetState = isLoading && videoInfo == null,
+                targetState = videoInfo == null && errorMessage == null,
                 transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) },
                 label = "LoadingAnimation"
             ) { isInitialLoading ->
                 if (isInitialLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    val preview = remember(bvid) { VideoDetailCache.preview(bvid) }
+                    if (preview != null) {
+                        VideoDetailSkeleton(preview)
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
                 } else if (errorMessage != null && videoInfo == null) {
                     Box(
@@ -1581,6 +1593,7 @@ fun VideoInfoPage(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
+    val entranceActive = rememberEntranceWindow(trigger = videoInfo != null)
     var isDescExpanded by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -1622,6 +1635,7 @@ fun VideoInfoPage(
                             .height(120.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable { onPlayClick() }
+                            .staggeredEntrance(0, enabled = entranceActive)
                             
                     )
                 }
@@ -1637,6 +1651,7 @@ fun VideoInfoPage(
                             .adaptiveTransformedHeight(this, transformationSpec)
                             .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
                             .fillMaxWidth()
+                            .staggeredEntrance(1, enabled = entranceActive)
                     )
                 }
                 
@@ -1650,6 +1665,7 @@ fun VideoInfoPage(
                                 .adaptiveTransformedHeight(this, transformationSpec)
                                 .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
                                 .fillMaxWidth()
+                                .staggeredEntrance(2, enabled = entranceActive)
                         ) {
                             items(videoInfo.staff) { upInfo ->
                                 Row(
@@ -1699,6 +1715,7 @@ fun VideoInfoPage(
                             .adaptiveTransformedHeight(this, transformationSpec)
                             .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
                             .fillMaxWidth()
+                            .staggeredEntrance(3, enabled = entranceActive)
                     ) {
                         @OptIn(ExperimentalLayoutApi::class)
                         FlowRow(
@@ -1848,7 +1865,8 @@ fun VideoInfoPage(
                             modifier = Modifier
                                 .adaptiveTransformedHeight(this, transformationSpec)
                                 .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .staggeredEntrance(4, enabled = entranceActive),
                             onClick = { offset ->
                                 val urlAnnotations = fullDesc.getStringAnnotations(tag = "URL", start = offset, end = offset)
                                 if (urlAnnotations.isNotEmpty()) {
@@ -1876,7 +1894,8 @@ fun VideoInfoPage(
                             modifier = Modifier
                                 .adaptiveTransformedHeight(this, transformationSpec)
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp),
+                                .padding(horizontal = 8.dp)
+                                .staggeredEntrance(5, enabled = entranceActive),
                             transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                             icon = {
                                 Icon(
@@ -1920,7 +1939,8 @@ fun VideoInfoPage(
                         onLongClick = { onPlayLongClick() },
                         modifier = Modifier
                             .adaptiveTransformedHeight(this, transformationSpec)
-                            .fillMaxWidth().padding(horizontal = 8.dp),
+                            .fillMaxWidth().padding(horizontal = 8.dp)
+                            .staggeredEntrance(6, enabled = entranceActive),
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                         icon = {Icon(imageVector = Icons.Filled.PlayCircleOutline, contentDescription = null)},
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -2007,7 +2027,8 @@ fun VideoInfoPage(
                         modifier = Modifier
                             .adaptiveTransformedHeight(this, transformationSpec)
                             .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .staggeredEntrance(7, enabled = entranceActive),
                     ) {
                         FilledIconButton(
                             onClick = { if (tripleProgress.value == 0f) onLikeClick() },
@@ -2088,7 +2109,8 @@ fun VideoInfoPage(
                         onClick = onWatchLaterClick,
                         modifier = Modifier
                             .adaptiveTransformedHeight(this, transformationSpec)
-                            .fillMaxWidth().padding(horizontal = 8.dp),
+                            .fillMaxWidth().padding(horizontal = 8.dp)
+                            .staggeredEntrance(8, enabled = entranceActive),
                         icon = { Icon(Icons.Default.Schedule, contentDescription = "Watch Later", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface) },
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                         colors = ButtonDefaults.buttonColors(
@@ -2108,7 +2130,8 @@ fun VideoInfoPage(
                         onClick = onCacheClick,
                         modifier = Modifier
                             .adaptiveTransformedHeight(this, transformationSpec)
-                            .fillMaxWidth().padding(horizontal = 8.dp),
+                            .fillMaxWidth().padding(horizontal = 8.dp)
+                            .staggeredEntrance(9, enabled = entranceActive),
                         icon = { Icon(Icons.Default.Download, contentDescription = "Cache", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface) },
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                         colors = ButtonDefaults.buttonColors(
@@ -2151,6 +2174,7 @@ fun VideoCommentsPage(
     val focusedReplyIndex = remember(replies, focusedReplyId) {
         replies.indexOfFirst { it.rpid == focusedReplyId }
     }
+    val entranceActive = rememberEntranceWindow(trigger = replies.isNotEmpty())
     var focusConsumed by rememberSaveable(focusedReplyId) { mutableStateOf(false) }
     LaunchedEffect(focusedReplyId, focusedReplyIndex, isPageVisible) {
         if (isPageVisible && !focusConsumed && focusedReplyId > 0L && focusedReplyIndex >= 0) {
@@ -2173,7 +2197,8 @@ fun VideoCommentsPage(
         , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
                 ListHeader(
-                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)
+                        .staggeredEntrance(0, enabled = entranceActive),
                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
                 ){
                     Text(
@@ -2187,7 +2212,8 @@ fun VideoCommentsPage(
             item {
                 Button(
                     onClick = onSendCommentClick,
-                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                        .staggeredEntrance(1, enabled = entranceActive),
                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
                     icon = {Icon(imageVector = Icons.Filled.Edit, contentDescription = null)},
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -2226,7 +2252,8 @@ fun VideoCommentsPage(
                         reply = replies[index],
                         highlighted = replies[index].rpid == focusedReplyId,
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                        modifier = Modifier.animateItem().adaptiveTransformedHeight(this, transformationSpec),
+                        modifier = Modifier.animateItem().adaptiveTransformedHeight(this, transformationSpec)
+                            .staggeredEntrance(index + 2, enabled = entranceActive && index < 6),
                         navController = navController,
                         replyType = ReplyApi.REPLY_TYPE_VIDEO,
                         onRemove = { onRemove(replies[index]) },
@@ -2262,6 +2289,7 @@ fun VideoRelatedPage(
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
     val context = LocalContext.current
+    val entranceActive = rememberEntranceWindow(trigger = relatedVideos.isNotEmpty())
 
     ScreenScaffold(scrollState = listState, modifier = Modifier.focusRequester(focusRequester)) { contentPadding ->
         TransformingLazyColumn(
@@ -2269,7 +2297,7 @@ fun VideoRelatedPage(
             contentPadding = contentPadding
         , rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)) {
             item {
-                ListHeader {
+                ListHeader(modifier = Modifier.staggeredEntrance(0, enabled = entranceActive)) {
                     Text(
                         "相关推荐",
                         style = MaterialTheme.typography.titleMedium,
@@ -2282,11 +2310,89 @@ fun VideoRelatedPage(
                 RecommendVideoCard(
                     item = relatedVideos[index],
                     onClick = { 
-                        navController.navigate("detail/${relatedVideos[index].bvid}/${relatedVideos[index].aid}")
+                        navController.navigateToVideoDetail(
+                            relatedVideos[index].bvid,
+                            relatedVideos[index].aid,
+                            relatedVideos[index].toPreview()
+                        )
                     },
-                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
+                    modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)
+                        .staggeredEntrance(index + 1, enabled = entranceActive && index < 6),
                     transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 首屏骨架：有点击处带来的预览信息时，直接画真封面 + 真标题 + 小转圈。
+ *
+ * 刻意复用与 [VideoInfoPage] 完全相同的容器（ScreenScaffold + TransformingLazyColumn）
+ * 与相同的 item 顺序 / 修饰符，因此骨架和真实内容的位置逐像素对齐，
+ * 加载完成切换时封面与标题不会跳动。
+ */
+@Composable
+private fun VideoDetailSkeleton(preview: VideoPreview) {
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val isRound = LocalScreenRound.current
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            contentPadding = contentPadding,
+            rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
+        ) {
+            // 与 VideoInfoPage 一致：顶部 20dp 热区
+            item {
+                Spacer(modifier = Modifier.fillMaxWidth().height(20.dp))
+            }
+            // 1. 封面
+            item {
+                val secureCover = preview.cover.replace("http://", "https://")
+                val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@480w_270h_1c.webp"
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                        .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
+                        .fillMaxWidth(0.95f)
+                        .height(120.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+            }
+            // 2. 标题
+            item {
+                if (preview.title.isNotEmpty()) {
+                    Text(
+                        text = preview.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier
+                            .adaptiveTransformedHeight(this, transformationSpec)
+                            .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
+                            .fillMaxWidth()
+                    )
+                }
+            }
+            // 3. 加载指示，占住 UP 主胶囊的位置，避免内容到位时整页上跳
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .adaptiveTransformedHeight(this, transformationSpec),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
         }
     }

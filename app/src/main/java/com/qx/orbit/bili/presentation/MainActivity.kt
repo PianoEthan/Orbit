@@ -89,7 +89,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
+import com.qx.orbit.bili.presentation.util.toPreview
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
@@ -1146,7 +1148,11 @@ fun RecommendScreen(
                         RecommendVideoCard(
                             item = videoList[index],
                             onClick = {
-                                navController.navigate("detail/${videoList[index].bvid}/${videoList[index].aid}")
+                                navController.navigateToVideoDetail(
+                                    videoList[index].bvid,
+                                    videoList[index].aid,
+                                    videoList[index].toPreview()
+                                )
                             },
                             modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec),
                             transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
