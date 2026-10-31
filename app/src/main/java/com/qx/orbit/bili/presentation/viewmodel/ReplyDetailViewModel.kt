@@ -9,8 +9,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 
-class ReplyDetailViewModel : ViewModel() {
+class ReplyDetailViewModel(
+    private val loadReplyPage: suspend (Long, Long, Int, Int) -> ReplyApi.ReplyPage = { oid, root, page, type ->
+        ReplyApi.getRepliesPage(oid = oid, rpid = root, pageNumber = page, type = type)
+    }
+) : ViewModel() {
     private val _rootReply = MutableStateFlow<Reply?>(null)
     val rootReply: StateFlow<Reply?> = _rootReply.asStateFlow()
 
@@ -27,7 +33,11 @@ class ReplyDetailViewModel : ViewModel() {
     private var oid: Long = 0
     private var rpid: Long = 0
     private var replyType: Int = ReplyApi.REPLY_TYPE_VIDEO
-    private var childReplyType: Int = ReplyApi.REPLY_TYPE_VIDEO_CHILD
+    private var childReplyType: Int = ReplyApi.REPLY_TYPE_VIDEO
+    private var loadJob: Job? = null
+    private var generation = 0
+    private val _hasMoreReplies = MutableStateFlow(true)
+    val hasMoreReplies: StateFlow<Boolean> = _hasMoreReplies.asStateFlow()
 
     private val _emotes = MutableStateFlow<List<EmoteApi.EmotePackage>?>(null)
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
@@ -35,36 +45,45 @@ class ReplyDetailViewModel : ViewModel() {
     private val _isEmoteLoading = MutableStateFlow(false)
 
     fun initData(root: Reply) {
-        if (_rootReply.value != null && _rootReply.value?.rpid == root.rpid) return
+        if (_rootReply.value?.rpid == root.rpid && oid == root.oid && _rootReply.value?.isDynamic == root.isDynamic) return
+        loadJob?.cancel()
+        _isLoading.value = false
         _rootReply.value = root
-        this.oid = root.oid
-        this.rpid = root.rpid
-        if (root.isDynamic) {
-            replyType = ReplyApi.REPLY_TYPE_DYNAMIC
-            childReplyType = ReplyApi.REPLY_TYPE_DYNAMIC_CHILD
-        } else {
-            replyType = ReplyApi.REPLY_TYPE_VIDEO
-            childReplyType = ReplyApi.REPLY_TYPE_VIDEO
-        }
+        oid = root.oid
+        rpid = root.rpid
+        replyType = if (root.isDynamic) ReplyApi.REPLY_TYPE_DYNAMIC else ReplyApi.REPLY_TYPE_VIDEO
+        childReplyType = if (root.isDynamic) ReplyApi.REPLY_TYPE_DYNAMIC_CHILD else ReplyApi.REPLY_TYPE_VIDEO
         page = 1
+        _hasMoreReplies.value = true
+        _errorMessage.value = null
         _childReplies.value = emptyList()
         loadMore()
     }
 
     fun loadMore() {
-        if (_isLoading.value || oid == 0L || rpid == 0L) return
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
+        if (_isLoading.value || !_hasMoreReplies.value || oid == 0L || rpid == 0L) return
+        val requestGeneration = ++generation
+        val requestOid = oid
+        val requestRoot = rpid
+        val requestPage = page
+        val requestType = childReplyType
+        _isLoading.value = true
+        _errorMessage.value = null
+        loadJob = viewModelScope.launch {
             try {
-                val newReplies = ReplyApi.getReplies(oid = oid, rpid = rpid, pageNumber = page, type = childReplyType)
-                _childReplies.value = _childReplies.value + newReplies
-                if (newReplies.isNotEmpty()) page++
+                val result = loadReplyPage(requestOid, requestRoot, requestPage, requestType)
+                if (generation != requestGeneration) return@launch
+                val previous = if (requestPage == 1) emptyList() else _childReplies.value
+                val merged = (previous + result.replies).distinctBy { it.rpid }
+                _childReplies.value = merged
+                _hasMoreReplies.value = result.hasMore && (requestPage == 1 || merged.size > previous.size)
+                page = requestPage + 1
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
-                _errorMessage.value = e.message ?: "加载评论失败"
+                if (generation == requestGeneration) _errorMessage.value = e.message ?: "加载评论失败"
             } finally {
-                _isLoading.value = false
+                if (generation == requestGeneration) _isLoading.value = false
             }
         }
     }
@@ -138,8 +157,10 @@ class ReplyDetailViewModel : ViewModel() {
                     type = replyType
                 )
                 if (code == 0) {
+                    loadJob?.cancel()
+                    _isLoading.value = false
                     page = 1
-                    _childReplies.value = emptyList()
+                    _hasMoreReplies.value = true
                     loadMore()
                 }
             } catch (e: Exception) {

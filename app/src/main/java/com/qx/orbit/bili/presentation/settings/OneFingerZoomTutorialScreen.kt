@@ -7,8 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -19,49 +17,41 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToUp
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.zIndex
+import androidx.navigation.NavController
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.foundation.pager.rememberPagerState
-import androidx.wear.compose.material.dialog.Dialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.Text
-import com.qx.orbit.bili.presentation.ui.components.WysTimeText
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
 import androidx.wear.compose.material3.SuccessConfirmationDialog
+import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.curvedText
+import com.qx.orbit.bili.presentation.player.PlayerGestureCallbacks
+import com.qx.orbit.bili.presentation.player.playerGestures
+import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun OneFingerZoomTutorialScreen(navController: NavController) {
@@ -142,8 +132,8 @@ fun PracticePage(onSuccess: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    val viewConfiguration = LocalViewConfiguration.current
-    var currentStep by remember { mutableIntStateOf(0) } // 0: zoom in, 1: pan, 2: zoom out
+    val density = LocalDensity.current.density
+    var currentStep by remember { mutableIntStateOf(0) }
 
     val infiniteTransition = rememberInfiniteTransition()
     val hintOffsetY by infiniteTransition.animateFloat(
@@ -222,68 +212,25 @@ fun PracticePage(onSuccess: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        if (currentStep >= 1) {
-                            offsetX += pan.x * scale
-                            offsetY += pan.y * scale
-                            if (currentStep == 1 && (kotlin.math.abs(offsetX) > 100f || kotlin.math.abs(offsetY) > 100f)) {
-                                currentStep = 2
-                            }
-                        }
-                    }
-                }
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        var isUp = false
-                        val down1 = awaitFirstDown(requireUnconsumed = false)
-                        val up = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
-                            while (!isUp) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                if (event.changes.any { it.changedToUp() }) {
-                                    isUp = true
-                                    return@withTimeoutOrNull event
-                                }
-                            }
-                            null
-                        }
-                        if (up != null) {
-                            val down2 = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
-                                awaitFirstDown(requireUnconsumed = false)
-                            }
-                            if (down2 != null) {
-                                var isZooming = false
-                                var lastY = down2.position.y
-                                val startY = down2.position.y
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Main)
-                                    val ptr = event.changes.firstOrNull { it.id == down2.id }
-                                    if (ptr == null || !ptr.pressed) break
-
-                                    if (!isZooming) {
-                                        val dy = ptr.position.y - startY
-                                        if (kotlin.math.abs(dy) > viewConfiguration.touchSlop) {
-                                            isZooming = true
-                                        }
-                                    }
-                                    if (isZooming) {
-                                        val dy = ptr.position.y - lastY
-                                        val zoomFactor = 1f + dy * 0.005f
-                                        scale = (scale * zoomFactor).coerceIn(0.5f, 3f)
-                                        lastY = ptr.position.y
-                                        ptr.consume()
-
-                                        if (currentStep == 0 && scale > 1.8f) {
-                                            currentStep = 1
-                                        } else if (currentStep == 2 && scale < 1.0f) {
-                                            onSuccess()
-                                        }
-                                    }
+                .playerGestures(
+                    PlayerGestureCallbacks(
+                        canPan = scale > 1f,
+                        onTransform = { pan, zoom ->
+                            scale = (scale * zoom).coerceIn(1f, 5f)
+                            val limit = 100f * density * (scale - 1f) / 2f
+                            offsetX = (offsetX + pan.x).coerceIn(-limit, limit)
+                            offsetY = (offsetY + pan.y).coerceIn(-limit, limit)
+                            when {
+                                currentStep == 0 && scale > 1.8f -> currentStep = 1
+                                currentStep == 1 && (abs(offsetX) > 24f * density || abs(offsetY) > 24f * density) -> currentStep = 2
+                                currentStep == 2 && scale < 1.1f -> {
+                                    currentStep = 3
+                                    onSuccess()
                                 }
                             }
                         }
-                    }
-                }
+                    )
+                )
         )
     }
 }

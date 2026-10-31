@@ -96,9 +96,9 @@ fun ReplyCard(
     onReplyClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var linkClicked by remember { mutableStateOf(false) }
-    var resolvedB23Links by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var showImageDialog by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
+    var linkClicked by remember(reply.rpid) { mutableStateOf(false) }
+    var resolvedB23Links by remember(reply.message) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var showImageDialog by remember(reply.rpid) { mutableStateOf<Pair<List<String>, Int>?>(null) }
 
     showImageDialog?.let { (images, index) ->
         ImageViewerDialog(
@@ -296,16 +296,16 @@ fun ReplyCard(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
-            var isExpanded by remember { mutableStateOf(false) }
-            var hasOverflow by remember { mutableStateOf(false) }
+            var isExpanded by remember(reply.rpid, reply.message) { mutableStateOf(false) }
+            var hasOverflow by remember(reply.rpid, reply.message) { mutableStateOf(false) }
             val (richText, inlineContent) = parseRichText(reply.message, reply.emotes, reply.members, resolvedB23Links)
-            val textLayoutResult = remember { mutableStateOf<TextLayoutResult?>(null) }
+            val textLayoutResult = remember(richText) { mutableStateOf<TextLayoutResult?>(null) }
             Text(
                 text = richText,
                 inlineContent = inlineContent,
                 style = MaterialTheme.typography.bodySmall.copy(lineHeight = TextUnit.Unspecified),
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.pointerInput(Unit) {
+                modifier = Modifier.pointerInput(richText, navController, context) {
                     detectTapGestures { offset ->
                         val pos = textLayoutResult.value?.getOffsetForPosition(offset) ?: -1
                         if (pos >= 0) {
@@ -454,48 +454,43 @@ fun ReplyCard(
                     previewList.forEachIndexed { index, child ->
                         val childName = child.sender?.name ?: ""
                         val (richText, parsedInlineContent) = parseRichText(child.message, child.emotes, child.members, resolvedB23Links)
-                        val finalInlineContent = if (child.isUp) {
-                            parsedInlineContent + mapOf(
-                                "UP_TAG" to InlineTextContent(
-                                    Placeholder(
-                                        width = 22.sp,
-                                        height = 14.sp,
-                                        placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
-                                    )
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(BiliPink, RoundedCornerShape(percent = 50)),
-                                        contentAlignment = Alignment.Center
+                        val finalInlineContent = remember(parsedInlineContent, child.isUp) {
+                            if (child.isUp) {
+                                parsedInlineContent + mapOf(
+                                    "UP_TAG" to InlineTextContent(
+                                        Placeholder(22.sp, 14.sp, PlaceholderVerticalAlign.TextCenter)
                                     ) {
-                                        Text(
-                                            text = "UP", 
-                                            color = Color.White, 
-                                            fontSize = 8.sp, 
-                                            fontWeight = FontWeight.Bold,
-                                            lineHeight = 8.sp,
-                                            style = TextStyle(
-                                                platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                        Box(
+                                            modifier = Modifier.fillMaxSize().background(BiliPink, RoundedCornerShape(percent = 50)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "UP",
+                                                color = Color.White,
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                lineHeight = 8.sp,
+                                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
                                             )
-                                        )
+                                        }
                                     }
-                                }
-                            )
-                        } else parsedInlineContent
-
-                        Text(
-                            text = buildAnnotatedString {
+                                )
+                            } else parsedInlineContent
+                        }
+                        val primaryColor = MaterialTheme.colorScheme.primary
+                        val previewText = remember(richText, childName, child.isUp, primaryColor) {
+                            buildAnnotatedString {
                                 if (child.isUp) {
                                     appendInlineContent("UP_TAG", "[UP]")
                                     append(" ")
                                 }
-                                withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
-                                    append(childName)
-                                }
+                                withStyle(SpanStyle(color = primaryColor)) { append(childName) }
                                 append(": ")
                                 append(richText)
-                            },
+                            }
+                        }
+                        Text(
+                            text = previewText,
                             inlineContent = finalInlineContent,
                             style = MaterialTheme.typography.bodySmall.copy(lineHeight = TextUnit.Unspecified),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

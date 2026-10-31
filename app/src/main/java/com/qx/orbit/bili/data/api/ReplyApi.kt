@@ -9,7 +9,8 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.qx.orbit.bili.util.formatBiliTime
-import java.util.*
+import android.util.Log
+import java.io.File
 
 object ReplyApi {
 
@@ -144,49 +145,53 @@ object ReplyApi {
         @SerializedName("count") val count: Long = 0
     )
 
+    data class ReplyPage(val replies: List<Reply>, val hasMore: Boolean)
+
     suspend fun getReplies(
         oid: Long,
         rpid: Long = 0,
         pageNumber: Int = 1,
         type: Int = REPLY_TYPE_VIDEO,
         sort: Int = 1
-    ): List<Reply> = withContext(Dispatchers.IO) {
-        android.util.Log.d("BiliApi", "getReplies oid=$oid rpid=$rpid page=$pageNumber type=$type sort=$sort")
-        val jsonElement = if (rpid > 0) {
-            when (val result = api.getSubReplies(oid, type, pageNumber, rpid)) {
-                is Result.Success -> result.data
-                is Result.Error -> {
-                    android.util.Log.e("BiliApi", "getSubReplies error: ${result.exception.code} ${result.exception.message}")
-                    return@withContext emptyList()
-                }
-            }
+    ): List<Reply> = getRepliesPage(oid, rpid, pageNumber, type, sort).replies
+
+    suspend fun getRepliesPage(
+        oid: Long,
+        rpid: Long = 0,
+        pageNumber: Int = 1,
+        type: Int = REPLY_TYPE_VIDEO,
+        sort: Int = 1
+    ): ReplyPage = withContext(Dispatchers.IO) {
+        val result = if (rpid > 0) {
+            api.getSubReplies(oid, type, pageNumber, rpid)
         } else {
-            when (val result = api.getReplies(oid, type, pageNumber, sort, 0)) {
-                is Result.Success -> result.data
-                is Result.Error -> {
-                    android.util.Log.e("BiliApi", "getReplies error: ${result.exception.code} ${result.exception.message}")
-                    return@withContext emptyList()
-                }
-            }
+            api.getReplies(oid, type, pageNumber, sort, 0)
+        }
+        val jsonElement = when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> throw result.exception
         }
         val typeToken = object : TypeToken<ApiResponse<ReplyListData>>() {}.type
         val resp: ApiResponse<ReplyListData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
-        if (resp == null || !resp.isSuccess || resp.data == null) {
-            android.util.Log.w("BiliApi", "getReplies parse failed: code=${resp?.code}")
-            return@withContext emptyList()
-        }
-        android.util.Log.d("BiliApi", "getReplies replies=${resp.data.replies?.size} top=${resp.data.top_replies?.size}")
+        val data = resp?.data?.takeIf { resp.isSuccess }
+            ?: throw IllegalStateException("加载评论失败 (${resp?.code ?: -1})")
         val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
-        val upMid = resp.data.upper?.mid ?: 0L
-        val normalList = resp.data.replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid, upMid) } ?: emptyList()
-        if (pageNumber == 1) {
-            val topList = resp.data.top_replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid, upMid).copy(isTop = true) } ?: emptyList()
-            val topIds = topList.map { it.rpid }.toSet()
-            android.util.Log.d("BiliApi", "getReplies result: top=${topList.size} normal=${normalList.size}")
-            topList + normalList.filter { it.rpid !in topIds }
-        } else {
-            normalList
-        }
+        val upMid = data.upper?.mid ?: 0L
+        val normalList = data.replies.orEmpty().filterNotNull().map { parseReply(it, isDynamic, oid, upMid) }
+        val topList = if (pageNumber == 1) {
+            data.top_replies.orEmpty().filterNotNull().map { parseReply(it, isDynamic, oid, upMid).copy(isTop = true) }
+        } else emptyList()
+        ReplyPage(
+            replies = (topList + normalList).distinctBy { it.rpid },
+            hasMore = hasMoreReplyPages(pageNumber, normalList.size, data.page?.size ?: 0, data.page?.count)
+        )
+    }
+
+    internal fun hasMoreReplyPages(page: Int, received: Int, pageSize: Int, count: Int?): Boolean {
+        if (received == 0) return false
+        return if (pageSize > 0 && count != null) {
+            page.toLong() * pageSize < count
+        } else true
     }
 
     suspend fun getRepliesLazy(
@@ -203,28 +208,24 @@ object ReplyApi {
         )
         if (rpid > 0) params["seek_rpid"] = rpid.toString()
         if (!pagination.isNullOrEmpty()) params["pagination_str"] = "{\"offset\":\"$pagination\"}"
-        android.util.Log.d("BiliApi", "getRepliesLazy params=$params")
+        Log.d("BiliApi", "getRepliesLazy params=$params")
         val signedParams = WbiSigner.signParams(params)
-        android.util.Log.d("BiliApi", "getRepliesLazy signed=$signedParams")
+        Log.d("BiliApi", "getRepliesLazy signed=$signedParams")
         val jsonElement = when (val result = api.getRepliesLazy(signedParams)) {
             is Result.Success -> result.data
-            is Result.Error -> {
-                android.util.Log.e("BiliApi", "getRepliesLazy error: ${result.exception.code} ${result.exception.message}")
-                return@withContext Triple(0, null, emptyList())
-            }
+            is Result.Error -> throw result.exception
         }
-        android.util.Log.d("BiliApi", "getRepliesLazy response: ${jsonElement.toString().take(500)}")
+        Log.d("BiliApi", "getRepliesLazy response: ${jsonElement.toString().take(500)}")
         val typeToken = object : TypeToken<ApiResponse<ReplyLazyData>>() {}.type
         val resp: ApiResponse<ReplyLazyData>? = GsonConfig.gson.fromJson(jsonElement, typeToken)
         if (resp == null || !resp.isSuccess || resp.data == null) {
-            android.util.Log.w("BiliApi", "getRepliesLazy parse failed: resp=$resp code=${resp?.code}")
-            return@withContext Triple(0, null, emptyList())
+            throw IllegalStateException("加载评论失败 (${resp?.code ?: -1})")
         }
-        android.util.Log.d("BiliApi", "getRepliesLazy replies=${resp.data.replies?.size} top=${resp.data.top_replies?.size}")
+        Log.d("BiliApi", "getRepliesLazy replies=${resp.data.replies?.size} top=${resp.data.top_replies?.size}")
         val isDynamic = type == REPLY_TYPE_DYNAMIC || type == REPLY_TYPE_DYNAMIC_CHILD
         val upMid = resp.data.upper?.mid ?: 0L
         val count = resp.data.cursor?.all_count ?: 0
-        val nextOffset = resp.data.cursor?.pagination_reply?.next_offset
+        val nextOffset = resp.data.cursor?.takeUnless { it.is_end }?.pagination_reply?.next_offset
         val topList = resp.data.top_replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid, upMid).copy(isTop = true) } ?: emptyList()
         val normalList = resp.data.replies?.filterNotNull()?.map { parseReply(it, isDynamic, oid, upMid) } ?: emptyList()
         val topIds = topList.map { it.rpid }.toSet()
@@ -262,7 +263,7 @@ object ReplyApi {
         parent: Long = 0,
         text: String,
         type: Int = REPLY_TYPE_VIDEO,
-        images: List<java.io.File>? = null
+        images: List<File>? = null
     ): Pair<Int, Reply?> = withContext(Dispatchers.IO) {
         val uploadedPics = images?.mapNotNull { file ->
             DynamicApi.uploadImageBFS(file)?.let { uploadResp ->

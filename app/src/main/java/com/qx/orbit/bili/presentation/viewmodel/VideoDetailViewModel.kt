@@ -23,8 +23,21 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import java.io.File
+import com.qx.orbit.bili.data.model.History
+import kotlinx.coroutines.delay
 
-class VideoDetailViewModel : ViewModel() {
+class VideoDetailViewModel(
+    private val loadVideoInfo: suspend (String) -> VideoInfo? = { VideoInfoApi.getVideoInfo(it) },
+    private val loadTags: suspend (String) -> String = { VideoInfoApi.getTags(it) },
+    private val loadRelated: suspend (Long) -> List<VideoCard> = { RecommendApi.getRelated(it) },
+    private val loadReplyPage: suspend (Long, Int) -> ReplyApi.ReplyPage = { oid, page -> ReplyApi.getRepliesPage(oid = oid, pageNumber = page) },
+    private val loadReplyCount: suspend (Long) -> Long = { ReplyApi.getReplyCount(oid = it) },
+    private val loadHistory: suspend (Long, Long) -> History? = { aid, cid -> PlayerApi.getHistoryProgress(aid, cid) },
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L }
+) : ViewModel() {
     private val _videoInfo = MutableStateFlow<VideoInfo?>(null)
     val videoInfo: StateFlow<VideoInfo?> = _videoInfo.asStateFlow()
 
@@ -67,91 +80,171 @@ class VideoDetailViewModel : ViewModel() {
     var bvid: String = ""
     var aid: Long = 0
     private var replyPage = 1
+    private var loaded = false
+    private var generation = 0
+    private var replyGeneration = 0
+    private var loadJob: Job? = null
+    private var replyJob: Job? = null
+    private var historyRefreshing = false
+    private var lastHistoryRequestAt: Long? = null
+    private var focusedTarget = 0L to 0L
+    private val _hasMoreReplies = MutableStateFlow(true)
+    val hasMoreReplies: StateFlow<Boolean> = _hasMoreReplies.asStateFlow()
 
-    fun loadData(bvid: String, aid: Long, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
-        if (_isLoading.value) return
+    fun loadData(
+        bvid: String,
+        aid: Long,
+        commentRootId: Long = 0L,
+        commentReplyId: Long = 0L,
+        refresh: Boolean = false
+    ) {
+        val sameVideo = isSameVideo(this.bvid, this.aid, bvid, aid)
+        if (sameVideo && !refresh && (_isLoading.value || loaded)) {
+            if (loaded) focusReply(commentRootId, commentReplyId)
+            return
+        }
+        val requestGeneration = ++generation
+        loadJob?.cancel()
+        replyJob?.cancel()
+        lastHistoryRequestAt = null
         this.bvid = bvid
         this.aid = aid
-
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
+        loaded = false
+        _isReplyLoading.value = false
+        if (!sameVideo) {
+            _videoInfo.value = null
+            _tags.value = ""
+            _relatedVideos.value = emptyList()
+            _replies.value = emptyList()
+            _replyCount.value = 0
+            _focusedReplyId.value = 0L
+            focusedTarget = 0L to 0L
+            replyPage = 1
+            _hasMoreReplies.value = true
+            _replyErrorMessage.value = null
+        }
+        _isLoading.value = true
+        _errorMessage.value = null
+        loadJob = viewModelScope.launch {
             try {
-                val infoDeferred = async { VideoInfoApi.getVideoInfo(bvid) }
-                val tagsDeferred = async { VideoInfoApi.getTags(bvid) }
-
+                val infoDeferred = async { loadVideoInfo(bvid) }
+                val tagsDeferred = async { loadTags(bvid) }
                 val info = infoDeferred.await() ?: throw Exception("视频信息加载失败")
+                if (generation != requestGeneration) return@launch
                 this@VideoDetailViewModel.bvid = info.bvid.ifBlank { bvid }
                 this@VideoDetailViewModel.aid = info.aid.takeIf { it > 0L } ?: aid
-                val relatedDeferred = async {
-                    RecommendApi.getRelated(this@VideoDetailViewModel.aid)
-                }
-                if (info.cids.isNotEmpty()) {
-                    try {
-                        val history = PlayerApi.getHistoryProgress(info.aid, info.cids.first())
-                        _videoInfo.value = info.copy(history = history)
-                    } catch (e: Exception) {
-                        _videoInfo.value = info
-                    }
-                } else {
-                    _videoInfo.value = info
-                }
-
+                val relatedDeferred = async { loadRelated(this@VideoDetailViewModel.aid) }
+                _videoInfo.value = info
                 _tags.value = tagsDeferred.await()
                 _relatedVideos.value = relatedDeferred.await()
-                
-                loadReplies(
-                    reset = true,
-                    focusedRootId = commentRootId,
-                    focusedReplyId = commentReplyId
-                )
+                loaded = true
+                loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
                 _errorMessage.value = e.localizedMessage ?: "加载详情失败"
             } finally {
-                _isLoading.value = false
+                if (generation == requestGeneration) _isLoading.value = false
             }
         }
     }
-    
+
+    suspend fun refreshHistory() {
+        val info = _videoInfo.value ?: return
+        val cid = info.cids.firstOrNull() ?: return
+        val requestAid = info.aid.takeIf { it > 0L } ?: aid
+        if (requestAid <= 0L || historyRefreshing) return
+        val requestGeneration = generation
+        historyRefreshing = true
+        try {
+            lastHistoryRequestAt?.let { previous ->
+                val remaining = 1_000L - (monotonicMillis() - previous)
+                if (remaining > 0L) delay(remaining)
+            }
+            if (generation != requestGeneration) return
+            lastHistoryRequestAt = monotonicMillis()
+            val history = loadHistory(requestAid, cid) ?: return
+            if (generation == requestGeneration) {
+                _videoInfo.value = _videoInfo.value?.copy(history = history)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        } finally {
+            historyRefreshing = false
+        }
+    }
+
+    private fun focusReply(rootId: Long, replyId: Long) {
+        val target = rootId to replyId
+        if (rootId <= 0L || focusedTarget == target) return
+        focusedTarget = target
+        _focusedReplyId.value = rootId
+        val requestAid = aid
+        val requestGeneration = generation
+        viewModelScope.launch {
+            try {
+                val reply = ReplyApi.getReplyDetail(requestAid, rootId, replyId) ?: return@launch
+                if (generation == requestGeneration && focusedTarget == target) {
+                    _replies.value = (listOf(reply) + _replies.value).distinctBy { it.rpid }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (generation == requestGeneration) _replyErrorMessage.value = e.message ?: "定位评论失败"
+            }
+        }
+    }
+
     fun loadReplies(
         reset: Boolean = false,
         focusedRootId: Long = 0L,
         focusedReplyId: Long = 0L
     ) {
-        if (_isReplyLoading.value) return
-        viewModelScope.launch {
-            _isReplyLoading.value = true
-            if (reset) _replyErrorMessage.value = null
+        if (aid <= 0L || (!reset && (_isReplyLoading.value || !_hasMoreReplies.value))) return
+        if (reset) {
+            replyJob?.cancel()
+            replyPage = 1
+            _hasMoreReplies.value = true
+            _focusedReplyId.value = focusedRootId
+            focusedTarget = focusedRootId to focusedReplyId
+        }
+        val requestGeneration = generation
+        val requestReplyGeneration = ++replyGeneration
+        val requestAid = aid
+        val requestPage = replyPage
+        val target = focusedTarget
+        _isReplyLoading.value = true
+        _replyErrorMessage.value = null
+        replyJob = viewModelScope.launch {
             try {
-                if (reset) {
-                    replyPage = 1
-                    _focusedReplyId.value = focusedRootId
-                    _replyCount.value = ReplyApi.getReplyCount(oid = aid).toInt()
-                }
-                val newReplies = ReplyApi.getReplies(oid = aid, pageNumber = replyPage)
-                if (reset) {
-                    val focusedReply = focusedRootId.takeIf { it > 0L }?.let { rootId ->
-                        ReplyApi.getReplyDetail(
-                            oid = aid,
-                            root = rootId,
-                            targetReplyId = focusedReplyId
-                        )
-                    }
-                    _replies.value = (listOfNotNull(focusedReply) + newReplies)
-                        .distinctBy { it.rpid }
-                } else {
-                    val existingIds = _replies.value.mapTo(mutableSetOf()) { it.rpid }
-                    _replies.value = _replies.value + newReplies.filter { it.rpid !in existingIds }
-                }
-                replyPage++
+                val result = loadReplyPage(requestAid, requestPage)
+                val focusedReply = if (requestPage == 1 && target.first > 0L) {
+                    ReplyApi.getReplyDetail(requestAid, target.first, target.second)
+                } else null
+                val count = if (requestPage == 1) loadReplyCount(requestAid).toInt() else _replyCount.value
+                if (generation != requestGeneration || replyGeneration != requestReplyGeneration) return@launch
+                val previous = if (requestPage == 1) emptyList() else _replies.value
+                val merged = (previous + listOfNotNull(focusedReply) + result.replies).distinctBy { it.rpid }
+                _hasMoreReplies.value = result.hasMore && (requestPage == 1 || merged.size > previous.size)
+                _replies.value = merged
+                _replyCount.value = count
+                replyPage = requestPage + 1
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
-                _replyErrorMessage.value = e.message ?: "加载评论失败"
+                if (generation == requestGeneration && replyGeneration == requestReplyGeneration) {
+                    _replyErrorMessage.value = e.message ?: "加载评论失败"
+                }
             } finally {
-                _isReplyLoading.value = false
+                if (generation == requestGeneration && replyGeneration == requestReplyGeneration) _isReplyLoading.value = false
             }
         }
+    }
+
+    internal companion object {
+        fun isSameVideo(currentBvid: String, currentAid: Long, bvid: String, aid: Long): Boolean =
+            (bvid.isNotBlank() && bvid == currentBvid) || (aid > 0L && aid == currentAid)
     }
 
     fun likeReply(rpid: Long, isLiked: Boolean) {
@@ -328,7 +421,7 @@ class VideoDetailViewModel : ViewModel() {
         }
     }
 
-    fun sendReply(text: String, images: List<java.io.File>? = null, root: Long, parent: Long, onSuccess: () -> Unit, onError: (String) -> Unit) {
+    fun sendReply(text: String, images: List<File>? = null, root: Long, parent: Long, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
                 val (code, reply) = ReplyApi.sendReply(
@@ -341,7 +434,7 @@ class VideoDetailViewModel : ViewModel() {
                 )
                 if (code == 0) {
                     if (reply != null) {
-                        _replies.value = listOf(reply) + _replies.value
+                        _replies.value = (listOf(reply) + _replies.value).distinctBy { it.rpid }
                     } else {
                         loadReplies(reset = true)
                     }

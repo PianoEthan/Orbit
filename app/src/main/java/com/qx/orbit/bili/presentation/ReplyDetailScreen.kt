@@ -42,6 +42,7 @@ import com.qx.orbit.bili.presentation.ui.components.WysTimeText
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
 import androidx.wear.compose.material3.SurfaceTransformation
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
+import com.qx.orbit.bili.presentation.util.ReplyPaginationEffect
 
 @Composable
 fun ReplyDetailScreen(
@@ -57,7 +58,14 @@ fun ReplyDetailScreen(
     val childReplies by viewModel.childReplies.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val hasMoreReplies by viewModel.hasMoreReplies.collectAsState()
     val listState = rememberTransformingLazyColumnState()
+    ReplyPaginationEffect(
+        listState = listState,
+        lastReplyId = childReplies.lastOrNull()?.rpid,
+        canLoad = hasMoreReplies && !isLoading && errorMessage == null,
+        onLoadMore = viewModel::loadMore
+    )
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
     val focusRequester = remember { FocusRequester() }
@@ -157,9 +165,6 @@ fun ReplyDetailScreen(
                     }
                 } else {
                     items(count = childReplies.size, key = { childReplies[it].rpid }) { index ->
-                        if (index == childReplies.size - 1) {
-                            LaunchedEffect(index) { viewModel.loadMore() }
-                        }
                         val child = childReplies[index]
                         ReplyCard(
                             reply = child,
@@ -180,6 +185,15 @@ fun ReplyDetailScreen(
                     }
                 }
                 item { Spacer(Modifier.height(20.dp)) }
+            }
+            if (errorMessage != null && (childReplies.isNotEmpty() || (rootReply?.childCount ?: 0) == 0)) {
+                item {
+                    Text(
+                        text = "加载失败，点击重试",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.loadMore() }.padding(12.dp)
+                    )
+                }
             }
         }
     }

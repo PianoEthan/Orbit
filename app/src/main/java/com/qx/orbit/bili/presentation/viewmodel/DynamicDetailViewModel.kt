@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 
 class DynamicDetailViewModel : ViewModel() {
     private val _dynamic = MutableStateFlow<Dynamic?>(null)
@@ -37,30 +39,46 @@ class DynamicDetailViewModel : ViewModel() {
     val emotes: StateFlow<List<EmoteApi.EmotePackage>?> = _emotes.asStateFlow()
 
     private var replyNext: String? = null
-    private var hasMoreReplies = true
+    private val _hasMoreReplies = MutableStateFlow(true)
+    val hasMoreReplies: StateFlow<Boolean> = _hasMoreReplies.asStateFlow()
+    private val _replyError = MutableStateFlow<String?>(null)
+    val replyError: StateFlow<String?> = _replyError.asStateFlow()
+    private var loadJob: Job? = null
+    private var replyJob: Job? = null
+    private var replyGeneration = 0
+    private var loadingDynamicId: String? = null
+    private var focusedTarget = 0L to 0L
 
     fun loadDynamic(dynamicId: String, commentRootId: Long = 0L, commentReplyId: Long = 0L) {
-        if (_dynamic.value?.dynamicId == dynamicId) return
-        viewModelScope.launch {
-            _isLoading.value = true
-            _error.value = null
+        if (_dynamic.value?.dynamicId == dynamicId || (_isLoading.value && loadingDynamicId == dynamicId)) return
+        loadJob?.cancel()
+        replyJob?.cancel()
+        replyGeneration++
+        loadingDynamicId = dynamicId
+        _dynamic.value = null
+        _replies.value = emptyList()
+        _focusedReplyId.value = 0L
+        _hasMoreReplies.value = true
+        replyNext = null
+        _isReplyLoading.value = false
+        _replyError.value = null
+        _isLoading.value = true
+        _error.value = null
+        loadJob = viewModelScope.launch {
             try {
                 val data = DynamicApi.getDynamic(dynamicId)
                 if (data != null) {
                     _dynamic.value = data
-                    loadReplies(
-                        reset = true,
-                        focusedRootId = commentRootId,
-                        focusedReplyId = commentReplyId
-                    )
+                    loadReplies(reset = true, focusedRootId = commentRootId, focusedReplyId = commentReplyId)
                 } else {
                     _error.value = "无法加载动态"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
                 _error.value = e.localizedMessage ?: "网络错误"
             } finally {
-                _isLoading.value = false
+                if (loadingDynamicId == dynamicId) _isLoading.value = false
             }
         }
     }
@@ -70,40 +88,39 @@ class DynamicDetailViewModel : ViewModel() {
         focusedRootId: Long = 0L,
         focusedReplyId: Long = 0L
     ) {
-        if (_isReplyLoading.value) return
-        viewModelScope.launch {
-            _isReplyLoading.value = true
+        val dyn = _dynamic.value ?: return
+        if (!reset && (_isReplyLoading.value || !_hasMoreReplies.value)) return
+        if (reset) {
+            replyJob?.cancel()
+            _focusedReplyId.value = focusedRootId
+            focusedTarget = focusedRootId to focusedReplyId
+            replyNext = null
+            _hasMoreReplies.value = true
+        }
+        val requestGeneration = ++replyGeneration
+        val cursor = replyNext
+        val target = focusedTarget
+        _isReplyLoading.value = true
+        _replyError.value = null
+        replyJob = viewModelScope.launch {
             try {
-                if (reset) {
-                    _replies.value = emptyList()
-                    _focusedReplyId.value = focusedRootId
-                    replyNext = null
-                    hasMoreReplies = true
-                }
-                if (!hasMoreReplies) {
-                    _isReplyLoading.value = false
-                    return@launch
-                }
-                val dyn = _dynamic.value ?: return@launch
-                val result = ReplyApi.getRepliesLazy(dyn.comment_id, 0, replyNext, dyn.comment_type, 1)
-                val focusedReply = if (reset && focusedRootId > 0L) {
-                    ReplyApi.getReplyDetail(
-                        oid = dyn.comment_id,
-                        root = focusedRootId,
-                        targetReplyId = focusedReplyId,
-                        type = dyn.comment_type
-                    )
-                } else {
-                    null
-                }
+                val result = ReplyApi.getRepliesLazy(dyn.comment_id, 0, cursor, dyn.comment_type, 1)
+                val focusedReply = if (cursor == null && target.first > 0L) {
+                    ReplyApi.getReplyDetail(dyn.comment_id, target.first, target.second, dyn.comment_type)
+                } else null
+                if (replyGeneration != requestGeneration || _dynamic.value?.dynamicId != dyn.dynamicId) return@launch
+                val previous = if (cursor == null) emptyList() else _replies.value
+                val merged = (previous + listOfNotNull(focusedReply) + result.third).distinctBy { it.rpid }
                 replyNext = result.second
-                hasMoreReplies = result.second != null && result.second?.isNotBlank() == true
-                _replies.value = (_replies.value + listOfNotNull(focusedReply) + result.third)
-                    .distinctBy { it.rpid }
+                _hasMoreReplies.value = !result.second.isNullOrBlank() && result.second != cursor &&
+                    (cursor == null || merged.size > previous.size)
+                _replies.value = merged
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (replyGeneration == requestGeneration) _replyError.value = e.message ?: "加载评论失败"
             } finally {
-                _isReplyLoading.value = false
+                if (replyGeneration == requestGeneration && _dynamic.value?.dynamicId == dyn.dynamicId) _isReplyLoading.value = false
             }
         }
     }

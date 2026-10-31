@@ -171,14 +171,17 @@ public class DanmakuView extends View implements IDanmakuView, IDanmakuViewContr
         if (mHandlerThread != null) {
             HandlerThread handlerThread = this.mHandlerThread;
             mHandlerThread = null;
-            try {
-                handlerThread.join(200);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            try {
+            if (Build.VERSION.SDK_INT >= 18) {
+                handlerThread.quitSafely();
+            } else {
                 handlerThread.quit();
-            } catch (Exception ignored) {
+            }
+            if (handlerThread != Thread.currentThread()) {
+                try {
+                    handlerThread.join(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
@@ -281,23 +284,29 @@ public class DanmakuView extends View implements IDanmakuView, IDanmakuViewContr
     }
 
     private void lockCanvas() {
-        if (mDanmakuVisible == false) {
+        if (!mDanmakuVisible) {
             return;
         }
-        postInvalidateCompat();
+        if (Thread.currentThread().getId() == mUiThreadId) {
+            postInvalidateCompat();
+            return;
+        }
         synchronized (mDrawMonitor) {
-            while ((!mDrawFinished) && (handler != null)) {
+            mDrawFinished = false;
+            postInvalidateCompat();
+            long deadline = SystemClock.uptimeMillis() + 200;
+            while (!mDrawFinished && handler != null && mDanmakuVisible && !handler.isStop()) {
+                long remaining = deadline - SystemClock.uptimeMillis();
+                if (remaining <= 0) {
+                    break;
+                }
                 try {
-                    mDrawMonitor.wait(200);
+                    mDrawMonitor.wait(remaining);
                 } catch (InterruptedException e) {
-                    if (mDanmakuVisible == false || handler == null || handler.isStop()) {
-                        break;
-                    } else {
-                        Thread.currentThread().interrupt();
-                    }
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
-            mDrawFinished = false;
         }
     }
 
@@ -365,6 +374,7 @@ public class DanmakuView extends View implements IDanmakuView, IDanmakuViewContr
             handler.removeCallbacks(mResumeRunnable);
             handler.pause();
         }
+        unlockCanvasAndPost();
     }
 
     private int mResumeTryCount = 0;

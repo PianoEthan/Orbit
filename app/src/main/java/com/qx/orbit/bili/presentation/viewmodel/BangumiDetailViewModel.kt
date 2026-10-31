@@ -8,13 +8,18 @@ import com.qx.orbit.bili.data.api.ReplyApi
 import com.qx.orbit.bili.data.model.Bangumi
 import com.qx.orbit.bili.data.model.Reply
 import com.qx.orbit.bili.data.model.withReplyTopState
-import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class BangumiDetailViewModel : ViewModel() {
+class BangumiDetailViewModel(
+    private val loadBangumi: suspend (Long) -> Bangumi? = { BangumiApi.getBangumi(it) },
+    private val loadReplyPage: suspend (Long, Int) -> ReplyApi.ReplyPage = { oid, page -> ReplyApi.getRepliesPage(oid = oid, pageNumber = page) },
+    private val loadReplyCount: suspend (Long) -> Long = { ReplyApi.getReplyCount(oid = it) }
+) : ViewModel() {
     private val _bangumiInfo = MutableStateFlow<Bangumi?>(null)
     val bangumiInfo: StateFlow<Bangumi?> = _bangumiInfo.asStateFlow()
 
@@ -45,20 +50,25 @@ class BangumiDetailViewModel : ViewModel() {
     var mediaId: Long = 0
     private var replyPage = 1
     private var commentAid: Long = 0
+    private var replyJob: Job? = null
+    private var replyGeneration = 0
+    private val _hasMoreReplies = MutableStateFlow(true)
+    val hasMoreReplies: StateFlow<Boolean> = _hasMoreReplies.asStateFlow()
 
     fun loadData(mediaId: Long) {
         if (_isLoading.value) return
         this.mediaId = mediaId
-
+        _isLoading.value = true
+        _errorMessage.value = null
+        replyGeneration++
+        replyJob?.cancel()
+        _isReplyLoading.value = false
+        commentAid = 0L
         viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
             try {
-                val info = BangumiApi.getBangumi(mediaId)
+                val info = loadBangumi(mediaId)
                 if (info != null) {
                     _bangumiInfo.value = info
-                    
-                    // Try to find an aid for comments (usually the first episode's aid)
                     val firstEpAid = info.sectionList.firstOrNull()?.episodes?.firstOrNull()?.aid ?: 0L
                     if (firstEpAid > 0) {
                         commentAid = firstEpAid
@@ -67,8 +77,9 @@ class BangumiDetailViewModel : ViewModel() {
                 } else {
                     _errorMessage.value = "无法获取番剧信息"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
                 _errorMessage.value = e.localizedMessage ?: "加载番剧详情失败"
             } finally {
                 _isLoading.value = false
@@ -77,27 +88,35 @@ class BangumiDetailViewModel : ViewModel() {
     }
 
     fun loadReplies(reset: Boolean = false) {
-        if (commentAid <= 0 || _isReplyLoading.value) return
-        viewModelScope.launch {
-            _isReplyLoading.value = true
-            if (reset) _replyErrorMessage.value = null
+        if (commentAid <= 0 || (!reset && (_isReplyLoading.value || !_hasMoreReplies.value))) return
+        if (reset) {
+            replyJob?.cancel()
+            replyPage = 1
+            _hasMoreReplies.value = true
+        }
+        val requestGeneration = ++replyGeneration
+        val requestAid = commentAid
+        val requestPage = replyPage
+        _isReplyLoading.value = true
+        _replyErrorMessage.value = null
+        replyJob = viewModelScope.launch {
             try {
-                if (reset) {
-                    replyPage = 1
-                    _replyCount.value = ReplyApi.getReplyCount(oid = commentAid).toInt()
-                }
-                val newReplies = ReplyApi.getReplies(oid = commentAid, pageNumber = replyPage)
-                if (reset) {
-                    _replies.value = newReplies
-                } else {
-                    _replies.value += newReplies
-                }
-                replyPage++
+                val result = loadReplyPage(requestAid, requestPage)
+                val count = if (requestPage == 1) loadReplyCount(requestAid).toInt() else _replyCount.value
+                if (requestGeneration != replyGeneration) return@launch
+                val previous = if (requestPage == 1) emptyList() else _replies.value
+                val merged = (previous + result.replies).distinctBy { it.rpid }
+                _replies.value = merged
+                _replyCount.value = count
+                _hasMoreReplies.value = result.hasMore && (requestPage == 1 || merged.size > previous.size)
+                _replyErrorMessage.value = null
+                replyPage = requestPage + 1
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
-                _replyErrorMessage.value = e.message ?: "加载评论失败"
+                if (requestGeneration == replyGeneration) _replyErrorMessage.value = e.message ?: "加载评论失败"
             } finally {
-                _isReplyLoading.value = false
+                if (requestGeneration == replyGeneration) _isReplyLoading.value = false
             }
         }
     }

@@ -27,11 +27,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -89,18 +84,18 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -169,10 +164,11 @@ import com.qx.orbit.bili.util.danmaku.base.createEmptyParser
 import com.qx.orbit.bili.util.danmaku.base.createProtobufParser
 import com.qx.orbit.bili.util.danmaku.base.createXmlParser
 import com.qx.orbit.bili.util.player.OrbitPlayer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import okhttp3.Request
 import okhttp3.WebSocket
 import java.io.File
@@ -318,6 +314,7 @@ fun PlayerScreen(
 
     val isPrepared by viewModel.isPrepared.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val bufferingRevision by viewModel.bufferingRevision.collectAsState()
     var showControls by remember { mutableStateOf(true) }
     var interactionCounter by remember { mutableIntStateOf(0) }
     var currentProgress by remember { mutableLongStateOf(viewModel.currentProgress.value) }
@@ -332,9 +329,32 @@ fun PlayerScreen(
     val videoHeight by viewModel.videoHeight.collectAsState()
 
     var dragProgress by remember { mutableFloatStateOf(-1f) }
+    var seekSession by remember { mutableStateOf<DistanceSeekSession?>(null) }
+    var playerCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var seekBarCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val density = LocalDensity.current.density
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isForeground by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    var danmakuReady by remember { mutableStateOf(false) }
+    var danmakuStarted by remember { mutableStateOf(false) }
+    var danmakuSeekRevision by remember { mutableIntStateOf(0) }
+    val foregroundVideo = isForeground && !isAudioPlayer && !isExiting
+    val runDanmaku = shouldRunDanmaku(
+        foregroundVideo, showDanmaku, isPrepared && danmakuReady,
+        isPlaying, dragProgress >= 0f, isLoading
+    )
+    val latestDanmakuGate by rememberUpdatedState<() -> Boolean>({
+        shouldRunDanmaku(
+            isForeground && !isAudioOnlyMode && initialData.audioUrl != "audio" && !isExiting,
+            showDanmaku, viewModel.isPrepared.value && danmakuReady,
+            viewModel.isPlaying.value, dragProgress >= 0f, viewModel.isLoading.value
+        )
+    })
     val isLongPressSpeedUp by viewModel.isLongPressSpeedUp.collectAsState()
-    var longPressUpTimestamp by remember { mutableLongStateOf(0L) }
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    val effectiveSpeed by viewModel.effectiveSpeed.collectAsState()
     val liveElapsedSeconds by viewModel.liveElapsedSeconds.collectAsState()
 
     LaunchedEffect(isLive, playerData.timeStamp) {
@@ -389,7 +409,6 @@ fun PlayerScreen(
         val callback = object : MediaSession.Callback() {
             override fun onPlay() {
                 viewModel.play()
-                danmakuPlayer.resume()
             }
 
             override fun onPause() {
@@ -398,9 +417,10 @@ fun PlayerScreen(
             }
 
             override fun onSeekTo(pos: Long) {
+                if (!viewModel.isPrepared.value || viewModel.isLive || viewModel.totalDuration.value <= 0) return
                 lastSeekTimestamp = System.currentTimeMillis()
                 viewModel.seekTo(pos)
-                danmakuPlayer.seekTo(pos)
+                if (latestDanmakuGate()) danmakuPlayer.seekTo(viewModel.currentProgress.value)
             }
             
             override fun onSkipToNext() {
@@ -551,13 +571,13 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(vmCurrentProgress, isPrepared, isPlaying, playbackSpeed) {
+    LaunchedEffect(vmCurrentProgress, isPrepared, isPlaying, effectiveSpeed) {
         if (isPrepared) {
             val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
             val sessionPosition = try { viewModel.player.currentPosition } catch (_: Exception) { vmCurrentProgress }
             val playbackState = PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
-                .setState(state, sessionPosition, playbackSpeed)
+                .setState(state, sessionPosition, effectiveSpeed)
                 .build()
             mediaSession.setPlaybackState(playbackState)
         }
@@ -585,57 +605,54 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(interactionCounter, isPlaying) {
-        if (interactionCounter > 0 || !isPlaying) {
-            showControls = true
-        }
-        if (isPlaying) {
+    LaunchedEffect(interactionCounter, isPlaying, dragProgress >= 0f, isForeground) {
+        if (interactionCounter > 0 || !isPlaying || dragProgress >= 0f) showControls = true
+        if (isPlaying && dragProgress < 0f && isForeground) {
             delay(3.seconds)
             showControls = false
         }
     }
 
-    LaunchedEffect(isPlaying, isPrepared) {
-        if (isPrepared) {
-            if (isPlaying) {
-                danmakuPlayer.resume()
-                while (isActive) {
-                    currentProgress = viewModel.player.currentPosition
-                    viewModel.updateCurrentSubtitle(currentProgress)
-                    if (!isLive && dragProgress < 0f && System.currentTimeMillis() - lastSeekTimestamp > 1000L) {
-                        val currentDanmakuTime = danmakuPlayer.getCurrentTime()
-                        val diff = kotlin.math.abs(currentDanmakuTime - currentProgress)
-                        if (diff > 500L) {
-                            danmakuPlayer.seekTo(currentProgress)
-                        }
-                    }
-                    // Player chrome and subtitles do not need display-refresh-rate updates.
-                    // Keeping this at 4 Hz avoids recomposing the full player on every frame.
-                    delay(250.milliseconds)
-                }
+    LaunchedEffect(runDanmaku, showDanmaku, foregroundVideo, danmakuReady, bufferingRevision, danmakuSeekRevision) {
+        if (showDanmaku && foregroundVideo) danmakuPlayer.show() else danmakuPlayer.hide()
+        if (latestDanmakuGate()) {
+            val position = viewModel.savePosition()
+            if (!danmakuStarted) {
+                danmakuPlayer.start(position)
+                danmakuStarted = true
             } else {
-                danmakuPlayer.pause()
-                currentProgress = viewModel.player.currentPosition
-                viewModel.updateCurrentSubtitle(currentProgress)
+                danmakuPlayer.seekTo(position)
+                danmakuPlayer.resume()
             }
+        } else {
+            danmakuPlayer.pause()
         }
     }
 
-    LaunchedEffect(vmCurrentProgress) {
-        if (isPrepared && !isPlaying) {
+    LaunchedEffect(isPlaying, isPrepared, isForeground, showControls, isAudioPlayer, subtitles, runDanmaku) {
+        if (isPrepared && isForeground && (showControls || isAudioPlayer || subtitles.isNotEmpty() || runDanmaku)) {
+            do {
+                val position = viewModel.savePosition()
+                if (showControls || isAudioPlayer) currentProgress = position
+                if (subtitles.isNotEmpty()) viewModel.updateCurrentSubtitle(position)
+                if (latestDanmakuGate() && !isLive && System.currentTimeMillis() - lastSeekTimestamp > 1000L) {
+                    val diff = kotlin.math.abs(danmakuPlayer.getCurrentTime() - position)
+                    if (diff > 500L) danmakuPlayer.seekTo(position)
+                }
+                if (isPlaying) delay(250.milliseconds)
+            } while (isActive && isPlaying)
+        }
+    }
+
+    LaunchedEffect(vmCurrentProgress, isForeground) {
+        if (isPrepared && !isPlaying && isForeground) {
             currentProgress = vmCurrentProgress
             viewModel.updateCurrentSubtitle(currentProgress)
         }
     }
 
     LaunchedEffect(isLoading) {
-        if (isLoading) {
-            viewModel.startBufferSpeedLoop()
-        }
-    }
-
-    LaunchedEffect(showDanmaku) {
-        if (showDanmaku) danmakuPlayer.show() else danmakuPlayer.hide()
+        if (isLoading) viewModel.startBufferSpeedLoop()
     }
 
     // Track what was last loaded to prevent unnecessary reloads
@@ -651,6 +668,12 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         viewModel.beginPlaybackPreparation()
+        dragProgress = -1f
+        seekSession = null
+        danmakuReady = false
+        danmakuStarted = false
+        danmakuPlayer.pause()
+        danmakuPlayer.setOnReadyListener { danmakuReady = true }
         lastLoadId = loadId
         try {
             danmakuPlayer.removeAllDanmakus(true)
@@ -659,8 +682,6 @@ fun PlayerScreen(
                 CookiesApi.checkCookies()
             }
 
-            // Fetch the playback URL while the danmaku engine is being prepared.
-            // Both are required before playback starts, but neither depends on the other.
             val playbackData = async {
                 if (isLive || isLocal) {
                     playerData
@@ -865,30 +886,9 @@ fun PlayerScreen(
                 mediaPlayer.setOnPreparedListener {
                     if (hasPrepared) return@setOnPreparedListener
                     hasPrepared = true
-                    val startDanmakuPlayback = {
-                        // Apply WatchRSS-style mute-on-start immediately before playback.
-                        // The volume state remembers explicit user changes, so resume and
-                        // subsequent episode switches do not keep forcing the limit.
-                        volumeState.enforcePlaybackStartGuard()
-                        viewModel.onPrepared()
-                        if (!isAudioOnlyMode && playerData.audioUrl != "audio") {
-                            val targetPos = viewModel.currentProgress.value
-                            danmakuPlayer.start(targetPos)
-                        }
-                    }
-                    if (isAudioOnlyMode || playerData.audioUrl == "audio") {
-                        startDanmakuPlayback()
-                    } else if (danmakuPlayer.isReady()) {
-                        // Danmaku already loaded, start immediately
-                        startDanmakuPlayback()
-                    } else {
-                        // Keep loading indicator visible, wait for danmaku to be ready
-                        // Video is buffered but not playing yet - user sees loading spinner
-                        danmakuPlayer.setOnReadyListener {
-                            danmakuPlayer.setOnReadyListener(null)
-                            startDanmakuPlayback()
-                        }
-                    }
+                    volumeState.enforcePlaybackStartGuard()
+                    danmakuReady = danmakuPlayer.isReady()
+                    viewModel.onPrepared()
                 }
                 mediaPlayer.setOnCompletionListener {
                     viewModel.onCompletion()
@@ -897,18 +897,12 @@ fun PlayerScreen(
                     viewModel.onVideoSizeChanged(width, height)
                 }
                 mediaPlayer.setOnErrorListener { _, what, extra ->
-                    // Suppress non-fatal errors during background audio playback (DASH segment read failures)
-                    if (!isAudioOnlyMode) {
-                        viewModel.onError(what, extra)
-                    }
+                    viewModel.onError(what, extra)
+                    danmakuPlayer.pause()
                     true
                 }
                 mediaPlayer.setOnInfoListener { _, what, _ ->
                     viewModel.onInfo(what, 0)
-                    when (what) {
-                        OrbitPlayer.MEDIA_INFO_BUFFERING_START -> danmakuPlayer.pause()
-                        OrbitPlayer.MEDIA_INFO_BUFFERING_END -> if (viewModel.isPlaying.value) danmakuPlayer.resume()
-                    }
                     true
                 }
                 // Install callbacks before preparing; local sources can become ready quickly.
@@ -917,6 +911,8 @@ fun PlayerScreen(
                 viewModel.setError("无法获取视频地址")
                 viewModel.setLoading(false)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             viewModel.setError("网络请求失败")
             viewModel.setLoading(false)
@@ -942,7 +938,7 @@ fun PlayerScreen(
                         @SuppressLint("LocalContextResourcesRead")
                         override fun addDanmaku(text: String, color: Int, textSize: Int, type: Int, borderColor: Int, senderName: String, emotes: Map<String, EmoteInline>?, singleEmote: EmoteInline?, id: String) {
                             try {
-                                if (isExiting) return
+                                if (isExiting || !latestDanmakuGate()) return
                                 val config = danmakuConfig ?: return
                                 val item = createDanmaku(config, type) ?: return
                                 val displayText = if (!showDanmakuSender && senderName.isNotEmpty()) {
@@ -1010,44 +1006,61 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isLongPressSpeedUp, playbackSpeed) {
-        if (isLongPressSpeedUp) {
-            viewModel.setLongPressSpeedUp(true)
-            try { danmakuPlayer.setSpeed(2.0f) } catch(e:Exception){}
-        } else {
+    LaunchedEffect(effectiveSpeed, danmakuReady) {
+        if (danmakuReady) {
+            try { danmakuPlayer.setSpeed(effectiveSpeed) } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(foregroundVideo) {
+        if (!foregroundVideo) {
             viewModel.setLongPressSpeedUp(false)
-            try { danmakuPlayer.setSpeed(playbackSpeed) } catch(e:Exception){}
+            seekSession = null
+            dragProgress = -1f
         }
     }
 
     val view = LocalView.current
-    val viewConfiguration = LocalViewConfiguration.current
-    
+    DisposableEffect(view, foregroundVideo, isPrepared, isPlaying) {
+        view.keepScreenOn = foregroundVideo && isPrepared && isPlaying
+        onDispose { view.keepScreenOn = false }
+    }
+
     var wasBackgroundAudioOnlyToggled by remember { mutableStateOf(false) }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                viewModel.setLongPressSpeedUp(false)
+            } else if (event == Lifecycle.Event.ON_STOP) {
+                isForeground = false
+                view.keepScreenOn = false
+                viewModel.setLongPressSpeedUp(false)
+                danmakuPlayer.pause()
+                seekSession = null
+                dragProgress = -1f
                 val activity = context.findActivity()
                 val activityLifecycle = (activity as? LifecycleOwner)?.lifecycle
-                val isActivityGoingBackground = activity != null && (activity.isFinishing || activityLifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == false)
-                if (!isExiting && isActivityGoingBackground && SharedPreferencesUtil.getBoolean("player_background", false)) {
+                val goingBackground = activity != null && !activity.isFinishing &&
+                    activityLifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == false
+                val backgroundAllowed = !isExiting && goingBackground &&
+                    SharedPreferencesUtil.getBoolean("player_background", false)
+                viewModel.setPlaybackAllowed(backgroundAllowed)
+                if (backgroundAllowed) {
                     val audioOnly = SharedPreferencesUtil.getBoolean("player_background_audio_only", false)
-                    if (audioOnly && !isLive && !isAudioOnlyMode) {
+                    if (audioOnly && !viewModel.isLive && !isAudioOnlyMode && latestPlayerData.audioUrl != "audio") {
                         viewModel.pendingSeekTo(viewModel.savePosition())
                         isAudioOnlyMode = true
                         wasBackgroundAudioOnlyToggled = true
                     } else {
                         mediaPlayer.setSurface(null)
                     }
-                } else {
-                    if (isPlaying) {
-                        viewModel.pause()
-                        danmakuPlayer.pause()
-                    }
+                } else if (viewModel.isPlaying.value) {
+                    viewModel.pause()
                 }
             } else if (event == Lifecycle.Event.ON_START) {
+                isForeground = true
+                viewModel.setPlaybackAllowed(true)
                 if (wasBackgroundAudioOnlyToggled) {
                     viewModel.pendingSeekTo(viewModel.savePosition())
                     isAudioOnlyMode = false
@@ -1069,9 +1082,9 @@ fun PlayerScreen(
     }
     
     DisposableEffect(Unit) {
-        view.keepScreenOn = true
         onDispose {
             isExiting = true
+            viewModel.setLongPressSpeedUp(false)
             view.keepScreenOn = false
 
             if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
@@ -1160,123 +1173,73 @@ fun PlayerScreen(
                 rotationZ = if (isSoftRotate) animatedRotation else 0f
             }
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(
+            .onGloballyPositioned { playerCoordinates = it }
+            .playerGestures(
+                PlayerGestureCallbacks(
+                    zoomEnabled = SharedPreferencesUtil.getBoolean("player_scale", true),
+                    oneFingerZoomEnabled = SharedPreferencesUtil.getBoolean("player_one_finger_zoom", false),
+                    canPan = scale > 1f && !showControls,
+                    canSeek = showControls && isPrepared && !isLive && totalDuration > 0L,
+                    canLongPress = foregroundVideo && isPrepared && isPlaying && !showControls && !isLive &&
+                        SharedPreferencesUtil.getBoolean("player_longclick", true),
+                    onTap = {
+                        if (showControls) showControls = false else interactionCounter++
+                    },
                     onDoubleTap = {
-                        if (isPlaying) {
-                            viewModel.pause()
+                        viewModel.togglePlayPause()
+                        interactionCounter++
+                    },
+                    onLongPress = { enabled ->
+                        viewModel.setLongPressSpeedUp(enabled && System.currentTimeMillis() - backPressedTime > 1000L)
+                    },
+                    onTransform = { pan, zoom ->
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        val allowMove = zoom == 1f || SharedPreferencesUtil.getBoolean("player_doublemove", true)
+                        val maxX = videoViewportSize.width * (scale - 1f) / 2f
+                        val maxY = videoViewportSize.height * (scale - 1f) / 2f
+                        offsetX = (offsetX + if (allowMove) pan.x else 0f).coerceIn(-maxX, maxX)
+                        offsetY = (offsetY + if (allowMove) pan.y else 0f).coerceIn(-maxY, maxY)
+                    },
+                    onSeekStart = {
+                        val root = playerCoordinates
+                        val bar = seekBarCoordinates
+                        if (root?.isAttached == true && bar?.isAttached == true) {
+                            val bounds = root.localBoundingBoxOf(bar, clipBounds = false)
+                            val position = viewModel.savePosition().coerceIn(0L, totalDuration)
+                            seekSession = DistanceSeekSession(totalDuration, position, bounds.width)
+                            dragProgress = position.toFloat() / totalDuration
                             danmakuPlayer.pause()
-                        } else {
-                            viewModel.play()
-                            danmakuPlayer.resume()
+                            interactionCounter++
                         }
+                    },
+                    onSeekDrag = { dx, position ->
+                        val root = playerCoordinates
+                        val bar = seekBarCoordinates
+                        if (root?.isAttached == true && bar?.isAttached == true) {
+                            val bounds = root.localBoundingBoxOf(bar, clipBounds = false)
+                            val distanceX = max(0f, max(bounds.left - position.x, position.x - bounds.right))
+                            val distanceY = max(0f, max(bounds.top - position.y, position.y - bounds.bottom))
+                            val distance = sqrt(distanceX * distanceX + distanceY * distanceY) / density
+                            seekSession?.drag(dx, distance)?.let { target ->
+                                dragProgress = target.toFloat() / totalDuration
+                            }
+                        }
+                    },
+                    onSeekEnd = { commit ->
+                        if (commit && isPrepared && !isLive && totalDuration > 0) {
+                            seekSession?.let {
+                                lastSeekTimestamp = System.currentTimeMillis()
+                                currentProgress = it.targetMs
+                                viewModel.seekTo(it.targetMs)
+                            }
+                        }
+                        seekSession = null
+                        dragProgress = -1f
+                        danmakuSeekRevision++
                         interactionCounter++
                     }
                 )
-            }
-            .pointerInput(Unit) {
-                var wasLongPress: Boolean
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val timeout = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                        var isUp = false
-                        while (!isUp) {
-                            val event = awaitPointerEvent(PointerEventPass.Main)
-                            if (event.changes.any { !it.pressed || it.changedToUp() }) isUp = true
-                        }
-                    }
-                    if (timeout == null) {
-                        val timeSinceBack = System.currentTimeMillis() - backPressedTime
-                        if (timeSinceBack < 1000) {
-                            // Ghost pointer from system edge swipe, ignore it
-                        } else {
-                            wasLongPress = true
-                            if (isPlaying && !showControls && !isLive && SharedPreferencesUtil.getBoolean("player_longclick", true)) viewModel.setLongPressSpeedUp(true)
-                            try {
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Main)
-                                    if (event.changes.any { !it.pressed || it.changedToUp() }) {
-                                        break
-                                    }
-                                }
-                            } finally {
-                                viewModel.setLongPressSpeedUp(false)
-                            }
-                        }
-                    } else {
-                        wasLongPress = false
-                        val upEvent = currentEvent.changes.firstOrNull()
-                        val upTime = upEvent?.uptimeMillis ?: 0L
-                        val downTime = down.uptimeMillis
-                        val duration = upTime - downTime
-                        if (duration < viewConfiguration.longPressTimeoutMillis && duration > 0) {
-                            val downPos = down.position
-                            val upPos = upEvent?.position ?: downPos
-                            val dist = (upPos - downPos).getDistance()
-                            if (dist < viewConfiguration.touchSlop) {
-                                if (!wasLongPress && upEvent?.isConsumed != true) {
-                                    if (showControls) showControls = false
-                                    else interactionCounter++
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                        var isUp = false
-                        while (!isUp) {
-                            val event = awaitPointerEvent(PointerEventPass.Main)
-                            if (event.changes.any { it.changedToUp() }) isUp = true
-                        }
-                        true
-                    }
-                    if (up != null) {
-                        val down2 = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
-                            awaitFirstDown(requireUnconsumed = false)
-                        }
-                        if (down2 != null) {
-                            var isZooming = false
-                            var lastY = down2.position.y
-                            val startY = down2.position.y
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
-                                val changes = event.changes
-                                val ptr = changes.firstOrNull { it.id == down2.id }
-                                if (ptr == null || !ptr.pressed) break
-                                
-                                if (!isZooming) {
-                                    val dy = ptr.position.y - startY
-                                    if (kotlin.math.abs(dy) > viewConfiguration.touchSlop) {
-                                        isZooming = true
-                                    }
-                                }
-                                if (isZooming) {
-                                    if (SharedPreferencesUtil.getBoolean("player_one_finger_zoom", false)) {
-                                        val dy = ptr.position.y - lastY
-                                        val zoomFactor = 1f + dy * 0.005f
-                                        scale = (scale * zoomFactor).coerceIn(1f, 5f)
-                                        if (scale > 1f) {
-                                            val maxX = (size.width * (scale - 1)) / 2f
-                                            val maxY = (size.height * (scale - 1)) / 2f
-                                            offsetX = offsetX.coerceIn(-maxX, maxX)
-                                            offsetY = offsetY.coerceIn(-maxY, maxY)
-                                        } else {
-                                            offsetX = 0f
-                                            offsetY = 0f
-                                        }
-                                        lastY = ptr.position.y
-                                        ptr.consume()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            )
             .onRotaryScrollEvent {
                 if (rotaryVolumeEnabled) {
                     val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
@@ -1284,17 +1247,13 @@ fun PlayerScreen(
                         volumeState.adjustByDelta(delta)
                         interactionCounter++
                     }
-                } else if (isPrepared) {
-                    val newProgress = (currentProgress + it.verticalScrollPixels * 100)
-                        .toLong()
-                        .coerceIn(0L, totalDuration)
-                    lastSeekTimestamp = System.currentTimeMillis()
-                    viewModel.seekTo(newProgress)
-                    danmakuPlayer.seekTo(newProgress)
-                    if (isPlaying) {
-                        viewModel.play()
+                } else if (isPrepared && !isLive && totalDuration > 0L && dragProgress < 0f) {
+                    viewModel.seekBy(it.verticalScrollPixels * 100)?.let { target ->
+                        lastSeekTimestamp = System.currentTimeMillis()
+                        currentProgress = target
+                        if (latestDanmakuGate()) danmakuPlayer.seekTo(target)
+                        interactionCounter++
                     }
-                    interactionCounter++
                 }
                 true
             }
@@ -1415,28 +1374,12 @@ fun PlayerScreen(
             }
         )
 
-        // Gesture overlay for pinch-to-zoom, placed above danmaku but below controls
-        // Isolated in its own Box because AndroidView interferes with Compose pointerInput
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        if (SharedPreferencesUtil.getBoolean("player_scale", true)) {
-                            scale = (scale * zoom).coerceIn(1f, 5f)
-                            if (scale > 1f) {
-                                val allowMove = SharedPreferencesUtil.getBoolean("player_doublemove", true)
-                                if (allowMove || zoom == 1f) {
-                                    val maxX = (size.width * (scale - 1)) / 2
-                                    val maxY = (size.height * (scale - 1)) / 2
-                                    offsetX = (offsetX + pan.x * scale).coerceIn(-maxX, maxX)
-                                    offsetY = (offsetY + pan.y * scale).coerceIn(-maxY, maxY)
-                                }
-                            } else {
-                                offsetX = 0f
-                                offsetY = 0f
-                            }
-                        }
+                    awaitPointerEventScope {
+                        while (true) awaitPointerEvent()
                     }
                 }
         )
@@ -1521,39 +1464,6 @@ fun PlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0x66000000))
-                    .pointerInput(showControls) {
-                        if (showControls) {
-                            detectHorizontalDragGestures(
-                                onDragStart = {
-                                    dragProgress = (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                                    danmakuPlayer.pause()
-                                },
-                                onDragEnd = {
-                                    if (dragProgress >= 0f) {
-                                        val targetTime = (dragProgress * totalDuration).toLong()
-                                        lastSeekTimestamp = System.currentTimeMillis()
-                                        viewModel.seekTo(targetTime)
-                                        danmakuPlayer.seekTo(targetTime)
-                                        dragProgress = -1f
-                                        if (isPlaying) {
-                                            viewModel.play()
-                                            danmakuPlayer.resume()
-                                        }
-                                    }
-                                },
-                                onDragCancel = {
-                                    dragProgress = -1f
-                                    if (isPlaying) danmakuPlayer.resume()
-                                },
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    interactionCounter++
-                                    val progressDelta = dragAmount / (size.width.toFloat() * 0.8f) // use 80% screen width as full seek bar
-                                    dragProgress = (dragProgress + progressDelta).coerceIn(0f, 1f)
-                                }
-                            )
-                        }
-                    }
             ) {
                 Text(
                     text = playerData.title,
@@ -1733,13 +1643,7 @@ fun PlayerScreen(
 
                     IconButton(
                         onClick = {
-                            if (isPlaying) {
-                                viewModel.pause()
-                                danmakuPlayer.pause()
-                            } else {
-                                viewModel.play()
-                                danmakuPlayer.resume()
-                            }
+                            viewModel.togglePlayPause()
                         },
                         modifier = Modifier.align(Alignment.Center).size(48.dp)
                     ) {
@@ -1794,6 +1698,7 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .width(120.dp)
                                 .height(6.dp)
+                                .onGloballyPositioned { seekBarCoordinates = it }
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(Color.White.copy(alpha = 0.3f))
                         ) {

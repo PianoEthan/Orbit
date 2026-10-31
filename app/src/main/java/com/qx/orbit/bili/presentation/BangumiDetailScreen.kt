@@ -129,6 +129,8 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val replyErrorMessage by viewModel.replyErrorMessage.collectAsState()
+    val isReplyLoading by viewModel.isReplyLoading.collectAsState()
+    val hasMoreReplies by viewModel.hasMoreReplies.collectAsState()
     
     val emotes by viewModel.emotes.collectAsState()
     val isEmoteLoading by viewModel.isEmoteLoading.collectAsState()
@@ -490,7 +492,10 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
                                     showWriteReply = true
                                 },
                                 onRemove = { reply -> viewModel.removeReplyLocally(reply) },
-                                onTopChanged = viewModel::updateReplyTop
+                                onTopChanged = viewModel::updateReplyTop,
+                                isPageVisible = pagerState.currentPage == 1 && pagerState.settledPage == 1,
+                                isReplyLoading = isReplyLoading,
+                                hasMoreReplies = hasMoreReplies
                             )
                         }
                     }

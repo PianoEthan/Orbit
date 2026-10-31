@@ -150,6 +150,18 @@ import coil.request.SuccessResult
 import androidx.compose.ui.graphics.lerp
 import androidx.wear.compose.material3.EdgeButton
 import androidx.core.net.toUri
+import android.graphics.drawable.BitmapDrawable
+import android.util.LruCache
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.wear.compose.material3.ColorScheme
+import com.qx.orbit.bili.presentation.util.ReplyPaginationEffect
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+
+private val videoCoverSeedCache = LruCache<String, Int>(16)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -162,14 +174,20 @@ fun VideoDetailScreen(
     viewModel: VideoDetailViewModel = viewModel()
 ) {
     val vmd = viewModel
-    LaunchedEffect(bvid, aid, commentRootId, commentReplyId) {
-        viewModel.loadData(bvid, aid, commentRootId, commentReplyId)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    val isResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    LaunchedEffect(bvid, aid, commentRootId, commentReplyId, isResumed) {
+        if (isResumed) viewModel.loadData(bvid, aid, commentRootId, commentReplyId)
     }
     
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
     val videoInfo by viewModel.videoInfo.collectAsState()
+    LaunchedEffect(isResumed, videoInfo?.aid, videoInfo?.cids?.firstOrNull()) {
+        if (isResumed) viewModel.refreshHistory()
+    }
     val tags by viewModel.tags.collectAsState()
     val replies by viewModel.replies.collectAsState()
     val replyCount by viewModel.replyCount.collectAsState()
@@ -177,6 +195,8 @@ fun VideoDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val replyErrorMessage by viewModel.replyErrorMessage.collectAsState()
+    val isReplyLoading by viewModel.isReplyLoading.collectAsState()
+    val hasMoreReplies by viewModel.hasMoreReplies.collectAsState()
     val focusedReplyId by viewModel.focusedReplyId.collectAsState()
     var showCoinDialog by remember { mutableStateOf(false) }
     var showFavDialog by remember { mutableStateOf(false) }
@@ -217,34 +237,28 @@ fun VideoDetailScreen(
         }
     }
     
-    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
-    var isColorExtracted by remember { mutableStateOf(false) }
+    val coverIdentity = videoInfo?.cover.orEmpty().replace("http://", "https://")
+    var dynamicColorScheme by remember(coverIdentity) { mutableStateOf<ColorScheme?>(null) }
     val defaultColorScheme = MaterialTheme.colorScheme
-    
-    LaunchedEffect(videoInfo) {
-        val rawCover = videoInfo?.cover ?: ""
-        if (rawCover.isNotEmpty()) {
-            val secureCover = rawCover.replace("http://", "https://")
-            val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@128w_128h_1c.webp"
-            val request = ImageRequest.Builder(context)
-                .data(coverUrl)
-                .size(128)
-                .allowHardware(false)
-                .build()
-            val result = context.imageLoader.execute(request)
-            if (result is SuccessResult) {
-                val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                if (bitmap != null) {
-                    val seedColor = extractSeedColorFromBitmap(bitmap)
-                    if (seedColor != null) {
-                        dynamicColorScheme = generateWearColorSchemeFromSeed(seedColor, defaultColorScheme)
-                        ActiveDynamicTheme.colorScheme = dynamicColorScheme
-                    }
-                }
+
+    LaunchedEffect(coverIdentity, defaultColorScheme, isResumed) {
+        if (!isResumed || coverIdentity.isBlank() || dynamicColorScheme != null) return@LaunchedEffect
+        try {
+            val seedColor = videoCoverSeedCache.get(coverIdentity) ?: run {
+                val coverUrl = if (coverIdentity.contains("@")) coverIdentity else "${coverIdentity}@128w_128h_1c.webp"
+                val request = ImageRequest.Builder(context).data(coverUrl).size(128).allowHardware(false).build()
+                val result = context.imageLoader.execute(request) as? SuccessResult
+                val bitmap = (result?.drawable as? BitmapDrawable)?.bitmap ?: return@LaunchedEffect
+                withContext(Dispatchers.Default) { extractSeedColorFromBitmap(bitmap) }
+                    ?.also { videoCoverSeedCache.put(coverIdentity, it) }
+            } ?: return@LaunchedEffect
+            dynamicColorScheme = withContext(Dispatchers.Default) {
+                generateWearColorSchemeFromSeed(seedColor, defaultColorScheme)
             }
-        }
-        if (videoInfo != null) {
-            isColorExtracted = true
+            ActiveDynamicTheme.colorScheme = dynamicColorScheme
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 
@@ -1064,7 +1078,7 @@ fun VideoDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             AnimatedContent(
-                targetState = (isLoading && videoInfo == null) || (videoInfo != null && !isColorExtracted),
+                targetState = isLoading && videoInfo == null,
                 transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) },
                 label = "LoadingAnimation"
             ) { isInitialLoading ->
@@ -1237,7 +1251,10 @@ fun VideoDetailScreen(
                                 showWriteReply = true
                             },
                             onRemove = { reply -> viewModel.removeReplyLocally(reply) },
-                            onTopChanged = viewModel::updateReplyTop
+                            onTopChanged = viewModel::updateReplyTop,
+                            isPageVisible = pagerState.currentPage == 1 && pagerState.settledPage == 1,
+                            isReplyLoading = isReplyLoading,
+                            hasMoreReplies = hasMoreReplies
                         )
                         2 -> VideoRelatedPage(
                             relatedVideos = relatedVideos, 
@@ -2123,7 +2140,10 @@ fun VideoCommentsPage(
     onReplyClick: (Reply) -> Unit,
     onSendCommentClick: () -> Unit,
     onRemove: (Reply) -> Unit,
-    onTopChanged: (Reply, Boolean) -> Unit = { _, _ -> }
+    onTopChanged: (Reply, Boolean) -> Unit = { _, _ -> },
+    isPageVisible: Boolean = true,
+    isReplyLoading: Boolean = false,
+    hasMoreReplies: Boolean = true
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -2131,12 +2151,20 @@ fun VideoCommentsPage(
     val focusedReplyIndex = remember(replies, focusedReplyId) {
         replies.indexOfFirst { it.rpid == focusedReplyId }
     }
-
-    LaunchedEffect(focusedReplyId, focusedReplyIndex) {
-        if (focusedReplyId > 0L && focusedReplyIndex >= 0) {
-            listState.animateScrollToItem(focusedReplyIndex + 2)
+    var focusConsumed by rememberSaveable(focusedReplyId) { mutableStateOf(false) }
+    LaunchedEffect(focusedReplyId, focusedReplyIndex, isPageVisible) {
+        if (isPageVisible && !focusConsumed && focusedReplyId > 0L && focusedReplyIndex >= 0) {
+            listState.scrollToItem(focusedReplyIndex + 2)
+            focusConsumed = true
         }
     }
+    ReplyPaginationEffect(
+        listState = listState,
+        lastReplyId = replies.lastOrNull()?.rpid,
+        enabled = isPageVisible,
+        canLoad = hasMoreReplies && !isReplyLoading && replyErrorMessage == null,
+        onLoadMore = onLoadMore
+    )
 
     ScreenScaffold(scrollState = listState, modifier = Modifier.focusRequester(focusRequester)) { contentPadding ->
         TransformingLazyColumn(
@@ -2194,9 +2222,6 @@ fun VideoCommentsPage(
                 }
             } else {
                 items(count = replies.size, key = { replies[it].rpid }) { index ->
-                    if (index == replies.size - 1) {
-                        LaunchedEffect(index) { onLoadMore() }
-                    }
                     ReplyCard(
                         reply = replies[index],
                         highlighted = replies[index].rpid == focusedReplyId,
@@ -2211,6 +2236,17 @@ fun VideoCommentsPage(
                         onReplyClick = { onReplyClick(replies[index]) }
                     )
                 }
+            }
+            if (replyErrorMessage != null && replies.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "加载失败，点击重试",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().clickable(onClick = onLoadMore).padding(12.dp)
+                    )
+                }
+            } else if (isReplyLoading) {
+                item { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
             }
         }
     }

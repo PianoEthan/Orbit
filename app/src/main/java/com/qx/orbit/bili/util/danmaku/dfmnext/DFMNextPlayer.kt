@@ -8,36 +8,52 @@ import com.qx.orbit.bili.util.danmaku.base.DanmakuConfig
 import com.qx.orbit.bili.util.danmaku.base.DanmakuItem
 import com.qx.orbit.bili.util.danmaku.base.DanmakuParser
 import com.qx.orbit.bili.util.danmaku.base.DanmakuPlayer
+import io.github.ynotbili.dfmnext.controller.DrawHandler
+import io.github.ynotbili.dfmnext.danmaku.model.BaseDanmaku
+import io.github.ynotbili.dfmnext.danmaku.model.DanmakuTimer
+import io.github.ynotbili.dfmnext.ui.widget.DanmakuView
 
 class DFMNextPlayer(context: Context) : DanmakuPlayer {
-    private val engine = io.github.ynotbili.dfmnext.ui.widget.DanmakuView(context)
+    private val engine = DanmakuView(context)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var readyListener: (() -> Unit)? = null
+    @Volatile
     private var ready = false
     @Volatile
     private var released = false
+    @Volatile
+    private var prepareGeneration = 0
+    private var hasPrepared = false
 
     override val view: View get() = engine
 
     override fun prepare(parser: DanmakuParser, config: DanmakuConfig) {
+        if (released) return
         val engineParser = when (parser) {
             is DFMNextParser -> parser.engine
             is DFMNextProtobufParser -> parser.engine
             else -> throw IllegalArgumentException("Unsupported parser type")
         }
-        engine.setCallback(object : io.github.ynotbili.dfmnext.controller.DrawHandler.Callback {
+        val engineConfig = (config as DFMNextConfig).engine
+        val generation = ++prepareGeneration
+        ready = false
+        mainHandler.removeCallbacksAndMessages(null)
+        if (hasPrepared) engine.stop()
+        hasPrepared = true
+        engine.setCallback(object : DrawHandler.Callback {
             override fun prepared() {
-                ready = true
-                val listener = readyListener
-                if (listener != null) {
-                    mainHandler.post { listener.invoke() }
+                mainHandler.post {
+                    if (!released && generation == prepareGeneration) {
+                        ready = true
+                        readyListener?.invoke()
+                    }
                 }
             }
-            override fun updateTimer(timer: io.github.ynotbili.dfmnext.danmaku.model.DanmakuTimer) {}
-            override fun danmakuShown(danmaku: io.github.ynotbili.dfmnext.danmaku.model.BaseDanmaku) {}
+            override fun updateTimer(timer: DanmakuTimer) {}
+            override fun danmakuShown(danmaku: BaseDanmaku) {}
             override fun drawingFinished() {}
         })
-        engine.prepare(engineParser, (config as DFMNextConfig).engine)
+        engine.prepare(engineParser, engineConfig)
     }
     override fun start(ms: Long) = engine.start(ms)
     override fun resume() = engine.resume()
@@ -46,9 +62,12 @@ class DFMNextPlayer(context: Context) : DanmakuPlayer {
     override fun show() = engine.show()
     override fun hide() = engine.hide()
     override fun release() {
-        ready = false
         released = true
+        prepareGeneration++
+        ready = false
         readyListener = null
+        mainHandler.removeCallbacksAndMessages(null)
+        engine.setCallback(null)
         try {
             engine.stop()
             engine.removeAllDanmakus(true)

@@ -158,7 +158,7 @@ fun DynamicFeedScreen(
                             contentPadding = PaddingValues(horizontal = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(liveList) { liveUser ->
+                            items(liveList, key = { it.room_id }) { liveUser ->
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier.clickable { navController.navigate("live_room/${liveUser.room_id}") }
@@ -237,7 +237,7 @@ fun DynamicFeedScreen(
                             }
                         }
                         
-                        items(upList) { up ->
+                        items(upList, key = { it.mid }) { up ->
                             val isSelected = selectedMid == up.mid
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -281,7 +281,7 @@ fun DynamicFeedScreen(
                     }
                 }
             } else {
-                items(dynamicList) { dynamic ->
+                items(dynamicList, key = { it.dynamicId }) { dynamic ->
                     Box(modifier = Modifier.adaptiveTransformedHeight(this@items, spec)) {
                         DynamicCard(
                             item = dynamic,

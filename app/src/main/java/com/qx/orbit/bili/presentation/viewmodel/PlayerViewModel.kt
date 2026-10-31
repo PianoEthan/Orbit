@@ -14,6 +14,7 @@ import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Subtitle
 import com.qx.orbit.bili.data.model.SubtitleLink
 import com.qx.orbit.bili.data.remote.CookieManager
+import com.qx.orbit.bili.presentation.player.effectivePlaybackSpeed
 import com.qx.orbit.bili.util.player.OrbitPlayer
 import com.qx.orbit.bili.util.player.createOrbitPlayer
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +48,8 @@ class PlayerViewModel : ViewModel() {
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _bufferingRevision = MutableStateFlow(0L)
+    val bufferingRevision: StateFlow<Long> = _bufferingRevision.asStateFlow()
 
     private val _isPrepared = MutableStateFlow(false)
     val isPrepared: StateFlow<Boolean> = _isPrepared.asStateFlow()
@@ -86,12 +89,17 @@ class PlayerViewModel : ViewModel() {
 
     private val _isLongPressSpeedUp = MutableStateFlow(false)
     val isLongPressSpeedUp: StateFlow<Boolean> = _isLongPressSpeedUp.asStateFlow()
+    private val _effectiveSpeed = MutableStateFlow(1f)
+    val effectiveSpeed: StateFlow<Float> = _effectiveSpeed.asStateFlow()
+    private var playbackAllowed = true
 
     private val _liveElapsedSeconds = MutableStateFlow(0L)
     val liveElapsedSeconds: StateFlow<Long> = _liveElapsedSeconds.asStateFlow()
 
     // --- Internal ---
     private var switchPendingSeekMs = -1L
+    private var relativeSeekTargetMs: Long? = null
+    private var lastRelativeSeekNanos = 0L
     private var startTs = 0L
     private var heartbeatStarted = false
     private var heartbeatJob: Job? = null
@@ -131,19 +139,39 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun beginPlaybackPreparation() {
+        relativeSeekTargetMs = null
+        setLongPressSpeedUp(false)
+        if (::_player.isInitialized && !released) {
+            if (_isPrepared.value) _currentProgress.value = savePosition()
+            try { _player.pause() } catch (_: Exception) {}
+        }
+        _isPlaying.value = false
         _isPrepared.value = false
         _isLoading.value = true
+        _errorMessage.value = null
+        _totalDuration.value = 0L
         heartbeatStarted = false
         heartbeatJob?.cancel()
         heartbeatJob = null
     }
 
+    fun setPlaybackAllowed(allowed: Boolean) {
+        playbackAllowed = allowed
+        if (!allowed) setLongPressSpeedUp(false)
+    }
+
     fun setError(msg: String?) {
         _errorMessage.value = msg
+        if (msg != null) {
+            setLongPressSpeedUp(false)
+            _isPlaying.value = false
+            _isLoading.value = false
+        }
     }
 
     fun setSubtitles(subs: Array<Subtitle>) {
         _subtitles.value = subs
+        _currentSubtitle.value = null
         subtitleCursor = 0
     }
 
@@ -298,23 +326,28 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun onPrepared() {
+        if (released) return
+        setLongPressSpeedUp(false)
         _isPrepared.value = true
         _isLoading.value = false
-        _totalDuration.value = _player.duration
+        _errorMessage.value = null
+        _totalDuration.value = _player.duration.coerceAtLeast(0L)
+        _currentProgress.value = 0L
 
-        if (switchPendingSeekMs >= 0) {
-            _player.seekTo(switchPendingSeekMs)
-            _currentProgress.value = switchPendingSeekMs
+        if (!isLive && switchPendingSeekMs >= 0) {
+            val targetMs = switchPendingSeekMs.coerceIn(0L, _totalDuration.value)
+            _player.seekTo(targetMs)
+            _currentProgress.value = targetMs
             switchPendingSeekMs = -1L
-        } else if (_playerData.value.progress > 0) {
-            val targetMs = (_playerData.value.progress * 1000L).coerceAtMost(_player.duration)
+        } else if (!isLive && _playerData.value.progress > 0) {
+            val targetMs = (_playerData.value.progress * 1000L).coerceAtMost(_totalDuration.value)
             _player.seekTo(targetMs)
             _currentProgress.value = targetMs
             _playerData.value = _playerData.value.copy(progress = 0)
         }
 
-        _player.start()
-        _isPlaying.value = true
+        applyEffectiveSpeed()
+        if (playbackAllowed) play()
 
         if (!heartbeatStarted && !isLive) {
             heartbeatStarted = true
@@ -323,6 +356,10 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun onCompletion() {
+        setLongPressSpeedUp(false)
+        _isPlaying.value = false
+        _isLoading.value = false
+        if (!isLive) _currentProgress.value = _totalDuration.value
         val data = _playerData.value
         val isBangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
         val isLocalMulti = data.type == PlayerData.TYPE_LOCAL && data.cids.size > 1
@@ -351,16 +388,20 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun onError(what: Int, extra: Int) {
-        _errorMessage.value = "播放器错误: $what"
+        setError("播放器错误: $what")
+        _isPrepared.value = false
     }
 
     fun onInfo(what: Int, extra: Int) {
         when (what) {
             OrbitPlayer.MEDIA_INFO_BUFFERING_START -> {
+                setLongPressSpeedUp(false)
                 _isLoading.value = true
+                _bufferingRevision.value++
             }
             OrbitPlayer.MEDIA_INFO_BUFFERING_END -> {
                 _isLoading.value = false
+                _bufferingRevision.value++
             }
         }
     }
@@ -373,12 +414,18 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun play() {
+        if (released || !_isPrepared.value || !playbackAllowed) return
         _player.start()
         _isPlaying.value = true
     }
 
     fun pause() {
-        _player.pause()
+        setLongPressSpeedUp(false)
+        if (released || !::_player.isInitialized) return
+        if (_isPrepared.value) {
+            _currentProgress.value = savePosition()
+            _player.pause()
+        }
         _isPlaying.value = false
         reportProgress()
     }
@@ -388,20 +435,46 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun seekTo(ms: Long) {
-        _player.seekTo(ms)
-        _currentProgress.value = ms
+        if (released || !_isPrepared.value || isLive || _totalDuration.value <= 0L) return
+        relativeSeekTargetMs = null
+        setLongPressSpeedUp(false)
+        val target = ms.coerceIn(0L, _totalDuration.value)
+        _player.seekTo(target)
+        _currentProgress.value = target
+    }
+
+    fun seekBy(deltaMs: Float): Long? {
+        if (released || !_isPrepared.value || isLive || _totalDuration.value <= 0L || !deltaMs.isFinite()) return null
+        val now = System.nanoTime()
+        val position = relativeSeekTargetMs?.takeIf { now - lastRelativeSeekNanos < 500_000_000L }
+            ?: savePosition()
+        val target = (position.toDouble() + deltaMs).coerceIn(0.0, _totalDuration.value.toDouble()).toLong()
+        seekTo(target)
+        relativeSeekTargetMs = target
+        lastRelativeSeekNanos = now
+        return target
     }
 
     fun setSpeed(speed: Float) {
+        if (!speed.isFinite() || speed <= 0f) return
         _playbackSpeed.value = speed
-        try { _player.setSpeed(speed) } catch (_: Exception) {}
+        applyEffectiveSpeed()
     }
 
     fun setLongPressSpeedUp(enabled: Boolean) {
-        _isLongPressSpeedUp.value = enabled
-        try {
-            _player.setSpeed(if (enabled) 2.0f else _playbackSpeed.value)
-        } catch (_: Exception) {}
+        val active = enabled && !released && playbackAllowed && _isPrepared.value &&
+            _isPlaying.value && !_isLoading.value && !isLive
+        if (_isLongPressSpeedUp.value == active) return
+        _isLongPressSpeedUp.value = active
+        applyEffectiveSpeed()
+    }
+
+    private fun applyEffectiveSpeed() {
+        val speed = effectivePlaybackSpeed(_playbackSpeed.value, _isLongPressSpeedUp.value)
+        _effectiveSpeed.value = speed
+        if (::_player.isInitialized && !released) {
+            try { _player.setSpeed(speed) } catch (_: Exception) {}
+        }
     }
 
     fun switchToNextEpisode() {
@@ -422,8 +495,7 @@ class PlayerViewModel : ViewModel() {
         )
         _playerData.value = newData
         switchPendingSeekMs = 0L
-        _isPrepared.value = false
-        _isLoading.value = true
+        beginPlaybackPreparation()
     }
 
     fun switchToPreviousEpisode() {
@@ -444,8 +516,7 @@ class PlayerViewModel : ViewModel() {
         )
         _playerData.value = newData
         switchPendingSeekMs = 0L
-        _isPrepared.value = false
-        _isLoading.value = true
+        beginPlaybackPreparation()
     }
 
     fun switchToEpisode(index: Int) {
@@ -465,8 +536,7 @@ class PlayerViewModel : ViewModel() {
         )
         _playerData.value = newData
         switchPendingSeekMs = 0L
-        _isPrepared.value = false
-        _isLoading.value = true
+        beginPlaybackPreparation()
     }
 
     fun updateProgress() {
@@ -493,6 +563,7 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun release() {
+        setLongPressSpeedUp(false)
         if (released || !::_player.isInitialized) return
         released = true
         if (_isPrepared.value) {

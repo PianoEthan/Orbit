@@ -56,6 +56,7 @@ import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.RepostDynamicDialog
 import com.qx.orbit.bili.data.model.Reply
+import com.qx.orbit.bili.presentation.util.ReplyPaginationEffect
 
 @Composable
 fun DynamicDetailScreen(
@@ -96,11 +97,21 @@ fun DynamicDetailScreen(
         replies.indexOfFirst { it.rpid == focusedReplyId }
     }
 
+    var focusConsumed by rememberSaveable(dynamicId, focusedReplyId) { mutableStateOf(false) }
     LaunchedEffect(focusedReplyId, focusedReplyIndex) {
-        if (focusedReplyId > 0L && focusedReplyIndex >= 0) {
-            listState.animateScrollToItem(focusedReplyIndex + 2)
+        if (!focusConsumed && focusedReplyId > 0L && focusedReplyIndex >= 0) {
+            listState.scrollToItem(focusedReplyIndex + 2)
+            focusConsumed = true
         }
     }
+    val hasMoreReplies by viewModel.hasMoreReplies.collectAsState()
+    val replyError by viewModel.replyError.collectAsState()
+    ReplyPaginationEffect(
+        listState = listState,
+        lastReplyId = replies.lastOrNull()?.rpid,
+        canLoad = hasMoreReplies && !isReplyLoading && replyError == null,
+        onLoadMore = { viewModel.loadReplies() }
+    )
 
     LaunchedEffect(Unit) {
         try { focusRequester.requestFocus() } catch (e: Exception) {}
@@ -207,7 +218,7 @@ fun DynamicDetailScreen(
                                         inlineContent = inlineContent,
                                         style = MaterialTheme.typography.bodySmall.copy(lineHeight = TextUnit.Unspecified),
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(bottom = 8.dp).pointerInput(Unit) {
+                                        modifier = Modifier.padding(bottom = 8.dp).pointerInput(richText, navController) {
                                             detectTapGestures { offset ->
                                                 val pos = textLayoutResult.value?.getOffsetForPosition(offset) ?: -1
                                                 if (pos >= 0) {
@@ -432,9 +443,6 @@ fun DynamicDetailScreen(
                     if (replies.isNotEmpty()) {
 
                         items(count = replies.size, key = { replies[it].rpid }) { index ->
-                            if (index == replies.size - 3) {
-                                LaunchedEffect(index) { viewModel.loadReplies() }
-                            }
                             ReplyCard(
                                 reply = replies[index],
                                 highlighted = replies[index].rpid == focusedReplyId,
@@ -463,6 +471,14 @@ fun DynamicDetailScreen(
                             Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             }
+                        }
+                    } else if (replyError != null) {
+                        item {
+                            Text(
+                                text = "加载失败，点击重试",
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.fillMaxWidth().clickable { viewModel.loadReplies() }.padding(12.dp)
+                            )
                         }
                     }
                     
