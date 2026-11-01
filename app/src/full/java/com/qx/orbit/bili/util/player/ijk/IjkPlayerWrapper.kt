@@ -46,8 +46,13 @@ class IjkPlayerWrapper : OrbitPlayer {
 
     override fun setSpeed(speed: Float) = player.setSpeed(speed)
 
-    override fun setOption(category: Int, name: String, value: Long) =
-        player.setOption(category, name, value)
+    override fun setOption(category: Int, name: String, value: Long) {
+        if (category == OrbitPlayer.OPT_CATEGORY_PLAYER && name == "loop") {
+            player.isLooping = value == 1L
+        } else {
+            player.setOption(category, name, value)
+        }
+    }
 
     override fun setOption(category: Int, name: String, value: String) =
         player.setOption(category, name, value)
