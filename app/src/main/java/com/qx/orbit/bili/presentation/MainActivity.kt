@@ -555,7 +555,7 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
                         }
                     }
                 }
-                val playerData = Gson().fromJson(json, PlayerData::class.java) ?: PlayerData(aid = 0L)
+                val playerData = remember(json) { Gson().fromJson(json, PlayerData::class.java) ?: PlayerData(aid = 0L) }
                 PlayerScreen(
                     initialData = playerData, 
                     onBack = { navController.popBackStack() },

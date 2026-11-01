@@ -9,6 +9,11 @@ import com.qx.orbit.bili.data.api.CookiesApi
 import com.qx.orbit.bili.data.api.HeartbeatApi
 import com.qx.orbit.bili.data.api.HistoryApi
 import com.qx.orbit.bili.data.api.LiveApi
+import com.qx.orbit.bili.data.api.InteractionVideoApi
+import com.qx.orbit.bili.data.model.InteractionVideo
+import com.qx.orbit.bili.data.model.InteractionVideoResult
+import com.qx.orbit.bili.data.model.PlayerMetadata
+import com.qx.orbit.bili.presentation.player.InteractionPlaybackCoordinator
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Subtitle
@@ -16,7 +21,9 @@ import com.qx.orbit.bili.data.model.SubtitleLink
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.player.effectivePlaybackSpeed
 import com.qx.orbit.bili.util.player.OrbitPlayer
+import com.qx.orbit.bili.util.player.DelegatingOrbitPlayer
 import com.qx.orbit.bili.util.player.createOrbitPlayer
+import com.qx.orbit.bili.util.player.media3.Media3PlayerWrapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,14 +36,139 @@ import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.milliseconds
 
-class PlayerViewModel : ViewModel() {
+class PlayerViewModel(
+    metadata: suspend (Long, Long) -> InteractionVideoResult<PlayerMetadata> = { aid, cid -> PlayerApi.getMetadata(aid, cid) },
+    edge: suspend (PlayerData, Long, Long?) -> InteractionVideoResult<InteractionVideo> = { data, graph, id ->
+        InteractionVideoApi.getEdgeInfo(aid = data.aid, bvid = data.bvid, graphVersion = graph, edgeId = id)
+    },
+    private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val reportPlayback: suspend (PlayerData, Long, Long, Long) -> Unit = ::sendProgress
+) : ViewModel() {
+    private var foreground = true
+    private var userPaused = false
+    private var decisionPaused = false
+    private var resumeAfterBackground = false
+    private var playbackEnded = false
+    private var interactionObserver: Job? = null
+    val interaction: InteractionPlaybackCoordinator = InteractionPlaybackCoordinator(viewModelScope, metadata, edge,
+        stopMedia = { beginPlaybackPreparation() },
+        requestMedia = { request ->
+            if (request.token != null) {
+                ensureMedia3ForInteractive()
+            }
+            _playerData.value = request.data
+            if (request.token != null) {
+                switchPendingSeekMs = request.seekToMs ?: 0L
+                _currentProgress.value = 0L
+            }
+            setSubtitles(emptyArray())
+            setSubtitleLinks(emptyArray())
+            setCurrentSubtitleId(0)
+        }
+    )
 
+    fun open(data: PlayerData) {
+        _playerData.value = data
+        userPaused = false
+        if (data.interactionHint) {
+            ensureMedia3ForInteractive()
+        }
+        interaction.open(data)
+    }
+
+    fun setForeground(value: Boolean) {
+        if (foreground && !value && interaction.state.value.interactive) {
+            resumeAfterBackground = !userPaused && (_isPlaying.value || decisionPaused || playbackEnded)
+        }
+        foreground = value
+        observeInteraction()
+        if (!value) {
+            interactionObserver?.cancel()
+            if (interaction.state.value.interactive) pauseForDecision()
+        } else if (_isPrepared.value) {
+            resumeBackgroundPlayback()
+            startInteractionObserver()
+        }
+    }
+
+    private fun resumeBackgroundPlayback() {
+        if (!resumeAfterBackground || !foreground || !playbackAllowed || !_isPrepared.value || userPaused || released) return
+        val state = interaction.state.value
+        if (state.error != null || state.session.problem != null || state.session.transition != null || state.ended) {
+            resumeAfterBackground = false
+            return
+        }
+        resumeAfterBackground = false
+        if (state.session.question?.pauseRequested == true) {
+            pauseForDecision()
+        } else if (!playbackEnded) {
+            _player.start()
+            _isPlaying.value = true
+        }
+        observeInteraction()
+    }
+
+    fun prepareInteractionMedia(request: InteractionPlaybackCoordinator.MediaRequest, reloading: Boolean = false): Boolean {
+        if (!interaction.mediaPrepared(request, reloading)) return false
+        playbackEnded = false
+        decisionPaused = false
+        if (!reloading) request.seekToMs?.let { switchPendingSeekMs = it }
+        return true
+    }
+
+    fun chooseInteraction(question: Int, choice: Int, visit: Long?, generation: Long) {
+        userPaused = false
+        interaction.choose(question, choice, visit, generation)
+    }
+
+    private fun pauseForDecision() {
+        setLongPressSpeedUp(false)
+        if (::_player.isInitialized && _isPrepared.value && _isPlaying.value) _player.pause()
+        _isPlaying.value = false
+        decisionPaused = foreground && !userPaused && interaction.state.value.session.question?.pauseRequested == true
+    }
+
+    fun observeInteraction(discontinuity: Boolean = false) {
+        if (!interaction.state.value.interactive || !_isPrepared.value) return
+        val advance = foreground && !userPaused && !_isLoading.value &&
+            (_isPlaying.value || decisionPaused || playbackEnded)
+        val position = if (playbackEnded) _totalDuration.value else savePosition().coerceAtLeast(0)
+        interaction.observe(position, _totalDuration.value, playbackEnded,
+            monotonicMs(), advance, discontinuity)
+        val state = interaction.state.value
+        if (state.session.question?.pauseRequested == true || state.error != null || !foreground) pauseForDecision()
+        if (state.blocksControls) setLongPressSpeedUp(false)
+    }
+
+    private fun startInteractionObserver() {
+        interactionObserver?.cancel()
+        if (!interaction.state.value.interactive || !foreground) return
+        interactionObserver = viewModelScope.launch {
+            while (isActive && _isPrepared.value && foreground) {
+                observeInteraction()
+                delay(150.milliseconds)
+            }
+        }
+    }
+
+    private var appContext: Context? = null
     private lateinit var _player: OrbitPlayer
     val player: OrbitPlayer get() = _player
 
-    fun initPlayer(context: Context) {
+    fun initPlayer(context: Context, isInteractive: Boolean = false) {
+        appContext = context.applicationContext
         if (::_player.isInitialized) return
-        _player = createOrbitPlayer(context.applicationContext)
+        val interactive = isInteractive || _playerData.value.interactionHint || interaction.state.value.interactive
+        val basePlayer = createOrbitPlayer(context.applicationContext, interactive)
+        _player = DelegatingOrbitPlayer(basePlayer)
+    }
+
+    fun ensureMedia3ForInteractive() {
+        val ctx = appContext ?: return
+        val current = if (::_player.isInitialized) _player else null
+        if (current is DelegatingOrbitPlayer && current.delegate !is Media3PlayerWrapper) {
+            current.switchTo(Media3PlayerWrapper(ctx))
+        }
     }
 
     // --- State ---
@@ -139,6 +271,10 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun beginPlaybackPreparation() {
+        interactionObserver?.cancel()
+        playbackEnded = false
+        decisionPaused = false
+        resumeAfterBackground = false
         relativeSeekTargetMs = null
         setLongPressSpeedUp(false)
         if (::_player.isInitialized && !released) {
@@ -157,7 +293,7 @@ class PlayerViewModel : ViewModel() {
 
     fun setPlaybackAllowed(allowed: Boolean) {
         playbackAllowed = allowed
-        if (!allowed) setLongPressSpeedUp(false)
+        if (!allowed) setLongPressSpeedUp(false) else resumeBackgroundPlayback()
     }
 
     fun setError(msg: String?) {
@@ -211,6 +347,20 @@ class PlayerViewModel : ViewModel() {
     }
 
     companion object {
+        private suspend fun sendProgress(data: PlayerData, position: Long, started: Long, duration: Long) {
+            val bangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
+            if (!bangumi) HistoryApi.reportHistory(data.aid, data.cid, position)
+            HeartbeatApi.reportHeartbeat(
+                aid = data.aid, bvid = data.bvid, cid = data.cid,
+                playedTime = position, startTs = started,
+                type = if (bangumi) "4" else "3",
+                subType = if (bangumi) "1" else null,
+                epid = if (bangumi) data.epid else null,
+                sid = if (bangumi) data.sid else null,
+                videoDuration = duration
+            )
+        }
+
         fun parseSubtitleJson(json: String): Array<Subtitle> {
             val jsonObj = com.google.gson.Gson().fromJson(json, Map::class.java)
             return (jsonObj?.get("body") as? List<*>)?.mapNotNull { entry ->
@@ -347,7 +497,9 @@ class PlayerViewModel : ViewModel() {
         }
 
         applyEffectiveSpeed()
+        playbackEnded = false
         if (playbackAllowed) play()
+        startInteractionObserver()
 
         if (!heartbeatStarted && !isLive) {
             heartbeatStarted = true
@@ -360,6 +512,12 @@ class PlayerViewModel : ViewModel() {
         _isPlaying.value = false
         _isLoading.value = false
         if (!isLive) _currentProgress.value = _totalDuration.value
+        if (interaction.state.value.interactive) {
+            playbackEnded = true
+            reportProgress()
+            observeInteraction()
+            return
+        }
         val data = _playerData.value
         val isBangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
         val isLocalMulti = data.type == PlayerData.TYPE_LOCAL && data.cids.size > 1
@@ -404,6 +562,7 @@ class PlayerViewModel : ViewModel() {
                 _bufferingRevision.value++
             }
         }
+        observeInteraction()
     }
 
     fun onVideoSizeChanged(width: Int, height: Int) {
@@ -414,12 +573,18 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun play() {
-        if (released || !_isPrepared.value || !playbackAllowed) return
+        if (released || !_isPrepared.value || !playbackAllowed || interaction.state.value.blocksControls ||
+            interaction.state.value.interactive && !foreground) return
+        userPaused = false
+        decisionPaused = false
         _player.start()
         _isPlaying.value = true
     }
 
     fun pause() {
+        userPaused = true
+        decisionPaused = false
+        resumeAfterBackground = false
         setLongPressSpeedUp(false)
         if (released || !::_player.isInitialized) return
         if (_isPrepared.value) {
@@ -427,6 +592,7 @@ class PlayerViewModel : ViewModel() {
             _player.pause()
         }
         _isPlaying.value = false
+        observeInteraction()
         reportProgress()
     }
 
@@ -435,12 +601,16 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun seekTo(ms: Long) {
-        if (released || !_isPrepared.value || isLive || _totalDuration.value <= 0L) return
+        if (released || !_isPrepared.value || isLive || _totalDuration.value <= 0L || interaction.state.value.blocksControls) return
         relativeSeekTargetMs = null
         setLongPressSpeedUp(false)
         val target = ms.coerceIn(0L, _totalDuration.value)
         _player.seekTo(target)
         _currentProgress.value = target
+        playbackEnded = false
+        if (interaction.state.value.interactive) {
+            interaction.observe(target, _totalDuration.value, false, monotonicMs(), false, discontinuity = true)
+        }
     }
 
     fun seekBy(deltaMs: Float): Long? {
@@ -463,7 +633,7 @@ class PlayerViewModel : ViewModel() {
 
     fun setLongPressSpeedUp(enabled: Boolean) {
         val active = enabled && !released && playbackAllowed && _isPrepared.value &&
-            _isPlaying.value && !_isLoading.value && !isLive
+            _isPlaying.value && !_isLoading.value && !isLive && !interaction.state.value.blocksControls
         if (_isLongPressSpeedUp.value == active) return
         _isLongPressSpeedUp.value = active
         applyEffectiveSpeed()
@@ -477,66 +647,27 @@ class PlayerViewModel : ViewModel() {
         }
     }
 
-    fun switchToNextEpisode() {
-        val data = _playerData.value
-        if (data.currentPageIndex + 1 >= data.cids.size) return
-        val nextIndex = data.currentPageIndex + 1
-        val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > nextIndex) {
-            data.localUrls[nextIndex]
-        } else data.videoUrl
-        val newData = data.copy(
-            currentPageIndex = nextIndex,
-            aid = if (data.aids.size > nextIndex) data.aids[nextIndex] else data.aid,
-            cid = data.cids[nextIndex],
-            epid = if (data.epids.size > nextIndex) data.epids[nextIndex] else data.epid,
-            title = if (data.pagenames.size > nextIndex) data.pagenames[nextIndex] else data.title,
-            videoUrl = nextVideoUrl,
-            progress = 0
-        )
-        _playerData.value = newData
-        switchPendingSeekMs = 0L
-        beginPlaybackPreparation()
-    }
+    fun switchToNextEpisode() = switchToEpisode(_playerData.value.currentPageIndex + 1)
 
-    fun switchToPreviousEpisode() {
-        val data = _playerData.value
-        if (data.currentPageIndex - 1 < 0) return
-        val prevIndex = data.currentPageIndex - 1
-        val prevVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > prevIndex) {
-            data.localUrls[prevIndex]
-        } else data.videoUrl
-        val newData = data.copy(
-            currentPageIndex = prevIndex,
-            aid = if (data.aids.size > prevIndex) data.aids[prevIndex] else data.aid,
-            cid = data.cids[prevIndex],
-            epid = if (data.epids.size > prevIndex) data.epids[prevIndex] else data.epid,
-            title = if (data.pagenames.size > prevIndex) data.pagenames[prevIndex] else data.title,
-            videoUrl = prevVideoUrl,
-            progress = 0
-        )
-        _playerData.value = newData
-        switchPendingSeekMs = 0L
-        beginPlaybackPreparation()
-    }
+    fun switchToPreviousEpisode() = switchToEpisode(_playerData.value.currentPageIndex - 1)
 
     fun switchToEpisode(index: Int) {
+        if (interaction.state.value.blocksEpisodes) return
         val data = _playerData.value
-        if (index < 0 || index >= data.cids.size || index == data.currentPageIndex) return
-        val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > index) {
-            data.localUrls[index]
-        } else data.videoUrl
+        if (index !in data.cids.indices || index == data.currentPageIndex) return
         val newData = data.copy(
             currentPageIndex = index,
-            aid = if (data.aids.size > index) data.aids[index] else data.aid,
+            aid = data.aids.getOrNull(index) ?: data.aid,
             cid = data.cids[index],
-            epid = if (data.epids.size > index) data.epids[index] else data.epid,
-            title = if (data.pagenames.size > index) data.pagenames[index] else data.title,
-            videoUrl = nextVideoUrl,
+            epid = data.epids.getOrNull(index) ?: data.epid,
+            title = data.pagenames.getOrNull(index) ?: data.title,
+            videoUrl = if (isLocal) data.localUrls.getOrNull(index) ?: data.videoUrl else "",
+            audioUrl = if (isLocal) data.audioUrl else "",
+            dashData = null,
             progress = 0
         )
-        _playerData.value = newData
         switchPendingSeekMs = 0L
-        beginPlaybackPreparation()
+        open(newData)
     }
 
     fun updateProgress() {
@@ -563,6 +694,8 @@ class PlayerViewModel : ViewModel() {
     }
 
     fun release() {
+        interactionObserver?.cancel()
+        interaction.close()
         setLongPressSpeedUp(false)
         if (released || !::_player.isInitialized) return
         released = true
@@ -599,23 +732,13 @@ class PlayerViewModel : ViewModel() {
     private fun reportProgress() {
         val data = _playerData.value
         if (isLive || isLocal) return
+        val interactionState = interaction.state.value
+        if (interactionState.interactive && (interactionState.session.visitId == null || interactionState.session.transition != null)) return
+        val pos = _currentProgress.value / 1000
+        val duration = (_totalDuration.value / 1000).coerceAtLeast(0)
+        val started = startTs
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val pos = _currentProgress.value / 1000
-                val isBangumi = data.type == PlayerData.TYPE_BANGUMI && data.epid > 0
-                if (!isBangumi) {
-                    HistoryApi.reportHistory(data.aid, data.cid, pos)
-                }
-                HeartbeatApi.reportHeartbeat(
-                    aid = data.aid, bvid = data.bvid, cid = data.cid,
-                    playedTime = pos, startTs = startTs,
-                    type = if (isBangumi) "4" else "3",
-                    subType = if (isBangumi) "1" else null,
-                    epid = if (isBangumi) data.epid else null,
-                    sid = if (isBangumi) data.sid else null,
-                    videoDuration = (_totalDuration.value / 1000).coerceAtLeast(0)
-                )
-            } catch (_: Exception) {}
+            try { reportPlayback(data, pos, started, duration) } catch (_: Exception) {}
         }
     }
 

@@ -167,6 +167,8 @@ import com.qx.orbit.bili.util.player.OrbitPlayer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.Request
@@ -189,9 +191,9 @@ fun PlayerScreen(
     viewModel: PlayerViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    viewModel.initPlayer(context)
+    viewModel.initPlayer(context, initialData.interactionHint)
     LaunchedEffect(initialData) {
-        viewModel.setData(initialData)
+        viewModel.open(initialData)
     }
     var backPressedTime by remember { mutableLongStateOf(0L) }
     var isExiting by remember { mutableStateOf(false) }
@@ -202,7 +204,15 @@ fun PlayerScreen(
     var liveClientListener by remember { mutableStateOf<PlayerDanmuClientListener?>(null) }
     var liveReconnectTrigger by remember { mutableIntStateOf(0) }
 
-    val isAudioPlayer = isAudioOnlyMode || initialData.audioUrl == "audio"
+    val interactionScreenState = remember(viewModel) {
+        viewModel.interaction.state.map { state ->
+            state.copy(session = state.session.copy(question = state.session.question?.let { question ->
+                question.copy(remainingMs = question.remainingMs?.let { 0L })
+            }))
+        }.distinctUntilChanged()
+    }
+    val playbackInteractionState by interactionScreenState.collectAsState(initial = viewModel.interaction.state.value)
+    val isAudioPlayer = (isAudioOnlyMode || initialData.audioUrl == "audio") && !playbackInteractionState.blocksEpisodes
     BackHandler(enabled = !isAudioPlayer) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - backPressedTime < 2000) {
@@ -217,10 +227,33 @@ fun PlayerScreen(
     
     var playerData by remember { mutableStateOf(initialData) }
     val vmPlayerData by viewModel.playerData.collectAsState()
-    // Sync ViewModel playerData back to local when episodes switch
     LaunchedEffect(vmPlayerData) {
-        if (vmPlayerData != initialData && vmPlayerData.aid != 0L) {
-            playerData = vmPlayerData
+        if (vmPlayerData.aid != 0L || vmPlayerData.type == PlayerData.TYPE_LOCAL) playerData = vmPlayerData
+    }
+    val interactionState = playbackInteractionState
+    val interactionRequest by viewModel.interaction.request.collectAsState()
+    val interactionBlocked = interactionState.blocksControls
+    var interactionSelection by remember(interactionState.session.visitId, interactionState.session.generation, interactionState.session.question?.index) {
+        mutableIntStateOf(interactionState.session.question?.visibleChoiceIndices?.firstOrNull() ?: 0)
+    }
+    val interactionDefaultList = LocalScreenRound.current
+    var interactionList by remember(interactionState.session.generation, interactionState.session.visitId, interactionState.session.question?.index, interactionDefaultList) {
+        mutableStateOf(interactionDefaultList)
+    }
+    val rotateInteractionSelection by rememberUpdatedState<(Float) -> Unit>({ delta ->
+        val indices = viewModel.interaction.state.value.session.question?.visibleChoiceIndices.orEmpty()
+        if (indices.isNotEmpty() && delta != 0f) {
+            val index = indices.indexOf(interactionSelection).coerceAtLeast(0)
+            interactionSelection = indices[(index + if (delta > 0) 1 else indices.size - 1) % indices.size]
+        }
+    })
+    LaunchedEffect(interactionBlocked) {
+        if (interactionBlocked) viewModel.setLongPressSpeedUp(false)
+    }
+    LaunchedEffect(interactionState.interactive) {
+        if (interactionState.interactive && isAudioOnlyMode) {
+            isAudioOnlyMode = false
+            RoundToast.show(context, "互动视频暂不支持纯音频，请在前台选择剧情")
         }
     }
     val isLive = playerData.type == PlayerData.TYPE_LIVE
@@ -347,7 +380,7 @@ fun PlayerScreen(
     )
     val latestDanmakuGate by rememberUpdatedState<() -> Boolean>({
         shouldRunDanmaku(
-            isForeground && !isAudioOnlyMode && initialData.audioUrl != "audio" && !isExiting,
+            isForeground && !isAudioPlayer && !isExiting,
             showDanmaku, viewModel.isPrepared.value && danmakuReady,
             viewModel.isPlaying.value, dragProgress >= 0f, viewModel.isLoading.value
         )
@@ -365,16 +398,19 @@ fun PlayerScreen(
     val danmakuPlayer = remember { createDanmakuPlayer(context) }
     var danmakuConfig by remember { mutableStateOf<DanmakuConfig?>(null) }
 
-    DisposableEffect(simulatedRotaryHost, volumeState, rotaryVolumeEnabled) {
-        val handlerId = if (rotaryVolumeEnabled) {
+    DisposableEffect(simulatedRotaryHost, volumeState, rotaryVolumeEnabled, interactionBlocked) {
+        val handlerId = if (rotaryVolumeEnabled || interactionBlocked) {
             simulatedRotaryHost?.registerSimulatedRotaryHandler { rawDelta ->
-                val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
-                if (delta == 0f) {
-                    false
-                } else {
-                    volumeState.adjustByDelta(delta)
-                    interactionCounter++
+                if (viewModel.interaction.state.value.blocksControls) {
+                    rotateInteractionSelection(rawDelta)
                     true
+                } else {
+                    val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
+                    if (delta == 0f) false else {
+                        volumeState.adjustByDelta(delta)
+                        interactionCounter++
+                        true
+                    }
                 }
             }
         } else {
@@ -423,53 +459,9 @@ fun PlayerScreen(
                 if (latestDanmakuGate()) danmakuPlayer.seekTo(viewModel.currentProgress.value)
             }
             
-            override fun onSkipToNext() {
-                val data = latestPlayerData
-                if (data.currentPageIndex + 1 < data.cids.size) {
-                    val nextIndex = data.currentPageIndex + 1
-                    val nextAid = if (data.aids.size > nextIndex) data.aids[nextIndex] else data.aid
-                    val nextCid = data.cids[nextIndex]
-                    val nextEpid = if (data.epids.size > nextIndex) data.epids[nextIndex] else data.epid
-                    val nextTitle = if (data.pagenames.size > nextIndex) data.pagenames[nextIndex] else data.title
-                    val nextVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > nextIndex) {
-                        data.localUrls[nextIndex]
-                    } else data.videoUrl
-                    playerData = data.copy(
-                        currentPageIndex = nextIndex,
-                        aid = nextAid,
-                        cid = nextCid,
-                        epid = nextEpid,
-                        title = nextTitle,
-                        videoUrl = nextVideoUrl,
-                        progress = 0
-                    )
-                    viewModel.setData(playerData)
-                }
-            }
-            
-            override fun onSkipToPrevious() {
-                val data = latestPlayerData
-                if (data.currentPageIndex - 1 >= 0) {
-                    val prevIndex = data.currentPageIndex - 1
-                    val prevAid = if (data.aids.size > prevIndex) data.aids[prevIndex] else data.aid
-                    val prevCid = data.cids[prevIndex]
-                    val prevEpid = if (data.epids.size > prevIndex) data.epids[prevIndex] else data.epid
-                    val prevTitle = if (data.pagenames.size > prevIndex) data.pagenames[prevIndex] else data.title
-                    val prevVideoUrl = if (data.type == PlayerData.TYPE_LOCAL && data.localUrls.size > prevIndex) {
-                        data.localUrls[prevIndex]
-                    } else data.videoUrl
-                    playerData = data.copy(
-                        currentPageIndex = prevIndex,
-                        aid = prevAid,
-                        cid = prevCid,
-                        epid = prevEpid,
-                        title = prevTitle,
-                        videoUrl = prevVideoUrl,
-                        progress = 0
-                    )
-                    viewModel.setData(playerData)
-                }
-            }
+            override fun onSkipToNext() = viewModel.switchToNextEpisode()
+
+            override fun onSkipToPrevious() = viewModel.switchToPreviousEpisode()
         }
         mediaSession.setCallback(callback)
         onDispose {
@@ -571,12 +563,15 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(vmCurrentProgress, isPrepared, isPlaying, effectiveSpeed) {
+    LaunchedEffect(vmCurrentProgress, isPrepared, isPlaying, effectiveSpeed, interactionBlocked, interactionState.blocksEpisodes) {
         if (isPrepared) {
             val state = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
             val sessionPosition = try { viewModel.player.currentPosition } catch (_: Exception) { vmCurrentProgress }
+            var actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE
+            if (!interactionState.blocksEpisodes) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS
+            if (!interactionBlocked) actions = actions or PlaybackState.ACTION_SEEK_TO
             val playbackState = PlaybackState.Builder()
-                .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_SEEK_TO)
+                .setActions(actions)
                 .setState(state, sessionPosition, effectiveSpeed)
                 .build()
             mediaSession.setPlaybackState(playbackState)
@@ -654,29 +649,50 @@ fun PlayerScreen(
     LaunchedEffect(isLoading) {
         if (isLoading) viewModel.startBufferSpeedLoop()
     }
+    LaunchedEffect(interactionBlocked) {
+        if (interactionBlocked) {
+            showSubtitleDialog = false
+            showMoreDialog = false
+            showEpisodeDialog = false
+            showVolumeScreen = false
+            seekSession = null
+            dragProgress = -1f
+            viewModel.setLongPressSpeedUp(false)
+        }
+    }
 
-    // Track what was last loaded to prevent unnecessary reloads
     var lastLoadId by remember { mutableStateOf<Pair<Any?, Boolean>?>(null) }
-    val currentVideoKey = if (isLive) playerData.aid else if (isLocal) playerData.videoUrl else playerData.cid
+    var mediaLoadGeneration by remember { mutableLongStateOf(0L) }
+    val currentVideoKey = when {
+        playerData.type == PlayerData.TYPE_VIDEO -> interactionRequest?.let { it.epoch to it.revision }
+        isLive -> playerData.aid
+        isLocal -> playerData.videoUrl
+        else -> playerData.cid
+    }
 
     LaunchedEffect(currentVideoKey, isAudioOnlyMode) {
+        val generation = ++mediaLoadGeneration
+        val request = if (playerData.type == PlayerData.TYPE_VIDEO) interactionRequest else null
+        val playerData = request?.data ?: playerData
+        fun currentLoad() = generation == mediaLoadGeneration && (request == null || viewModel.interaction.accepts(request))
         val loadId = Pair(currentVideoKey, isAudioOnlyMode)
-        // Skip reload only when the exact same loadId was already prepared
-        // This allows network video to reload when audio-only mode changes (video ↔ audio stream)
-        if (isPrepared && lastLoadId == loadId) {
-            viewModel.setLoading(false)
-            return@LaunchedEffect
-        }
-        viewModel.beginPlaybackPreparation()
+        if (isPrepared && lastLoadId == loadId) return@LaunchedEffect
+        val reloading = isPrepared && lastLoadId?.first == currentVideoKey
+        if (reloading) viewModel.pendingSeekTo(viewModel.savePosition())
         dragProgress = -1f
         seekSession = null
         danmakuReady = false
         danmakuStarted = false
         danmakuPlayer.pause()
-        danmakuPlayer.setOnReadyListener { danmakuReady = true }
+        danmakuPlayer.removeAllDanmakus(true)
+        viewModel.setSubtitles(emptyArray())
+        viewModel.setSubtitleLinks(emptyArray())
+        viewModel.setCurrentSubtitleId(0)
+        if (playerData.type == PlayerData.TYPE_VIDEO && request == null) return@LaunchedEffect
+        viewModel.beginPlaybackPreparation()
+        danmakuPlayer.setOnReadyListener { if (currentLoad()) danmakuReady = true }
         lastLoadId = loadId
         try {
-            danmakuPlayer.removeAllDanmakus(true)
             
             if (!isLocal && !CookieManager.getCookie().contains("buvid3")) {
                 CookiesApi.checkCookies()
@@ -686,10 +702,11 @@ fun PlayerScreen(
                 if (isLive || isLocal) {
                     playerData
                 } else {
+                    val isInteractive = interactionState.interactive || playerData.interactionHint || request != null
                     val media3Selected = !BuildConfig.HAS_IJK ||
-                        SharedPreferencesUtil.getString("player_engine", "ijk") == "media3"
+                        SharedPreferencesUtil.getString("player_engine", "ijk") == "media3" || isInteractive
                     val requestDash = SharedPreferencesUtil.getBoolean("player_request_dash", false)
-                    val shouldUseDash = isAudioOnlyMode || (media3Selected && requestDash)
+                    val shouldUseDash = isAudioOnlyMode || isInteractive || (media3Selected && requestDash)
                     if (playerData.type == PlayerData.TYPE_BANGUMI) {
                         PlayerApi.getBangumi(playerData, forceMp4 = !shouldUseDash)
                     } else if (shouldUseDash) {
@@ -714,6 +731,7 @@ fun PlayerScreen(
 
             if (!isLive && !isLocal) {
                 val danmakuSegments = DanmakuApi.getVideoDanmakuSegments(playerData.aid, playerData.cid)
+                if (!currentLoad()) return@LaunchedEffect
                 val parser = createProtobufParser()
                 if (danmakuSegments.isNotEmpty()) {
                     parser.setDanmakuSegments(danmakuSegments)
@@ -797,33 +815,32 @@ fun PlayerScreen(
                 danmakuPlayer.enableDrawingCache(true)
             }
 
-            // Load subtitles
             if (!isLive) {
-                scope.launch {
+                launch {
                     try {
-                        if (isLocal) {
-                            val links = viewModel.discoverLocalSubtitles(resolvedLocalPath)
-                            viewModel.setSubtitleLinks(links)
-                            if (links.isNotEmpty() && SharedPreferencesUtil.getBoolean("player_subtitle_default_show", false)) {
-                                val defaultLink = links.firstOrNull { !it.isAI } ?: links.first()
-                                viewModel.setSubtitles(viewModel.loadSubtitleFromPath(defaultLink.url))
-                                viewModel.setCurrentSubtitleId(defaultLink.id)
-                            }
-                        } else {
-                            val links = PlayerApi.getSubtitleLinks(playerData.aid, playerData.cid)
-                            viewModel.setSubtitleLinks(links)
-                            if (links.isNotEmpty() && SharedPreferencesUtil.getBoolean("player_subtitle_default_show", false)) {
-                                val idx = links.indexOfFirst { !it.isAI }.coerceAtLeast(0)
-                                viewModel.setSubtitles(PlayerApi.getSubtitle(links[idx].url))
-                                viewModel.setCurrentSubtitleId(links[idx].id)
-                            }
+                        val links = when {
+                            isLocal -> viewModel.discoverLocalSubtitles(resolvedLocalPath)
+                            request != null -> request.metadata.subtitleLinks.toTypedArray()
+                            else -> PlayerApi.getSubtitleLinks(playerData.aid, playerData.cid)
                         }
+                        if (!currentLoad()) return@launch
+                        viewModel.setSubtitleLinks(links)
+                        if (links.isNotEmpty() && SharedPreferencesUtil.getBoolean("player_subtitle_default_show", false)) {
+                            val link = links.firstOrNull { !it.isAI } ?: links.first()
+                            val subs = viewModel.loadSubtitleFromPath(link.url)
+                            if (!currentLoad()) return@launch
+                            viewModel.setSubtitles(subs)
+                            viewModel.setCurrentSubtitleId(link.id)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (_: Exception) {}
                 }
             }
 
             val result = playbackData.await()
-            if (!isLive && !isLocal) playerData = result
+            if (!currentLoad()) return@LaunchedEffect
+            if (!isLive && !isLocal) viewModel.setData(result)
             if (result.videoUrl.isNotEmpty() || result.audioUrl.isNotEmpty()) {
                 mediaPlayer.reset()
                 val useAudioOnlySource = !isLocal && isAudioOnlyMode && result.audioUrl.isNotEmpty()
@@ -879,43 +896,53 @@ fun PlayerScreen(
                         mediaPlayer.setDisplay(surfaceHolder)
                     }
                 }
-                if (SharedPreferencesUtil.getBoolean("player_loop", false)) {
-                    mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "loop", 1)
-                }
+                mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "loop",
+                    if (!viewModel.interaction.state.value.interactive && SharedPreferencesUtil.getBoolean("player_loop", false)) 1 else 0)
                 var hasPrepared = false
+                var hasCompleted = false
                 mediaPlayer.setOnPreparedListener {
-                    if (hasPrepared) return@setOnPreparedListener
+                    if (hasPrepared || !currentLoad()) return@setOnPreparedListener
+                    if (request != null && !viewModel.prepareInteractionMedia(request, reloading)) return@setOnPreparedListener
                     hasPrepared = true
                     volumeState.enforcePlaybackStartGuard()
                     danmakuReady = danmakuPlayer.isReady()
                     viewModel.onPrepared()
                 }
                 mediaPlayer.setOnCompletionListener {
+                    if (!currentLoad() || !hasPrepared || hasCompleted &&
+                        (viewModel.interaction.state.value.interactive || !viewModel.isPlaying.value)) return@setOnCompletionListener
+                    hasCompleted = true
                     viewModel.onCompletion()
                 }
                 mediaPlayer.setOnVideoSizeChangedListener { _, width, height, _, _ ->
-                    viewModel.onVideoSizeChanged(width, height)
+                    if (currentLoad()) viewModel.onVideoSizeChanged(width, height)
                 }
                 mediaPlayer.setOnErrorListener { _, what, extra ->
-                    viewModel.onError(what, extra)
-                    danmakuPlayer.pause()
+                    if (currentLoad()) {
+                        request?.let { viewModel.interaction.mediaFailed(it, "播放器错误: $what，请重试") }
+                        viewModel.onError(what, extra)
+                        danmakuPlayer.pause()
+                    }
                     true
                 }
                 mediaPlayer.setOnInfoListener { _, what, _ ->
-                    viewModel.onInfo(what, 0)
+                    if (currentLoad()) viewModel.onInfo(what, 0)
                     true
                 }
-                // Install callbacks before preparing; local sources can become ready quickly.
                 mediaPlayer.prepareAsync()
             } else {
+                request?.let { viewModel.interaction.mediaFailed(it, "无法获取视频地址，请重试") }
                 viewModel.setError("无法获取视频地址")
                 viewModel.setLoading(false)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            viewModel.setError("网络请求失败")
-            viewModel.setLoading(false)
+            if (currentLoad()) {
+                request?.let { viewModel.interaction.mediaFailed(it, "网络请求失败，请重试") }
+                viewModel.setError("网络请求失败")
+                viewModel.setLoading(false)
+            }
         }
     }
 
@@ -1043,7 +1070,8 @@ fun PlayerScreen(
                 val activityLifecycle = (activity as? LifecycleOwner)?.lifecycle
                 val goingBackground = activity != null && !activity.isFinishing &&
                     activityLifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == false
-                val backgroundAllowed = !isExiting && goingBackground &&
+                viewModel.setForeground(false)
+                val backgroundAllowed = !viewModel.interaction.state.value.interactive && !isExiting && goingBackground &&
                     SharedPreferencesUtil.getBoolean("player_background", false)
                 viewModel.setPlaybackAllowed(backgroundAllowed)
                 if (backgroundAllowed) {
@@ -1060,6 +1088,7 @@ fun PlayerScreen(
                 }
             } else if (event == Lifecycle.Event.ON_START) {
                 isForeground = true
+                viewModel.setForeground(true)
                 viewModel.setPlaybackAllowed(true)
                 if (wasBackgroundAudioOnlyToggled) {
                     viewModel.pendingSeekTo(viewModel.savePosition())
@@ -1117,7 +1146,7 @@ fun PlayerScreen(
         }
     }
 
-    if (isAudioOnlyMode || playerData.audioUrl == "audio") {
+    if ((isAudioOnlyMode || playerData.audioUrl == "audio") && !interactionState.blocksEpisodes) {
         AudioPlayerScreen(
             viewModel = viewModel,
             playerData = playerData,
@@ -1174,7 +1203,7 @@ fun PlayerScreen(
             }
             .background(Color.Black)
             .onGloballyPositioned { playerCoordinates = it }
-            .playerGestures(
+            .then(if (interactionBlocked) Modifier else Modifier.playerGestures(
                 PlayerGestureCallbacks(
                     zoomEnabled = SharedPreferencesUtil.getBoolean("player_scale", true),
                     oneFingerZoomEnabled = SharedPreferencesUtil.getBoolean("player_one_finger_zoom", false),
@@ -1239,9 +1268,11 @@ fun PlayerScreen(
                         interactionCounter++
                     }
                 )
-            )
+            ))
             .onRotaryScrollEvent {
-                if (rotaryVolumeEnabled) {
+                if (interactionBlocked) {
+                    rotateInteractionSelection(it.verticalScrollPixels)
+                } else if (rotaryVolumeEnabled) {
                     val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
                     if (delta != 0f) {
                         volumeState.adjustByDelta(delta)
@@ -1456,7 +1487,7 @@ fun PlayerScreen(
         )
 
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls && !interactionBlocked,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -1719,8 +1750,50 @@ fun PlayerScreen(
             }
         }
         
+        if (!interactionList) {
+            Box(
+                modifier = Modifier.fillMaxSize().graphicsLayer(
+                    scaleX = scale * scaleModeMultiplier,
+                    scaleY = scale * scaleModeMultiplier,
+                    translationX = offsetX,
+                    translationY = offsetY
+                ),
+                contentAlignment = Alignment.Center
+            ) {
+                InteractionChoiceAnchors(
+                    state = interactionState,
+                    selection = interactionSelection,
+                    onChoose = { index ->
+                        interactionState.session.question?.let { question ->
+                            interactionSelection = index
+                            viewModel.chooseInteraction(question.index, index, interactionState.session.visitId, interactionState.session.generation)
+                        }
+                    },
+                    modifier = Modifier.size(
+                        (interactionContentSize(videoViewportSize.width.toFloat(), videoViewportSize.height.toFloat(), videoWidth, videoHeight).width / density).dp,
+                        (interactionContentSize(videoViewportSize.width.toFloat(), videoViewportSize.height.toFloat(), videoWidth, videoHeight).height / density).dp
+                    )
+                )
+            }
+        }
+        InteractionChoiceOverlay(
+            coordinator = viewModel.interaction,
+            selection = interactionSelection,
+            showList = interactionList,
+            onShowList = { interactionList = it },
+            onRotate = rotateInteractionSelection,
+            onChoose = { index ->
+                interactionState.session.question?.let { question ->
+                    interactionSelection = index
+                    viewModel.chooseInteraction(question.index, index, interactionState.session.visitId, interactionState.session.generation)
+                }
+            },
+            onRetry = { viewModel.interaction.retry() },
+            onRestart = { viewModel.interaction.restart() }
+        )
+
         Dialog(
-            visible = showVolumeScreen,
+            visible = showVolumeScreen && !interactionBlocked,
             onDismissRequest = { showVolumeScreen = false }
         ) {
             Box(
@@ -1826,6 +1899,7 @@ fun PlayerScreen(
                         Button(
                             onClick = {
                                 if (link.url.isEmpty()) return@Button
+                                val subtitleGeneration = mediaLoadGeneration
                                 scope.launch {
                                     try {
                                         val subs = if (link.url.startsWith("/") && !link.url.startsWith("//")) {
@@ -1833,6 +1907,7 @@ fun PlayerScreen(
                                         } else {
                                             PlayerApi.getSubtitle(link.url)
                                         }
+                                        if (subtitleGeneration != mediaLoadGeneration) return@launch
                                         viewModel.setSubtitles(subs)
                                         viewModel.setCurrentSubtitleId(link.id)
                                     } catch (e: Exception) {
@@ -1878,7 +1953,7 @@ fun PlayerScreen(
                     }
                 }
                 // Episode selection
-                if (playerData.cids.size > 1) {
+                if (playerData.cids.size > 1 && !interactionState.blocksEpisodes) {
                     item {
                         androidx.wear.compose.material3.Button(
                             onClick = {
@@ -1914,6 +1989,10 @@ fun PlayerScreen(
                     val isLooping = remember { mutableStateOf(SharedPreferencesUtil.getBoolean("player_loop", false)) }
                     androidx.wear.compose.material3.Button(
                         onClick = {
+                            if (viewModel.interaction.state.value.blocksEpisodes) {
+                                RoundToast.show(context, "互动视频不支持循环播放")
+                                return@Button
+                            }
                             isLooping.value = !isLooping.value
                             SharedPreferencesUtil.putBoolean("player_loop", isLooping.value)
                             mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "loop", if (isLooping.value) 1 else 0)
@@ -1959,23 +2038,7 @@ fun PlayerScreen(
                     val pageName = playerData.pagenames.getOrNull(index).orEmpty().ifBlank { "分P${index + 1}" }
                     androidx.wear.compose.material3.Button(
                         onClick = {
-                            val targetAid = if (playerData.aids.size > index) playerData.aids[index] else playerData.aid
-                            val targetCid = playerData.cids[index]
-                            val targetEpid = if (playerData.epids.size > index) playerData.epids[index] else playerData.epid
-                            val targetTitle = if (playerData.pagenames.size > index) playerData.pagenames[index] else playerData.title
-                            val targetVideoUrl = if (playerData.type == PlayerData.TYPE_LOCAL && playerData.localUrls.size > index) {
-                                playerData.localUrls[index]
-                            } else playerData.videoUrl
-                            playerData = playerData.copy(
-                                currentPageIndex = index,
-                                aid = targetAid,
-                                cid = targetCid,
-                                epid = targetEpid,
-                                title = targetTitle,
-                                videoUrl = targetVideoUrl,
-                                progress = 0
-                            )
-                            viewModel.setData(playerData)
+                            viewModel.switchToEpisode(index)
                             showEpisodeDialog = false
                         },
                         colors = if (isSelected) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors(),
