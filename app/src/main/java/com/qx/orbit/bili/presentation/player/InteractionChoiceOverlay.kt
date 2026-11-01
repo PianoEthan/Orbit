@@ -27,15 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -60,7 +52,6 @@ import kotlin.math.roundToInt
 @Composable
 internal fun InteractionChoiceAnchors(
     state: InteractionPlaybackCoordinator.State,
-    selection: Int,
     onChoose: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -78,13 +69,12 @@ internal fun InteractionChoiceAnchors(
                 ?: return@forEach
             Button(
                 onClick = { onChoose(index) },
-                colors = if (index == selection) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors(),
+                colors = ButtonDefaults.filledTonalButtonColors(),
                 modifier = Modifier
                     .offset { IntOffset(anchor.x.roundToInt(), anchor.y.roundToInt()) }
                     .offset(x = (-44).dp, y = (-24).dp)
                     .widthIn(min = 48.dp, max = 88.dp)
                     .heightIn(min = 48.dp)
-                    .semantics { selected = index == selection }
             ) { Text(choice.option.ifBlank { "选项 ${index + 1}" }) }
         }
     }
@@ -93,10 +83,8 @@ internal fun InteractionChoiceAnchors(
 @Composable
 internal fun InteractionChoiceOverlay(
     coordinator: InteractionPlaybackCoordinator,
-    selection: Int,
     showList: Boolean,
     onShowList: (Boolean) -> Unit,
-    onRotate: (Float) -> Unit,
     onChoose: (Int) -> Unit,
     onRetry: () -> Unit,
     onRestart: () -> Unit,
@@ -113,27 +101,8 @@ internal fun InteractionChoiceOverlay(
             val choice = question.choices[index]
             interactionAnchor(choice.x, choice.y, dimension.width, dimension.height, 1f, 1f) != null
         }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(active?.index, state.session.visitId, state.error) { focus.requestFocus() }
-
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .focusRequester(focus)
-            .onRotaryScrollEvent {
-                onRotate(it.verticalScrollPixels)
-                true
-            }
-            .onKeyEvent { event ->
-                val confirm = event.key == Key.Enter || event.key == Key.DirectionCenter
-                if (confirm && active != null && state.session.transition == null && state.error == null) {
-                    if (event.type == KeyEventType.KeyUp && selection in active.visibleChoiceIndices) {
-                        onChoose(selection)
-                    }
-                    true
-                } else false
-            }
-            .focusable()
+        modifier = modifier.fillMaxSize()
     ) {
         if (state.probing || (state.session.transition != null && state.error == null)) {
             Box(
@@ -241,27 +210,17 @@ internal fun InteractionChoiceOverlay(
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     ) {
-                        Text("选项列表 · ${selection + 1}")
+                        Text("选项列表")
                     }
                 }
             } else {
                 val listState = rememberTransformingLazyColumnState()
                 val transformationSpec = rememberTransformationSpec()
+                val listFocus = remember { FocusRequester() }
 
                 LaunchedEffect(active.index, state.session.visitId) {
                     listState.scrollToItem(0)
-                }
-
-                LaunchedEffect(selection) {
-                    val idx = active.visibleChoiceIndices.indexOf(selection)
-                    if (idx >= 0) {
-                        val targetItem = idx + 1
-                        val visibleItems = listState.layoutInfo.visibleItems
-                        val isVisible = visibleItems.any { it.index == targetItem }
-                        if (!isVisible) {
-                            listState.animateScrollToItem(targetItem)
-                        }
-                    }
+                    runCatching { listFocus.requestFocus() }
                 }
 
                 ScreenScaffold(
@@ -293,7 +252,10 @@ internal fun InteractionChoiceOverlay(
                             bottom = contentPadding.calculateBottomPadding()
                         ),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusRequester(listFocus)
+                            .focusable(),
                         rotaryScrollableBehavior = rememberSafeRotaryScrollableBehavior(listState)
                     ) {
                         item {
@@ -330,14 +292,12 @@ internal fun InteractionChoiceOverlay(
                             key = { active.visibleChoiceIndices[it] }
                         ) { itemIdx ->
                             val index = active.visibleChoiceIndices[itemIdx]
-                            val isSelected = selection == index
                             Button(
                                 onClick = { onChoose(index) },
-                                colors = if (isSelected) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors(),
+                                colors = ButtonDefaults.filledTonalButtonColors(),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .adaptiveTransformedHeight(this, transformationSpec)
-                                    .semantics { selected = isSelected },
+                                    .adaptiveTransformedHeight(this, transformationSpec),
                                 transformation = rememberAdaptiveSurfaceTransformation(transformationSpec)
                             ) {
                                 Text(

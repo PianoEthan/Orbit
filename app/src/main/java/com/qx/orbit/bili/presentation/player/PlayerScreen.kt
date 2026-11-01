@@ -233,20 +233,10 @@ fun PlayerScreen(
     val interactionState = playbackInteractionState
     val interactionRequest by viewModel.interaction.request.collectAsState()
     val interactionBlocked = interactionState.blocksControls
-    var interactionSelection by remember(interactionState.session.visitId, interactionState.session.generation, interactionState.session.question?.index) {
-        mutableIntStateOf(interactionState.session.question?.visibleChoiceIndices?.firstOrNull() ?: 0)
-    }
     val interactionDefaultList = LocalScreenRound.current
     var interactionList by remember(interactionState.session.generation, interactionState.session.visitId, interactionState.session.question?.index, interactionDefaultList) {
         mutableStateOf(interactionDefaultList)
     }
-    val rotateInteractionSelection by rememberUpdatedState<(Float) -> Unit>({ delta ->
-        val indices = viewModel.interaction.state.value.session.question?.visibleChoiceIndices.orEmpty()
-        if (indices.isNotEmpty() && delta != 0f) {
-            val index = indices.indexOf(interactionSelection).coerceAtLeast(0)
-            interactionSelection = indices[(index + if (delta > 0) 1 else indices.size - 1) % indices.size]
-        }
-    })
     LaunchedEffect(interactionBlocked) {
         if (interactionBlocked) viewModel.setLongPressSpeedUp(false)
     }
@@ -399,18 +389,13 @@ fun PlayerScreen(
     var danmakuConfig by remember { mutableStateOf<DanmakuConfig?>(null) }
 
     DisposableEffect(simulatedRotaryHost, volumeState, rotaryVolumeEnabled, interactionBlocked) {
-        val handlerId = if (rotaryVolumeEnabled || interactionBlocked) {
+        val handlerId = if (rotaryVolumeEnabled && !interactionBlocked) {
             simulatedRotaryHost?.registerSimulatedRotaryHandler { rawDelta ->
-                if (viewModel.interaction.state.value.blocksControls) {
-                    rotateInteractionSelection(rawDelta)
+                val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
+                if (delta == 0f) false else {
+                    volumeState.adjustByDelta(delta)
+                    interactionCounter++
                     true
-                } else {
-                    val delta = -rawDelta * ROTARY_VOLUME_INPUT_SCALE
-                    if (delta == 0f) false else {
-                        volumeState.adjustByDelta(delta)
-                        interactionCounter++
-                        true
-                    }
                 }
             }
         } else {
@@ -1272,12 +1257,15 @@ fun PlayerScreen(
             ))
             .onRotaryScrollEvent {
                 if (interactionBlocked) {
-                    rotateInteractionSelection(it.verticalScrollPixels)
+                    false
                 } else if (rotaryVolumeEnabled) {
                     val delta = -it.verticalScrollPixels * ROTARY_VOLUME_INPUT_SCALE
                     if (delta != 0f) {
                         volumeState.adjustByDelta(delta)
                         interactionCounter++
+                        true
+                    } else {
+                        false
                     }
                 } else if (isPrepared && !isLive && totalDuration > 0L && dragProgress < 0f) {
                     viewModel.seekBy(it.verticalScrollPixels * 100)?.let { target ->
@@ -1286,8 +1274,10 @@ fun PlayerScreen(
                         if (latestDanmakuGate()) danmakuPlayer.seekTo(target)
                         interactionCounter++
                     }
+                    true
+                } else {
+                    false
                 }
-                true
             }
     ) {
         Box(
@@ -1763,10 +1753,8 @@ fun PlayerScreen(
             ) {
                 InteractionChoiceAnchors(
                     state = interactionState,
-                    selection = interactionSelection,
                     onChoose = { index ->
                         interactionState.session.question?.let { question ->
-                            interactionSelection = index
                             viewModel.chooseInteraction(question.index, index, interactionState.session.visitId, interactionState.session.generation)
                         }
                     },
@@ -1779,13 +1767,10 @@ fun PlayerScreen(
         }
         InteractionChoiceOverlay(
             coordinator = viewModel.interaction,
-            selection = interactionSelection,
             showList = interactionList,
             onShowList = { interactionList = it },
-            onRotate = rotateInteractionSelection,
             onChoose = { index ->
                 interactionState.session.question?.let { question ->
-                    interactionSelection = index
                     viewModel.chooseInteraction(question.index, index, interactionState.session.visitId, interactionState.session.generation)
                 }
             },
