@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.navigation.NavController
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import com.qx.orbit.bili.data.model.*
@@ -361,6 +362,53 @@ object PlayerApi {
             )
         }
     }
+
+    suspend fun getMetadata(
+        aid: Long,
+        cid: Long,
+        request: suspend (Long, Long) -> Result<JsonElement> = { av, content -> api.getPlayerV2(av, content) }
+    ): InteractionVideoResult<PlayerMetadata> = requestInteractionResponse(
+        request = { request(aid, cid) },
+        parse = ::parseMetadata
+    )
+
+    fun parseMetadata(response: JsonElement): InteractionVideoResult<PlayerMetadata> =
+        parseInteractionResponse(response) { data ->
+            val interaction = if (data.has("interaction")) {
+                val graph = requireNotNull(data.obj("interaction")) { "Null interaction" }
+                val version = requireNotNull(graph.optionalLong("graph_version")) { "Missing graph_version" }
+                require(version > 0) { "Invalid graph_version" }
+                PlayerInteraction(
+                    graphVersion = version, message = graph.string("msg"),
+                    errorToast = graph.string("error_toast"), mark = graph.int("mark"),
+                    needReload = graph.optionalInt("need_reload"),
+                    historyNode = graph.raw("history_node")?.deepCopy()
+                )
+            } else null
+            val subtitleLinks = data.obj("subtitle")?.objects("subtitles")?.map { subtitle ->
+                val aiStatus = subtitle.int("ai_status")
+                val isAI = aiStatus == 1 || aiStatus == 2 || subtitle.int("ai_type") == 1 || subtitle.int("type") == 1
+                val baseLang = subtitle.raw("lan_doc")?.asString ?: subtitle.string("lan")
+                val displayLang = if (isAI && !baseLang.contains("AI", ignoreCase = true)) "$baseLang (AI)" else baseLang
+                SubtitleLink(
+                    id = subtitle.long("id"), isAI = isAI, lang = displayLang,
+                    url = subtitle.string("subtitle_url")
+                )
+            }.orEmpty()
+            val viewPoints = data.objects("view_points").map { point ->
+                ViewPoint(
+                    content = point.string("content"), from = point.int("from"), to = point.int("to"),
+                    type = point.int("type"), imgUrl = point.string("imgUrl"), logoUrl = point.string("logoUrl")
+                )
+            }
+            val lastPlayTime = data.long("last_play_time")
+            val history = if (lastPlayTime > 0) {
+                History(cid = data.long("last_play_cid"), progress = (lastPlayTime / 1000).toInt())
+            } else null
+            PlayerMetadata(
+                interaction = interaction, subtitleLinks = subtitleLinks, viewPoints = viewPoints, history = history
+            )
+        }
 
     suspend fun getSubtitleLinks(aid: Long, cid: Long): Array<SubtitleLink> = withContext(Dispatchers.IO) {
         val jsonElement = when (val result = api.getPlayerV2(aid, cid)) {

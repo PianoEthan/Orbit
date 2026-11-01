@@ -528,6 +528,14 @@ interface BiliApiService {
         @Query("edge_id") edgeId: Long
     ): Result<JsonElement>
 
+    @GET("https://api.bilibili.com/x/stein/edgeinfo_v2")
+    suspend fun getInteractionEdgeInfo(
+        @Query("aid") aid: Long?,
+        @Query("bvid") bvid: String?,
+        @Query("graph_version") graphVersion: Long,
+        @Query("edge_id") edgeId: Long?
+    ): Result<JsonElement>
+
     // ===== HD / TV Login =====
 
     @GET("https://passport.bilibili.com/x/passport-login/web/qrcode/generate")
