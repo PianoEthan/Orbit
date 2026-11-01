@@ -29,7 +29,8 @@ data class PlayerData(
     val currentPageIndex: Int = 0,
     val dashData: DashData? = null,
     val audioUrl: String = "",
-    val cover: String = ""
+    val cover: String = "",
+    val interactionHint: Boolean = false
 ) {
     companion object {
         const val TYPE_VIDEO = 0
