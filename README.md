@@ -23,11 +23,16 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 - **视频播放**: ijkplayer(可选)/ExoPlayer
 - **弹幕**: DanmakuFlameMaster/DFM-Next
 - **图片加载**: Coil
-- **小米手表5系列震动**：miwearhaptics
+- **小米 / OPPO 手表触觉兼容**：CN Wear Overlay
 
 ## 构建
 
-请先同步 Git 子模块，否则无法构建 DFMNext 导致构建失败！
+请先同步 Git 子模块，构建需要 DFMNext 和 CN Wear Overlay：
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
 
 若您无法通过 SSH 克隆，建议自行修改 .git/config 在本地修改子模块地址为 HTTPS 或镜像。
 
@@ -50,7 +55,7 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 - 本项目参考了[哔哩终端](https://github.com/huanli233/BiliClient)的API调用逻辑。
 - 本项目使用了[IJKPlayer](https://github.com/bilibili/ijkplayer)和[Media3-ExoPlayer](https://github.com/androidx/media)作为视频播放器。
 - 本项目使用了[烈焰弹幕使](https://github.com/bilibili/danmakuflamemaster)和[DFM-Next](https://github.com/YNotBili/DFMNext)作为弹幕引擎。
-- 本项目使用了[miwearhaptics](https://github.com/Star-ZER0/miwearhaptics)作为小米手表5系列的震动库兼容层。
+- 本项目通过 [CN Wear Overlay](https://github.com/Star-ZER0/cnwearoverlay) 的 Gradle 插件适配小米 / OPPO 手表的表冠触觉，并修正部分小米触觉常量；未接入其 Xposed 模块。
 - 本项目与 [BiliZepam](https://github.com/Re-BiliTerminal/BiliZepam-Compose) 没有任何关系。
 - 本项目与 [Re-WearBili](https://github.com/SpaceXC/Re-WearBili) 没有任何关系。
 

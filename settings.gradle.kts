@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("cnwearoverlay")
     repositories {
         google()
         mavenCentral()
@@ -16,8 +17,6 @@ pluginManagement {
         maven { url = uri("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
     }
 }
-
-includeBuild("miwearhaptics")
 
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"

@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     id("kotlin-parcelize")
-    id("cc.star0.wear.lib.miwearhaptics")
+    id("cc.star0.wear.lib.cnwearoverlay")
 }
 
 val releaseKeystorePath = providers.environmentVariable("ORBIT_KEYSTORE_FILE").orNull
