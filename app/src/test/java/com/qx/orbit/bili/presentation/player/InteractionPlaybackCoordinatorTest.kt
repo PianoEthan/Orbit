@@ -16,9 +16,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import com.qx.orbit.bili.data.interaction.InteractionProgressStore
 
 class InteractionPlaybackCoordinatorTest {
+    @get:Rule val temp = TemporaryFolder()
     private val info = PlayerMetadata(interaction = PlayerInteraction(1))
     private val source = PlayerData(aid = 5, cid = 10, videoUrl = "stale", audioUrl = "stale")
     private fun node(edge: Long = 1, question: InteractionQuestion = InteractionQuestion(
@@ -33,9 +37,27 @@ class InteractionPlaybackCoordinatorTest {
         val requests = mutableListOf<InteractionPlaybackCoordinator.MediaRequest>()
         fun coordinator(
             metadata: suspend (Long, Long) -> InteractionVideoResult<PlayerMetadata>,
-            edge: suspend (PlayerData, Long, Long?) -> InteractionVideoResult<InteractionVideo>
+            edge: suspend (PlayerData, Long, Long?) -> InteractionVideoResult<InteractionVideo>,
+            store: InteractionProgressStore? = null,
+            accountKey: Long = 0L
         ) = InteractionPlaybackCoordinator(CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), metadata, edge,
-            { stops++ }, { requests += it })
+            { stops++ }, { requests += it }, store = store, accountKeyProvider = { accountKey })
+
+        suspend fun awaitRequest(): InteractionPlaybackCoordinator.MediaRequest {
+            for (i in 0 until 50) {
+                requests.lastOrNull()?.let { return it }
+                kotlinx.coroutines.delay(20)
+            }
+            return requests.last()
+        }
+
+        suspend fun awaitNextRequest(previousCount: Int): InteractionPlaybackCoordinator.MediaRequest {
+            for (i in 0 until 50) {
+                if (requests.size > previousCount) return requests.last()
+                kotlinx.coroutines.delay(20)
+            }
+            return requests.last()
+        }
     }
 
     @Test fun ordinaryVideoWithoutHintStillProbesAndNeverRequestsEdge() {
@@ -199,5 +221,53 @@ class InteractionPlaybackCoordinatorTest {
         assertTrue(host.requests.isEmpty())
         assertTrue(coordinator.state.value.requiresRestart)
         assertTrue(coordinator.state.value.error!!.contains("版本"))
+    }
+
+    @Test fun savedProgressResumesAtSavedNodeAndPositionAndRestartClearsIt() = runBlocking {
+        val dir = temp.newFolder()
+        val store = InteractionProgressStore(dir)
+        val host = Host()
+        val edge1 = node(1, InteractionQuestion(type = 1, choices = listOf(InteractionChoice(id = 2, cid = 20, nativeAction = "v=v+3", option = "to2"))))
+        val edge2 = node(2, InteractionQuestion(type = 1, choices = listOf(InteractionChoice(id = 1, cid = 10, nativeAction = "v=v+1", option = "back"))))
+        val coordinator = host.coordinator({ _, cid -> InteractionVideoResult.Success(if (cid == 10L) info else info.copy(interaction = PlayerInteraction(1))) }, { _, _, edgeId ->
+            InteractionVideoResult.Success(if (edgeId == 2L) edge2 else edge1)
+        }, store = store, accountKey = 1001L)
+
+        coordinator.open(source)
+        val req1 = host.awaitRequest()
+        coordinator.mediaPrepared(req1)
+        assertEquals(1L, coordinator.state.value.session.visitId)
+
+        coordinator.observe(100, 100, true, 0, true)
+        val state = coordinator.state.value.session
+        coordinator.choose(0, 0, state.visitId, state.generation)
+        val req2 = host.awaitNextRequest(1)
+        coordinator.mediaPrepared(req2)
+        assertEquals(2L, coordinator.state.value.session.edgeId)
+        assertEquals(20L, coordinator.state.value.session.cid)
+        assertEquals(3.0, coordinator.state.value.session.variables["v"]!!, 0.0)
+
+        coordinator.closeAndSave(15_000L)
+
+        val host2 = Host()
+        val coordinator2 = host2.coordinator({ _, cid -> InteractionVideoResult.Success(if (cid == 10L) info else info.copy(interaction = PlayerInteraction(1))) }, { _, _, edgeId ->
+            InteractionVideoResult.Success(if (edgeId == 2L) edge2 else edge1)
+        }, store = store, accountKey = 1001L)
+
+        coordinator2.open(source)
+        val resumeReq = host2.awaitRequest()
+        assertEquals(20L, resumeReq.data.cid)
+        assertEquals(15_000L, resumeReq.seekToMs)
+        coordinator2.mediaPrepared(resumeReq)
+        assertEquals(2L, coordinator2.state.value.session.edgeId)
+        assertEquals(3.0, coordinator2.state.value.session.variables["v"]!!, 0.0)
+
+        coordinator2.restart()
+        val restartReq = host2.awaitNextRequest(1)
+        assertEquals(10L, restartReq.data.cid)
+        assertEquals(0L, restartReq.seekToMs)
+        coordinator2.mediaPrepared(restartReq)
+        assertEquals(1L, coordinator2.state.value.session.edgeId)
+        assertEquals(0.0, coordinator2.state.value.session.variables["v"]!!, 0.0)
     }
 }

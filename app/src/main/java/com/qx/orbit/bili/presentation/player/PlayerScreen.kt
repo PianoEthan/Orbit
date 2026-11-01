@@ -1113,6 +1113,7 @@ fun PlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             isExiting = true
+            viewModel.interaction.close(viewModel.savePosition())
             viewModel.setLongPressSpeedUp(false)
             view.keepScreenOn = false
 

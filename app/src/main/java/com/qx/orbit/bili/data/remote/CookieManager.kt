@@ -50,6 +50,7 @@ object CookieManager {
     fun getCsrf(): String = getInfoFromCookie("bili_jct")
 
     fun getMid(): Long {
+        if (!initialized) return 0L
         val stored = prefs.getLong("mid", 0)
         if (stored > 0) return stored
         val fromCookie = getInfoFromCookie("DedeUserID").toLongOrNull() ?: 0

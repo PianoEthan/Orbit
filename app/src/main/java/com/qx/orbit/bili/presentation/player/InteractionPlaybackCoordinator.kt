@@ -1,5 +1,6 @@
 package com.qx.orbit.bili.presentation.player
 
+import com.qx.orbit.bili.data.interaction.InteractionProgressStore
 import com.qx.orbit.bili.data.model.InteractionVideo
 import com.qx.orbit.bili.data.model.InteractionVideoResult
 import com.qx.orbit.bili.data.model.PlayerData
@@ -19,8 +20,19 @@ class InteractionPlaybackCoordinator(
     private val metadata: suspend (Long, Long) -> InteractionVideoResult<PlayerMetadata>,
     private val edge: suspend (PlayerData, Long, Long?) -> InteractionVideoResult<InteractionVideo>,
     private val stopMedia: () -> Unit,
-    private val requestMedia: (MediaRequest) -> Unit
+    private val requestMedia: (MediaRequest) -> Unit,
+    private val storeProvider: () -> InteractionProgressStore? = { null },
+    private val accountKeyProvider: () -> Long = { 0L }
 ) {
+    constructor(
+        scope: CoroutineScope,
+        metadata: suspend (Long, Long) -> InteractionVideoResult<PlayerMetadata>,
+        edge: suspend (PlayerData, Long, Long?) -> InteractionVideoResult<InteractionVideo>,
+        stopMedia: () -> Unit,
+        requestMedia: (MediaRequest) -> Unit,
+        store: InteractionProgressStore?,
+        accountKeyProvider: () -> Long = { 0L }
+    ) : this(scope, metadata, edge, stopMedia, requestMedia, { store }, accountKeyProvider)
     data class MediaRequest(
         val epoch: Long,
         val revision: Long,
@@ -58,24 +70,28 @@ class InteractionPlaybackCoordinator(
     private var pending: InteractionVideo? = null
     private var pendingMetadata = PlayerMetadata()
     private val metadataCache = linkedMapOf<Long, PlayerMetadata>()
+    private var writer: InteractionProgressStore.Writer? = null
+    private var saveRevision = 0L
 
-    fun open(data: PlayerData) {
+    fun open(data: PlayerData, allowResume: Boolean = true) {
         epoch++
         job?.cancel()
         source = data.copy()
         root = null
         current = null
         pending = null
+        writer = null
+        saveRevision = 0L
         metadataCache.clear()
         session.reset()
         _request.value = null
         _state.value = State(probing = data.type == PlayerData.TYPE_VIDEO)
         stopMedia()
         if (data.type != PlayerData.TYPE_VIDEO) return
-        probe()
+        probe(allowResume)
     }
 
-    private fun probe() {
+    private fun probe(allowResume: Boolean = true) {
         val expected = epoch
         job = scope.launch {
             try {
@@ -97,9 +113,43 @@ class InteractionPlaybackCoordinator(
                     ?: node.storyList.firstOrNull { it.edgeId == node.edgeId }?.cid
                     ?: error("剧情根节点缺少 CID，请重新开始")
                 root = node
-                pending = node
-                pendingMetadata = nodeMetadata(cid, interaction.graphVersion, expected)
-                handle(session.load(interaction.graphVersion, node, cid))
+                val storeKey = InteractionProgressStore.Key(
+                    accountKeyProvider(),
+                    interaction.graphVersion,
+                    aid = source.aid.takeIf { it > 0 },
+                    bvid = source.bvid.takeIf { it.isNotBlank() }
+                )
+                val s = storeProvider()
+                val currentWriter = s?.begin(storeKey)
+                writer = currentWriter
+                saveRevision = 0L
+                val saved = if (allowResume) s?.read(storeKey) else null
+                if (saved != null && saved.checkpoint.graphVersion == interaction.graphVersion && node.noTutorial == 0) {
+                    if (saved.checkpoint.edgeId == node.edgeId) {
+                        pending = node
+                        pendingMetadata = nodeMetadata(cid, interaction.graphVersion, expected)
+                        val event = session.load(interaction.graphVersion, node, cid, saved.checkpoint)
+                        handle(event, overrideSeekMs = saved.positionMs)
+                    } else {
+                        val targetNode = freeze(value(edge(source, interaction.graphVersion, saved.checkpoint.edgeId)))
+                        checkEpoch(expected)
+                        val targetMetadata = nodeMetadata(saved.checkpoint.cid, interaction.graphVersion, expected)
+                        pending = targetNode
+                        pendingMetadata = targetMetadata
+                        val event = session.load(
+                            interaction.graphVersion,
+                            targetNode,
+                            saved.checkpoint.cid,
+                            saved.checkpoint,
+                            rootNode = node
+                        )
+                        handle(event, overrideSeekMs = saved.positionMs)
+                    }
+                } else {
+                    pending = node
+                    pendingMetadata = nodeMetadata(cid, interaction.graphVersion, expected)
+                    handle(session.load(interaction.graphVersion, node, cid))
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -127,7 +177,7 @@ class InteractionPlaybackCoordinator(
         if (info.interaction?.needReload?.let { it != 0 } == true) throw RestartRequired("剧情已更新，请重新开始")
     }
 
-    private fun handle(event: InteractionSession.Event) {
+    private fun handle(event: InteractionSession.Event, overrideSeekMs: Long? = null) {
         when (event) {
             is InteractionSession.Target -> {
                 stopMedia()
@@ -156,15 +206,17 @@ class InteractionPlaybackCoordinator(
             }
             is InteractionSession.PrepareMedia -> {
                 stopMedia()
+                val targetSeek = overrideSeekMs ?: event.seekToMs
                 publish(source.copy(
                     cid = event.cid, progress = 0, cidHistory = 0,
                     videoUrl = "", audioUrl = "", dashData = null,
                     qnStrList = null, qnValueList = null
-                ), pendingMetadata, event.token, event.seekToMs)
+                ), pendingMetadata, event.token, targetSeek)
             }
             is InteractionSession.Committed -> {
                 current = pending
                 pending = null
+                saveProgress(0L)
             }
             else -> Unit
         }
@@ -175,6 +227,22 @@ class InteractionPlaybackCoordinator(
         val request = MediaRequest(epoch, ++revision, data, info, token, seek)
         _request.value = request
         requestMedia(request)
+    }
+
+    fun saveProgress(positionMs: Long = 0L) {
+        val w = writer ?: return
+        val checkpoint = session.checkpoint() ?: return
+        val node = current ?: return
+        val allowed = node.noTutorial == 0
+        val s = storeProvider()
+        scope.launch {
+            s?.save(
+                w,
+                ++saveRevision,
+                InteractionProgressStore.Snapshot(checkpoint, positionMs.coerceAtLeast(0L), node.noBacktracking == 1),
+                recordingAllowed = allowed
+            )
+        }
     }
 
     fun accepts(request: MediaRequest): Boolean = request == _request.value && request.epoch == epoch &&
@@ -225,9 +293,61 @@ class InteractionPlaybackCoordinator(
         }
     }
 
-    fun restart() = open(source.copy(progress = 0, cidHistory = 0, videoUrl = "", audioUrl = "", dashData = null))
+    fun restart() {
+        val w = writer
+        if (w != null) {
+            val s = storeProvider()
+            scope.launch { s?.delete(w) }
+        }
+        open(source.copy(progress = 0, cidHistory = 0, videoUrl = "", audioUrl = "", dashData = null), allowResume = false)
+    }
 
-    fun close() {
+    fun close(lastPositionMs: Long = 0L) {
+        val w = writer
+        if (_state.value.interactive && current?.noTutorial == 0 && w != null) {
+            val checkpoint = session.checkpoint()
+            val node = current
+            if (checkpoint != null && node != null) {
+                val rev = ++saveRevision
+                scope.launch {
+                    storeProvider()?.save(
+                        w, rev,
+                        InteractionProgressStore.Snapshot(checkpoint, lastPositionMs.coerceAtLeast(0L), node.noBacktracking == 1),
+                        recordingAllowed = node.noTutorial == 0
+                    )
+                    storeProvider()?.invalidate(w)
+                }
+            } else {
+                storeProvider()?.invalidate(w)
+            }
+        } else if (w != null) {
+            storeProvider()?.invalidate(w)
+        }
+        writer = null
+        epoch++
+        job?.cancel()
+        session.reset()
+        _request.value = null
+        metadataCache.clear()
+    }
+
+    suspend fun closeAndSave(lastPositionMs: Long = 0L) {
+        val w = writer
+        if (_state.value.interactive && current?.noTutorial == 0 && w != null) {
+            val checkpoint = session.checkpoint()
+            val node = current
+            if (checkpoint != null && node != null) {
+                storeProvider()?.save(
+                    w, ++saveRevision,
+                    InteractionProgressStore.Snapshot(checkpoint, lastPositionMs.coerceAtLeast(0L), node.noBacktracking == 1),
+                    recordingAllowed = node.noTutorial == 0
+                )
+            }
+            storeProvider()?.invalidate(w)
+        } else if (w != null) {
+            storeProvider()?.invalidate(w)
+        }
+        writer = null
         epoch++
         job?.cancel()
         session.reset()

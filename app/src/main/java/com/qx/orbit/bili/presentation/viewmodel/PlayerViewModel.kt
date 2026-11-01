@@ -17,6 +17,7 @@ import com.qx.orbit.bili.presentation.player.InteractionPlaybackCoordinator
 import com.qx.orbit.bili.data.api.PlayerApi
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Subtitle
+import com.qx.orbit.bili.data.interaction.InteractionProgressStore
 import com.qx.orbit.bili.data.model.SubtitleLink
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.player.effectivePlaybackSpeed
@@ -42,15 +43,18 @@ class PlayerViewModel(
         InteractionVideoApi.getEdgeInfo(aid = data.aid, bvid = data.bvid, graphVersion = graph, edgeId = id)
     },
     private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val reportPlayback: suspend (PlayerData, Long, Long, Long) -> Unit = ::sendProgress
+    private val reportPlayback: suspend (PlayerData, Long, Long, Long) -> Unit = ::sendProgress,
+    private val progressStoreProvider: ((Context) -> InteractionProgressStore)? = null
 ) : ViewModel() {
+    private var progressStore: InteractionProgressStore? = null
     private var foreground = true
     private var userPaused = false
     private var decisionPaused = false
     private var resumeAfterBackground = false
     private var playbackEnded = false
     private var interactionObserver: Job? = null
-    val interaction: InteractionPlaybackCoordinator = InteractionPlaybackCoordinator(viewModelScope, metadata, edge,
+    val interaction: InteractionPlaybackCoordinator = InteractionPlaybackCoordinator(
+        viewModelScope, metadata, edge,
         stopMedia = { beginPlaybackPreparation() },
         requestMedia = { request ->
             if (request.token != null) {
@@ -64,7 +68,9 @@ class PlayerViewModel(
             setSubtitles(emptyArray())
             setSubtitleLinks(emptyArray())
             setCurrentSubtitleId(0)
-        }
+        },
+        storeProvider = { progressStore },
+        accountKeyProvider = { runCatching { CookieManager.getMid() }.getOrDefault(0L) }
     )
 
     fun open(data: PlayerData) {
@@ -157,6 +163,11 @@ class PlayerViewModel(
 
     fun initPlayer(context: Context, isInteractive: Boolean = false) {
         appContext = context.applicationContext
+        if (progressStore == null) {
+            val appCtx = context.applicationContext
+            progressStore = progressStoreProvider?.invoke(appCtx)
+                ?: InteractionProgressStore(appCtx.filesDir.resolve("interaction_progress"))
+        }
         if (::_player.isInitialized) return
         val interactive = isInteractive || _playerData.value.interactionHint || interaction.state.value.interactive
         val basePlayer = createOrbitPlayer(context.applicationContext, interactive)
