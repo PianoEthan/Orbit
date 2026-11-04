@@ -1086,52 +1086,44 @@ fun VideoDetailScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            AnimatedContent(
-                targetState = videoInfo == null && errorMessage == null,
-                transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) },
-                label = "LoadingAnimation"
-            ) { isInitialLoading ->
-                if (isInitialLoading) {
-                    val preview = remember(bvid) { VideoDetailCache.preview(bvid) }
-                    if (preview != null) {
-                        VideoDetailSkeleton(preview)
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                } else if (errorMessage != null && videoInfo == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable { viewModel.loadData(bvid, aid, commentRootId, commentReplyId) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Image(
-                                painter = painterResource(R.drawable.bili_2233_fail),
-                                contentDescription = "Error",
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).offset(y = (-15).dp)
-                            )
-                            Text(
-                                text = "加载失败，点击重试",
-                                modifier = Modifier.fillMaxWidth().offset(y = (-10).dp),
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-                } else {
-                val context = LocalContext.current
-                Box(modifier = Modifier.fillMaxSize()) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize()
-                    ) { page ->
+        val preview = remember(bvid) { VideoDetailCache.preview(bvid) }
+        if (errorMessage != null && videoInfo == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { viewModel.loadData(bvid, aid, commentRootId, commentReplyId) },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Image(
+                        painter = painterResource(R.drawable.bili_2233_fail),
+                        contentDescription = "Error",
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).offset(y = (-15).dp)
+                    )
+                    Text(
+                        text = "加载失败，点击重试",
+                        modifier = Modifier.fillMaxWidth().offset(y = (-10).dp),
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        } else if (videoInfo == null && preview == null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            val context = LocalContext.current
+            Box(modifier = Modifier.fillMaxSize()) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
                     when (page) {
                         0 -> VideoInfoPage(
                             videoInfo = videoInfo, 
+                            preview = preview, 
                             tags = tags, 
                             focusRequester = focusRequesters[0],
                             onBackClick = { navController.popBackStack() },
@@ -1574,8 +1566,7 @@ fun VideoDetailScreen(
                 }
             }
         }
-        }
-}
+    }
 @Composable
 fun VideoInfoPage(
     videoInfo: VideoInfo?, 
@@ -1591,7 +1582,8 @@ fun VideoInfoPage(
     onWatchLaterClick: () -> Unit,
     onCacheClick: () -> Unit,
     onUpClick: (Long) -> Unit,
-    onCollectionClick: () -> Unit = {}
+    onCollectionClick: () -> Unit = {},
+    preview: VideoPreview? = null
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
@@ -1619,10 +1611,11 @@ fun VideoInfoPage(
                         .clickable { onBackClick() }
                 )
             }
-            if (videoInfo != null) {
-                // 1. Cover Image
+            val effectiveCover = (videoInfo?.cover ?: preview?.cover).orEmpty()
+            if (effectiveCover.isNotEmpty()) {
+                // 1. Cover Image (排除入场动画，稳如泰山)
                 item {
-                    val secureCover = videoInfo.cover.replace("http://", "https://")
+                    val secureCover = effectiveCover.replace("http://", "https://")
                     val coverUrl = if (secureCover.contains("@")) secureCover else "${secureCover}@480w_270h_1c.webp"
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -1637,16 +1630,17 @@ fun VideoInfoPage(
                             .fillMaxWidth(0.95f)
                             .height(120.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .clickable { onPlayClick() }
-                            .staggeredEntrance(0, enabled = entranceActive)
-                            
+                            .then(if (videoInfo != null) Modifier.clickable { onPlayClick() } else Modifier)
                     )
                 }
-                
-                // 2. Title (slightly larger)
+            }
+
+            val effectiveTitle = (videoInfo?.title ?: preview?.title).orEmpty()
+            if (effectiveTitle.isNotEmpty()) {
+                // 2. Title (排除入场动画，稳如泰山)
                 item {
                     Text(
-                        text = videoInfo.title,
+                        text = effectiveTitle,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -1654,10 +1648,24 @@ fun VideoInfoPage(
                             .adaptiveTransformedHeight(this, transformationSpec)
                             .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
                             .fillMaxWidth()
-                            .staggeredEntrance(1, enabled = entranceActive)
                     )
                 }
-                
+            }
+
+            if (videoInfo == null) {
+                // 3. 数据未到位时占位指示
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .adaptiveTransformedHeight(this, transformationSpec),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else {
                 // 3. UP Info Capsule
                 item {
                     if (videoInfo.staff.isNotEmpty()) {
@@ -1668,7 +1676,7 @@ fun VideoInfoPage(
                                 .adaptiveTransformedHeight(this, transformationSpec)
                                 .graphicsLayer { if (isRound) { with(transformationSpec) { applyContainerTransformation(scrollProgress) } } }
                                 .fillMaxWidth()
-                                .staggeredEntrance(2, enabled = entranceActive)
+                                .staggeredEntrance(0, enabled = entranceActive)
                         ) {
                             items(videoInfo.staff) { upInfo ->
                                 Row(
