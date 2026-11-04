@@ -61,6 +61,7 @@ fun DownloadManagerScreen(navController: NavController) {
         val cids = allInGroup.map { it.cid }
         val aids = allInGroup.map { it.aid }
         val localUrls = allInGroup.map { it.localUri ?: "" }
+        val localProgress = com.qx.orbit.bili.util.LocalPlaybackHistoryStore.getProgressSeconds(download.cid, download.localUri)
         val playerData = PlayerData(
             title = download.title,
             aid = download.aid,
@@ -74,7 +75,8 @@ fun DownloadManagerScreen(navController: NavController) {
             cids = cids,
             aids = aids,
             localUrls = localUrls,
-            currentPageIndex = index
+            currentPageIndex = index,
+            progress = localProgress
         )
         PlayerApi.jumpToPlayer(context, navController, playerData, playerKey)
     }

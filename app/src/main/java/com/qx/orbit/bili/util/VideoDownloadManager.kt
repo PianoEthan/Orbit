@@ -525,6 +525,7 @@ object VideoDownloadManager {
             }
 
             downloads.remove(id)
+            LocalPlaybackHistoryStore.remove(info.cid, info.localUri)
             persistTasks(context)
 
             // 清理空的bvid目录（如果是根目录则不删除）

@@ -183,8 +183,14 @@ fun CacheVideoCard(
                                 )
                             )
                         } else if (statusText == null) {
+                            val localProgressSec = com.qx.orbit.bili.util.LocalPlaybackHistoryStore.getProgressSeconds(item.cid, item.localUri)
+                            val timeDisplayText = if (localProgressSec > 0 && item.status == android.app.DownloadManager.STATUS_SUCCESSFUL) {
+                                "看到 ${com.qx.orbit.bili.data.model.StringUtil.toTime(localProgressSec)}"
+                            } else {
+                                formattedDuration
+                            }
                             Text(
-                                text = formattedDuration,
+                                text = timeDisplayText,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     shadow = Shadow(
                                         color = Color.Black,

@@ -183,6 +183,7 @@ class MainActivity : ComponentActivity() {
         SharedPreferencesUtil.init(this)
         AppConfig.init(this)
         VideoDownloadManager.init(this)
+        com.qx.orbit.bili.util.LocalPlaybackHistoryStore.init(this)
         setContent {
             WearApp()
         }

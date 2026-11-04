@@ -256,9 +256,19 @@ class PlayerViewModel(
      * which may be zeroed by heartbeat loop during player reset.
      */
     fun savePosition(): Long {
-        return if (::_player.isInitialized && _isPrepared.value) {
+        val pos = if (::_player.isInitialized && _isPrepared.value) {
             try { _player.currentPosition } catch (_: Exception) { 0L }
         } else _currentProgress.value
+        if (isLocal && pos > 0L) {
+            val data = _playerData.value
+            com.qx.orbit.bili.util.LocalPlaybackHistoryStore.saveProgress(
+                cid = data.cid,
+                localUri = data.videoUrl,
+                progressMs = pos,
+                durationMs = _totalDuration.value
+            )
+        }
+        return pos
     }
 
     /**
@@ -392,7 +402,13 @@ class PlayerViewModel(
     fun preparePlayback(initialData: PlayerData, isAudioOnlyMode: Boolean) {
         // Stop heartbeat loop before player reset (prevents currentProgress from being zeroed)
         beginPlaybackPreparation()
-        val data = _playerData.value
+        val data = if (initialData.type == PlayerData.TYPE_LOCAL) {
+            val localProgress = com.qx.orbit.bili.util.LocalPlaybackHistoryStore.getProgressSeconds(initialData.cid, initialData.videoUrl)
+            if (localProgress > 0) initialData.copy(progress = localProgress) else initialData
+        } else {
+            initialData
+        }
+        _playerData.value = data
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (!isLocal && !CookieManager.getCookie().contains("buvid3")) {
@@ -537,7 +553,14 @@ class PlayerViewModel(
             switchToNextEpisode()
             return
         }
-        if (!isLive && !isLocal) {
+        if (isLocal) {
+            com.qx.orbit.bili.util.LocalPlaybackHistoryStore.saveProgress(
+                cid = data.cid,
+                localUri = data.videoUrl,
+                progressMs = _totalDuration.value,
+                durationMs = _totalDuration.value
+            )
+        } else if (!isLive) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
                     HeartbeatApi.reportHeartbeat(
@@ -666,18 +689,24 @@ class PlayerViewModel(
         if (interaction.state.value.blocksEpisodes) return
         val data = _playerData.value
         if (index !in data.cids.indices || index == data.currentPageIndex) return
+        if (isLocal) {
+            savePosition()
+        }
+        val nextCid = data.cids[index]
+        val nextVideoUrl = if (isLocal) data.localUrls.getOrNull(index) ?: data.videoUrl else ""
+        val nextProgress = if (isLocal) com.qx.orbit.bili.util.LocalPlaybackHistoryStore.getProgressSeconds(nextCid, nextVideoUrl) else 0
         val newData = data.copy(
             currentPageIndex = index,
             aid = data.aids.getOrNull(index) ?: data.aid,
-            cid = data.cids[index],
+            cid = nextCid,
             epid = data.epids.getOrNull(index) ?: data.epid,
             title = data.pagenames.getOrNull(index) ?: data.title,
-            videoUrl = if (isLocal) data.localUrls.getOrNull(index) ?: data.videoUrl else "",
+            videoUrl = nextVideoUrl,
             audioUrl = if (isLocal) data.audioUrl else "",
             dashData = null,
-            progress = 0
+            progress = nextProgress
         )
-        switchPendingSeekMs = 0L
+        switchPendingSeekMs = (nextProgress * 1000L).coerceAtLeast(0L)
         open(newData)
     }
 
@@ -762,6 +791,14 @@ class PlayerViewModel(
                 updateProgress()
                 if (!isLocal) {
                     reportProgress()
+                } else {
+                    val data = _playerData.value
+                    com.qx.orbit.bili.util.LocalPlaybackHistoryStore.saveProgress(
+                        cid = data.cid,
+                        localUri = data.videoUrl,
+                        progressMs = _currentProgress.value,
+                        durationMs = _totalDuration.value
+                    )
                 }
             }
         }

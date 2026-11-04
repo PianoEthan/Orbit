@@ -1102,8 +1102,16 @@ fun PlayerScreen(
             viewModel.setLongPressSpeedUp(false)
             view.keepScreenOn = false
 
-            if (!isLive && playerData.type != PlayerData.TYPE_LOCAL) {
-                val currentPosSeconds = viewModel.savePosition() / 1000
+            val currentPosMs = viewModel.savePosition()
+            if (playerData.type == PlayerData.TYPE_LOCAL) {
+                com.qx.orbit.bili.util.LocalPlaybackHistoryStore.saveProgress(
+                    cid = playerData.cid,
+                    localUri = playerData.videoUrl,
+                    progressMs = currentPosMs,
+                    durationMs = totalDuration
+                )
+            } else if (!isLive) {
+                val currentPosSeconds = currentPosMs / 1000
                 onDisposeAction(playerData.epid, currentPosSeconds)
             }
 
