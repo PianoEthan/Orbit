@@ -598,6 +598,7 @@ fun PlayerScreen(
     LaunchedEffect(runDanmaku, showDanmaku, foregroundVideo, danmakuReady, bufferingRevision, danmakuSeekRevision) {
         if (showDanmaku && foregroundVideo) danmakuPlayer.show() else danmakuPlayer.hide()
         if (latestDanmakuGate()) {
+            danmakuPlayer.setSpeed(viewModel.effectiveSpeed.value)
             val position = viewModel.savePosition()
             if (!danmakuStarted) {
                 danmakuPlayer.start(position)

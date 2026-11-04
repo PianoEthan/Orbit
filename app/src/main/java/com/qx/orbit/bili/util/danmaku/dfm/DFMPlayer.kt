@@ -24,6 +24,7 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
     @Volatile
     private var prepareGeneration = 0
     private var hasPrepared = false
+    private var playbackSpeed = 1f
 
     override val view: View get() = engine
 
@@ -44,6 +45,7 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
             override fun prepared() {
                 mainHandler.post {
                     if (!released && generation == prepareGeneration) {
+                        engine.setSpeed(playbackSpeed)
                         ready = true
                         readyListener?.invoke()
                     }
@@ -86,7 +88,11 @@ class DFMPlayer(context: Context) : DanmakuPlayer {
     override fun removeAllDanmakus(clearOnScreen: Boolean) = engine.removeAllDanmakus(clearOnScreen)
     override fun enableDrawingCache(enable: Boolean) = engine.enableDanmakuDrawingCache(enable)
     override fun getCurrentTime(): Long = engine.getCurrentTime()
-    override fun setSpeed(speed: Float) = engine.setSpeed(speed)
+    override fun setSpeed(speed: Float) {
+        if (!speed.isFinite() || speed <= 0f) return
+        playbackSpeed = speed
+        if (ready && !released) engine.setSpeed(speed)
+    }
     override fun isReady(): Boolean = ready
     override fun setOnReadyListener(listener: (() -> Unit)?) { readyListener = listener }
 }
