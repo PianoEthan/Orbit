@@ -31,6 +31,9 @@ class MainViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -136,5 +139,33 @@ class MainViewModel : ViewModel() {
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    fun refresh() {
+        if (_isRefreshing.value || _isLoading.value) return
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            _errorMessage.value = null
+            try {
+                if (_navInfo.value == null || !_navInfo.value!!.isLogin) {
+                    fetchNavInfo()
+                }
+                if (_currentTab.value == TabMode.RECOMMEND) recommendPage = 1
+                else popularPage = 1
+
+                val newItems = when (_currentTab.value) {
+                    TabMode.RECOMMEND -> RecommendApi.getRecommend(recommendPage++)
+                    TabMode.POPULAR -> RecommendApi.getPopular(popularPage++)
+                    TabMode.DYNAMIC -> emptyList()
+                }
+
+                _videoList.value = newItems.distinctBy { it.bvid }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _errorMessage.value = e.localizedMessage ?: "刷新失败"
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
     }
 }

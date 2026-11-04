@@ -100,6 +100,8 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.PullToRefreshBox
+import androidx.wear.compose.material3.PullToRefreshState
 import androidx.wear.compose.material3.RevealValue
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SwipeToReveal
@@ -643,6 +645,7 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
     val currentTab by viewModel.currentTab.collectAsState()
     val videoList by viewModel.videoList.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val navInfo by viewModel.navInfo.collectAsState()
     val accountState by CookieManager.accountState.collectAsState()
@@ -674,10 +677,12 @@ fun HomeScreen(viewModel: MainViewModel, navController: NavHostController) {
                 currentTab = currentTab,
                 videoList = videoList,
                 isLoading = isLoading,
+                isRefreshing = isRefreshing,
                 errorMessage = errorMessage,
                 focusRequester = focusRequester,
                 navController = navController,
                 onLoadMore = { viewModel.loadMore() },
+                onRefresh = { viewModel.refresh() },
                 onTabClick = { showTabMenu = true },
                 onRemoveVideo = { viewModel.removeAndDislikeVideo(it) }
             )
@@ -1057,10 +1062,12 @@ fun RecommendScreen(
     currentTab: TabMode,
     videoList: List<VideoCard>,
     isLoading: Boolean,
+    isRefreshing: Boolean = false,
     errorMessage: String?,
     focusRequester: FocusRequester,
     navController: NavHostController,
     onLoadMore: () -> Unit,
+    onRefresh: () -> Unit = {},
     onTabClick: () -> Unit,
     onRemoveVideo: (VideoCard) -> Unit
 ) {
@@ -1089,12 +1096,19 @@ fun RecommendScreen(
     }
     
     val layoutDirection = LocalLayoutDirection.current
+    val pullToRefreshState = remember { PullToRefreshState() }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).nestedScroll(nestedScrollConnection)) {
-        ScreenScaffold(
-            scrollState = listState,
-            modifier = Modifier.focusRequester(focusRequester)
-        ) { contentPadding ->
+        PullToRefreshBox(
+            state = pullToRefreshState,
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ScreenScaffold(
+                scrollState = listState,
+                modifier = Modifier.focusRequester(focusRequester)
+            ) { contentPadding ->
             TransformingLazyColumn(
                 contentPadding = PaddingValues(
                     top = contentPadding.calculateTopPadding() + titleHeight,
@@ -1194,6 +1208,7 @@ fun RecommendScreen(
                 }
             }
         }
+    }
         
         // Floating Title Area
         Box(
