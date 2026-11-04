@@ -61,6 +61,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.api.BilibiliIDConverter
 import com.qx.orbit.bili.data.api.ReplyApi
@@ -352,8 +353,12 @@ fun ReplyCard(
                     val isSingle = reply.pictureList.size == 1
                     val fixedImages = reply.pictureList.map { it.fixCoverUrl() }
                     fixedImages.forEachIndexed { index, fixedUrl ->
+                        val thumbUrl = if (fixedUrl.contains("@")) fixedUrl else "${fixedUrl}@240w_240h_1c.webp"
                         AsyncImage(
-                            model = fixedUrl,
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(thumbUrl)
+                                .crossfade(true)
+                                .build(),
                             contentDescription = null,
                             modifier = Modifier
                                 .height(80.dp)

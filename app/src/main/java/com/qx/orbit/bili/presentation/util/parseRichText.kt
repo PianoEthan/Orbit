@@ -17,7 +17,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.MaterialTheme
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 import com.qx.orbit.bili.data.model.Emote
+import com.qx.orbit.bili.util.fixCoverUrl
 
 private val htmlTagPattern = Regex("<[^>]+>")
 private val linkPattern = Regex("https?://[^\\s<>()\\[\\]\"',;!?，。！？、：；“”（）【】《》]+|www\\.[^\\s<>()\\[\\]\"',;!?，。！？、：；“”（）【】《》]+|(?i:bv[A-Za-z0-9]+|av\\d+)")
@@ -99,11 +102,22 @@ fun parseRichText(
     val parsed = remember(text, emotes, members, resolvedB23Links, primaryColor) {
         buildRichText(text, emotes, members, resolvedB23Links, primaryColor)
     }
+    val context = LocalContext.current
     val inlineContent = remember(parsed.inlineEmotes) {
         parsed.inlineEmotes.mapValues { (_, emote) ->
             val size = (emote.size.coerceAtLeast(1) * 18).sp
+            val fixedEmoteUrl = emote.url.fixCoverUrl().let {
+                if (it.contains("@")) it else "${it}@100w_100h.webp"
+            }
             InlineTextContent(Placeholder(size, size, PlaceholderVerticalAlign.TextCenter)) {
-                AsyncImage(model = emote.url, contentDescription = emote.name, modifier = Modifier.fillMaxSize())
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(fixedEmoteUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = emote.name,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
