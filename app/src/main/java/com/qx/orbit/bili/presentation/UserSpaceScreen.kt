@@ -96,11 +96,12 @@ fun UserSpaceScreen(
     val isSelf = mid == currentMid
 
     val context = LocalContext.current
-    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
-    var isColorExtracted by remember { mutableStateOf(false) }
+    var dynamicColorScheme by com.qx.orbit.bili.presentation.theme.rememberPageColorScheme(userInfo?.avatar.orEmpty())
+    var isColorExtracted by remember(userInfo?.avatar) { mutableStateOf(dynamicColorScheme != null) }
     val defaultColorScheme = MaterialTheme.colorScheme
 
     LaunchedEffect(userInfo) {
+        if (dynamicColorScheme != null) return@LaunchedEffect
         val rawCover = userInfo?.avatar ?: ""
         if (rawCover.isNotEmpty()) {
             val secureCover = rawCover.replace("http://", "https://")

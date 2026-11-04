@@ -241,7 +241,7 @@ fun VideoDetailScreen(
     }
     
     val coverIdentity = videoInfo?.cover.orEmpty().replace("http://", "https://")
-    var dynamicColorScheme by remember(coverIdentity) { mutableStateOf<ColorScheme?>(null) }
+    var dynamicColorScheme by com.qx.orbit.bili.presentation.theme.rememberPageColorScheme(coverIdentity)
     val defaultColorScheme = MaterialTheme.colorScheme
 
     LaunchedEffect(coverIdentity, defaultColorScheme, isResumed) {

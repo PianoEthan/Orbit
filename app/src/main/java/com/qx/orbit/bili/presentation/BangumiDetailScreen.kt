@@ -154,11 +154,12 @@ fun BangumiDetailScreen(navController: NavHostController, mediaId: Long, viewMod
     var showEpisodeDialogForCache by remember { mutableStateOf(false) }
     var targetEpisodeForCache by remember { mutableStateOf<Bangumi.Episode?>(null) }
     
-    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
-    var isColorExtracted by remember { mutableStateOf(false) }
+    var dynamicColorScheme by com.qx.orbit.bili.presentation.theme.rememberPageColorScheme(bangumiInfo?.info?.cover.orEmpty())
+    var isColorExtracted by remember(bangumiInfo?.info?.cover) { mutableStateOf(dynamicColorScheme != null) }
     val defaultColorScheme = MaterialTheme.colorScheme
     
     LaunchedEffect(bangumiInfo) {
+        if (dynamicColorScheme != null) return@LaunchedEffect
         val info = bangumiInfo?.info
         val rawCover = info?.cover ?: ""
         if (rawCover.isNotEmpty()) {

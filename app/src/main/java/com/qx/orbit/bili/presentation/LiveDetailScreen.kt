@@ -121,10 +121,11 @@ fun LiveDetailScreen(
         } catch (_: Exception) {}
     }
     
-    var dynamicColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
+    var dynamicColorScheme by com.qx.orbit.bili.presentation.theme.rememberPageColorScheme(room?.cover.orEmpty())
     val defaultColorScheme = MaterialTheme.colorScheme
     
     LaunchedEffect(room) {
+        if (dynamicColorScheme != null) return@LaunchedEffect
         val rawCover = room?.cover ?: ""
         if (rawCover.isNotEmpty()) {
             val secureCover = rawCover.replace("http://", "https://")
