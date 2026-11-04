@@ -200,6 +200,8 @@ fun PlayerScreen(
     var lastTitleClickTime by remember { mutableStateOf(0L) }
     var isAudioOnlyMode by remember { mutableStateOf(initialData.audioUrl == "audio") }
     var lastSeekTimestamp by remember { mutableLongStateOf(0L) }
+    var lastDanmakuSyncTimestamp by remember { mutableLongStateOf(0L) }
+    var lastSpeedChangeTimestamp by remember { mutableLongStateOf(0L) }
     var liveWebSocket by remember { mutableStateOf<WebSocket?>(null) }
     var liveClientListener by remember { mutableStateOf<PlayerDanmuClientListener?>(null) }
     var liveReconnectTrigger by remember { mutableIntStateOf(0) }
@@ -601,7 +603,11 @@ fun PlayerScreen(
                 danmakuPlayer.start(position)
                 danmakuStarted = true
             } else {
-                danmakuPlayer.seekTo(position)
+                val diff = kotlin.math.abs(danmakuPlayer.getCurrentTime() - position)
+                if (diff > 1500L) {
+                    danmakuPlayer.seekTo(position)
+                    lastDanmakuSyncTimestamp = System.currentTimeMillis()
+                }
                 danmakuPlayer.resume()
             }
         } else {
@@ -609,15 +615,24 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(isPlaying, isPrepared, isForeground, showControls, isAudioPlayer, subtitles, runDanmaku) {
+    LaunchedEffect(isPlaying, isPrepared, isForeground, showControls, isAudioPlayer, subtitles, runDanmaku, effectiveSpeed) {
         if (isPrepared && isForeground && (showControls || isAudioPlayer || subtitles.isNotEmpty() || runDanmaku)) {
             do {
                 val position = viewModel.savePosition()
                 if (showControls || isAudioPlayer) currentProgress = position
                 if (subtitles.isNotEmpty()) viewModel.updateCurrentSubtitle(position)
-                if (latestDanmakuGate() && !isLive && System.currentTimeMillis() - lastSeekTimestamp > 1000L) {
+                val now = System.currentTimeMillis()
+                if (latestDanmakuGate() && !isLive &&
+                    now - lastSeekTimestamp > 1500L &&
+                    now - lastSpeedChangeTimestamp > 1500L &&
+                    now - lastDanmakuSyncTimestamp > 3000L
+                ) {
                     val diff = kotlin.math.abs(danmakuPlayer.getCurrentTime() - position)
-                    if (diff > 500L) danmakuPlayer.seekTo(position)
+                    val syncThreshold = (1800L * effectiveSpeed).toLong().coerceAtLeast(1800L)
+                    if (diff > syncThreshold) {
+                        danmakuPlayer.seekTo(position)
+                        lastDanmakuSyncTimestamp = now
+                    }
                 }
                 if (isPlaying) delay(250.milliseconds)
             } while (isActive && isPlaying)
@@ -1019,6 +1034,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(effectiveSpeed, danmakuReady) {
+        lastSpeedChangeTimestamp = System.currentTimeMillis()
         if (danmakuReady) {
             try { danmakuPlayer.setSpeed(effectiveSpeed) } catch (_: Exception) {}
         }
