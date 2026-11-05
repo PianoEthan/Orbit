@@ -1,0 +1,25 @@
+<svg viewBox="0 0 1024 1024" width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="orbitMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024" style="mask-type:luminance">
+      <rect width="1024" height="1024" fill="white" />
+      <path d="M192 512 A320 320 0 0 1 832 512 Z" transform="rotate(-25 512 512)" fill="black" />
+    </mask>
+    <mask id="faceCutout" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024" style="mask-type:luminance">
+      <rect width="1024" height="1024" fill="white" />
+      <g fill="black" transform="translate(-80 -90)">
+        <path d="M450.803484 456.506027 l-120.670435 23.103715 l10.333298 45.288107 l119.454151-23.102578 l-9.117014-45.289244 z" />
+        <path d="M515.847964 576.566613 c-29.483236 63.220622-55.926329 15.502222-55.926328 15.502223 l-19.754098 12.768142 s38.90176 53.192249 75.986489 12.764729 c43.770311 40.42752 77.203911-13.068516 77.203911-13.068516 l-17.934791-11.55072 c0.001138-0.304924-31.305956 44.983182-59.575183-16.415858 z" />
+        <path d="M575.424284 501.792996 L695.182222 524.895573 l10.029511-45.288106 l-120.364373-23.103716 l-9.423076 45.289245 z" />
+      </g>
+    </mask>
+  </defs>
+  <g mask="url(#faceCutout)" fill="white">
+    <g stroke="white" stroke-width="54" stroke-linecap="round">
+      <path d="M390 240 L440 100 M570 200 L620 90" />
+    </g>
+    <circle cx="512" cy="512" r="320" />
+    <g mask="url(#orbitMask)">
+      <ellipse cx="512" cy="512" rx="460" ry="160" transform="rotate(-25 512 512)" fill="none" stroke="white" stroke-width="72" />
+    </g>
+  </g>
+</svg>
