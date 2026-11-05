@@ -1,5 +1,10 @@
 # Orbit - Optimized Reincarnation of BiliTerminal
 
+> [!IMPORTANT]
+> **Notice：架构调整计划**
+>
+> 本项目将调整为「统一 API 内核 + 多模块 UI」架构，分离底层接口能力与各 UI 模块。架构调整可能需要较长时间，期间可能较长时间不发布新的 Release，感谢理解与耐心等待。
+
 哔哩终端的 Wear OS 重写项目。
 
 ## 简介
