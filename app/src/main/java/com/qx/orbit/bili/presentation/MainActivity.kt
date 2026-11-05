@@ -113,10 +113,6 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
-import com.google.gson.Gson
-import java.net.URLDecoder
-import android.util.Base64
-import java.nio.charset.StandardCharsets
 import com.qx.orbit.bili.R
 import com.qx.orbit.bili.data.model.PlayerData
 import com.qx.orbit.bili.data.model.Reply
@@ -308,25 +304,24 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
         val currentRoute = currentBackStackEntry?.destination?.route
         
         val isMiWatch5 = Build.MODEL == "M2505W1" || Build.MODEL == "M2501W1"
-        val isSwipeEnabled = remember(currentBackStackEntry, isMiWatch5) {
-            val res = if (isMiWatch5) false
-            else if (currentBackStackEntry?.destination?.route?.startsWith("player/") == true) {
-                try {
-                    val jsonStr = java.net.URLDecoder.decode(currentBackStackEntry?.arguments?.getString("playerDataJson") ?: "", "UTF-8")
-                    val pd = com.qx.orbit.bili.data.remote.GsonConfig.gson.fromJson(jsonStr, com.qx.orbit.bili.data.model.PlayerData::class.java)
-                    pd?.audioUrl == "audio"
-                } catch (e: Exception) {
-                    false
-                }
-            } else true
-            android.util.Log.d("SwipeDismiss", "isSwipeEnabled evaluated to $res for route ${currentBackStackEntry?.destination?.route}")
-            res
+        val isPlayerRoute = currentRoute?.startsWith("player/") == true
+        val initialAudioPlayer = remember(currentBackStackEntry) {
+            com.qx.orbit.bili.presentation.util.decodePlayerRouteData(
+                currentBackStackEntry?.arguments?.getString("playerDataJson").orEmpty()
+            )?.audioUrl == "audio"
         }
+        val audioPlayerState = remember(currentBackStackEntry) {
+            currentBackStackEntry?.savedStateHandle?.getStateFlow("audioPlayerMode", initialAudioPlayer)
+        }
+        val isAudioPlayer = audioPlayerState?.collectAsState()?.value ?: initialAudioPlayer
+        val isSwipeEnabled = com.qx.orbit.bili.presentation.util.wearSwipeEnabled(
+            AppConfig.systemBackOnly, isMiWatch5, isPlayerRoute, isAudioPlayer
+        )
         
         val canGoBack = remember(currentBackStackEntry) {
             navController.previousBackStackEntry != null
         }
-        val backHandlerEnabled = canGoBack && isMiWatch5
+        val backHandlerEnabled = canGoBack && !isSwipeEnabled && (!isPlayerRoute || isAudioPlayer)
         
         BackHandler(enabled = backHandlerEnabled) {
             navController.popBackStack()
@@ -542,25 +537,12 @@ fun WearApp(viewModel: MainViewModel = viewModel()) {
             ) { backStackEntry ->
                 val previousEntry = remember { navController.previousBackStackEntry }
                 val rawArg = backStackEntry.arguments?.getString("playerDataJson") ?: ""
-                val json = if (rawArg.startsWith("{")) {
-                    rawArg
-                } else if (rawArg.startsWith("%7B")) {
-                    URLDecoder.decode(rawArg, "UTF-8")
-                } else {
-                    try {
-                        val bytes = Base64.decode(rawArg, Base64.URL_SAFE or Base64.NO_WRAP)
-                        String(bytes, StandardCharsets.UTF_8)
-                    } catch (_: Exception) {
-                        try {
-                            URLDecoder.decode(rawArg, "UTF-8")
-                        } catch (_: Exception) {
-                            rawArg
-                        }
-                    }
+                val playerData = remember(rawArg) {
+                    com.qx.orbit.bili.presentation.util.decodePlayerRouteData(rawArg) ?: PlayerData(aid = 0L)
                 }
-                val playerData = remember(json) { Gson().fromJson(json, PlayerData::class.java) ?: PlayerData(aid = 0L) }
                 PlayerScreen(
-                    initialData = playerData, 
+                    initialData = playerData,
+                    onAudioPlayerModeChanged = { backStackEntry.savedStateHandle["audioPlayerMode"] = it },
                     onBack = { navController.popBackStack() },
                     onDisposeAction = { epid, progress ->
                         previousEntry?.savedStateHandle?.set("updatedEpid", epid)

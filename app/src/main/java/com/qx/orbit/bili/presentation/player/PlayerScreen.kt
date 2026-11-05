@@ -25,6 +25,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -188,7 +189,8 @@ fun PlayerScreen(
     initialData: PlayerData,
     onBack: () -> Unit,
     onDisposeAction: (epid: Long, progress: Long) -> Unit = { _, _ -> },
-    viewModel: PlayerViewModel = viewModel()
+    viewModel: PlayerViewModel = viewModel(),
+    onAudioPlayerModeChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     viewModel.initPlayer(context, initialData.interactionHint)
@@ -215,6 +217,9 @@ fun PlayerScreen(
     }
     val playbackInteractionState by interactionScreenState.collectAsState(initial = viewModel.interaction.state.value)
     val isAudioPlayer = (isAudioOnlyMode || initialData.audioUrl == "audio") && !playbackInteractionState.blocksEpisodes
+    LaunchedEffect(isAudioPlayer) {
+        onAudioPlayerModeChanged(isAudioPlayer)
+    }
     BackHandler(enabled = !isAudioPlayer) {
         val currentTime = System.currentTimeMillis()
         if (currentTime - backPressedTime < 2000) {
@@ -1157,7 +1162,7 @@ fun PlayerScreen(
         }
     }
 
-    if ((isAudioOnlyMode || playerData.audioUrl == "audio") && !interactionState.blocksEpisodes) {
+    if (isAudioPlayer) {
         AudioPlayerScreen(
             viewModel = viewModel,
             playerData = playerData,
@@ -1195,6 +1200,7 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .systemGestureExclusion()
             .layout { measurable, constraints ->
                 val isRotatedLayout = isSoftRotate && ((cumulativeRotation.toInt() % 180) != 0)
                 val placeable = if (isRotatedLayout) {

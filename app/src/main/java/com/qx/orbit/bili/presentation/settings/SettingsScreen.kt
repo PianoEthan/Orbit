@@ -264,6 +264,21 @@ fun SettingPreferenceScreen(navController: NavController) {
             }
 
             item {
+                val context = LocalContext.current
+                SwitchButton(
+                    checked = AppConfig.systemBackOnly,
+                    onCheckedChange = { AppConfig.saveSystemBackOnly(context, it) },
+                    label = { Text("仅使用系统返回") },
+                    secondaryLabel = {
+                        Text("关闭 Wear 侧滑返回；请先确保系统手势或返回键可用")
+                    },
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .adaptiveTransformedHeight(this, transformationSpec)
+                )
+            }
+            item {
                 var checked by remember { mutableStateOf(SharedPreferencesUtil.getBoolean("use_hd_qr_code", true)) }
                 SwitchButton(
                     checked = checked,
