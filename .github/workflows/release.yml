@@ -83,6 +83,14 @@ jobs:
 
           apks=("${lite_apks[@]}" "${full_apks[@]}")
 
-          gh release create "$GITHUB_REF_NAME" "${apks[@]}" \
-            --verify-tag \
-            --generate-notes
+          notes_file="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ -f "$notes_file" ]]; then
+            gh release create "$GITHUB_REF_NAME" "${apks[@]}" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file "$notes_file"
+          else
+            gh release create "$GITHUB_REF_NAME" "${apks[@]}" \
+              --verify-tag \
+              --generate-notes
+          fi
