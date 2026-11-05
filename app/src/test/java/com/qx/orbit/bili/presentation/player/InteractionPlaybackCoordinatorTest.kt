@@ -24,7 +24,7 @@ import com.qx.orbit.bili.data.interaction.InteractionProgressStore
 class InteractionPlaybackCoordinatorTest {
     @get:Rule val temp = TemporaryFolder()
     private val info = PlayerMetadata(interaction = PlayerInteraction(1))
-    private val source = PlayerData(aid = 5, cid = 10, videoUrl = "stale", audioUrl = "stale")
+    private val source = PlayerData(aid = 5, cid = 10, videoUrl = "stale", audioUrl = "stale", interactionHint = true)
     private fun node(edge: Long = 1, question: InteractionQuestion = InteractionQuestion(
         type = 1, choices = listOf(InteractionChoice(id = 1, cid = 10, nativeAction = "v=v+1", option = "again"))
     )) = InteractionVideo(
@@ -60,16 +60,19 @@ class InteractionPlaybackCoordinatorTest {
         }
     }
 
-    @Test fun ordinaryVideoWithoutHintStillProbesAndNeverRequestsEdge() {
+    @Test fun ordinaryVideoSkipsMetadataAndGraphAndStartsWithoutBlocking() {
         val host = Host()
-        var probes = 0
-        val coordinator = host.coordinator({ _, _ -> probes++; InteractionVideoResult.Success(PlayerMetadata()) },
+        val ordinary = source.copy(interactionHint = false)
+        val coordinator = host.coordinator({ _, _ -> error("ordinary video must not probe metadata") },
             { _, _, _ -> error("ordinary video must not request edge") })
-        coordinator.open(source)
-        assertEquals(1, probes)
+        coordinator.open(ordinary)
+        assertFalse(coordinator.state.value.probing)
         assertFalse(coordinator.state.value.interactive)
+        assertFalse(coordinator.state.value.blocksControls)
         assertFalse(coordinator.state.value.blocksEpisodes)
-        assertEquals(source, host.requests.single().data)
+        assertEquals(ordinary, host.requests.single().data)
+        assertNull(host.requests.single().token)
+        assertFalse(requiresInteractivePlayback(ordinary, false, host.requests.single().token != null))
         assertTrue(coordinator.mediaPrepared(host.requests.single()))
     }
 
@@ -117,8 +120,8 @@ class InteractionPlaybackCoordinatorTest {
         val host = Host()
         var fail = true
         val coordinator = host.coordinator({ _, _ ->
-            if (fail) InteractionVideoResult.ApiError(-1, "offline") else InteractionVideoResult.Success(PlayerMetadata())
-        }, { _, _, _ -> error("not interactive") })
+            if (fail) InteractionVideoResult.ApiError(-1, "offline") else InteractionVideoResult.Success(info)
+        }, { _, _, _ -> InteractionVideoResult.Success(node()) })
         coordinator.open(source)
         assertTrue(host.requests.isEmpty())
         assertTrue(coordinator.state.value.blocksControls)
@@ -135,7 +138,7 @@ class InteractionPlaybackCoordinatorTest {
             if (aid == 5L) deferred.await() else InteractionVideoResult.Success(PlayerMetadata())
         }, { _, _, _ -> error("stale graph") })
         coordinator.open(source)
-        coordinator.open(source.copy(aid = 6))
+        coordinator.open(source.copy(aid = 6, interactionHint = false))
         deferred.complete(InteractionVideoResult.Success(info))
         assertEquals(1, host.requests.size)
         val request = host.requests.single()

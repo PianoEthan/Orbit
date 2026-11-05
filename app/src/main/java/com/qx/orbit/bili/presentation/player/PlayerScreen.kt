@@ -708,7 +708,7 @@ fun PlayerScreen(
                 if (isLive || isLocal) {
                     playerData
                 } else {
-                    val isInteractive = interactionState.interactive || playerData.interactionHint || request != null
+                    val isInteractive = requiresInteractivePlayback(playerData, interactionState.interactive, request?.token != null)
                     val media3Selected = !BuildConfig.HAS_IJK ||
                         SharedPreferencesUtil.getString("player_engine", "ijk") == "media3" || isInteractive
                     val requestDash = SharedPreferencesUtil.getBoolean("player_request_dash", false)
@@ -826,7 +826,7 @@ fun PlayerScreen(
                     try {
                         val links = when {
                             isLocal -> viewModel.discoverLocalSubtitles(resolvedLocalPath)
-                            request != null -> request.metadata.subtitleLinks.toTypedArray()
+                            request?.token != null -> request.metadata.subtitleLinks.toTypedArray()
                             else -> PlayerApi.getSubtitleLinks(playerData.aid, playerData.cid)
                         }
                         if (!currentLoad()) return@launch

@@ -63,6 +63,12 @@ internal class DistanceSeekSession(
     }
 }
 
+internal fun requiresInteractivePlayback(
+    data: com.qx.orbit.bili.data.model.PlayerData,
+    interactive: Boolean,
+    hasTransitionToken: Boolean
+): Boolean = data.interactionHint || interactive || hasTransitionToken
+
 internal fun effectivePlaybackSpeed(preferred: Float, temporary: Boolean): Float =
     if (temporary) 2f else preferred
 

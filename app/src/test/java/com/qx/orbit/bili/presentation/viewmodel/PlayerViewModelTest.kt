@@ -218,7 +218,7 @@ class PlayerViewModelTest {
             reportPlayback = { data, position, _, _ -> progressReport.complete(data.cid to position) }
         )
         PlayerViewModel::class.java.getDeclaredField("_player").apply { isAccessible = true; set(model, player) }
-        model.open(PlayerData(aid = 9, cid = 10, cids = listOf(10, 11), currentPageIndex = 0))
+        model.open(PlayerData(aid = 9, cid = 10, cids = listOf(10, 11), currentPageIndex = 0, interactionHint = true))
     }
 
     @Test fun interactionCommitsBeforePlaybackAndCurrentCidMatchesReportingData() = runTest {

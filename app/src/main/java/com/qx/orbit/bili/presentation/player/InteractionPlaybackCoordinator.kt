@@ -85,9 +85,14 @@ class InteractionPlaybackCoordinator(
         metadataCache.clear()
         session.reset()
         _request.value = null
-        _state.value = State(probing = data.type == PlayerData.TYPE_VIDEO)
+        val requiresGraph = data.type == PlayerData.TYPE_VIDEO && data.interactionHint
+        _state.value = State(probing = requiresGraph)
         stopMedia()
         if (data.type != PlayerData.TYPE_VIDEO) return
+        if (!requiresGraph) {
+            publish(source, PlayerMetadata(), null, null)
+            return
+        }
         probe(allowResume)
     }
 
@@ -281,7 +286,9 @@ class InteractionPlaybackCoordinator(
     fun retry() {
         if (_state.value.requiresRestart) return
         _state.value = _state.value.copy(error = null, ended = false)
-        if (!_state.value.interactive || root == null) {
+        if (!source.interactionHint && !_state.value.interactive) {
+            open(source)
+        } else if (!_state.value.interactive || root == null) {
             _state.value = _state.value.copy(probing = true)
             probe()
         } else if (session.state.transition != null) {

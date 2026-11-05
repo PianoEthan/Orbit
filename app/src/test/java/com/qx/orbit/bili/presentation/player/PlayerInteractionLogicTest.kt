@@ -7,6 +7,15 @@ import org.junit.Test
 
 class PlayerInteractionLogicTest {
     @Test
+    fun ordinaryPlaybackRequestDoesNotRequireInteractiveDash() {
+        val ordinary = com.qx.orbit.bili.data.model.PlayerData(aid = 5, cid = 10)
+        assertFalse(requiresInteractivePlayback(ordinary, false, false))
+        assertTrue(requiresInteractivePlayback(ordinary.copy(interactionHint = true), false, false))
+        assertTrue(requiresInteractivePlayback(ordinary, true, false))
+        assertTrue(requiresInteractivePlayback(ordinary, false, true))
+    }
+
+    @Test
     fun nearBarUsesFixedSecondsAndDistanceOnlyIncreasesTheWindow() {
         assertEquals(30_000.0, distanceSeekWindowMs(7_200_000L, 0f), 0.001)
         assertEquals(7_200_000.0, distanceSeekWindowMs(7_200_000L, 120f), 0.001)
