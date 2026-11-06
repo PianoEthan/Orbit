@@ -41,6 +41,10 @@ object VideoDownloadManager {
     private var nextId = 1L
     private const val TASKS_FILE = "video_download_tasks.json"
     private const val DANMAKU_CACHE_VERSION = 1
+    private const val DANMAKU_FILE_SUFFIX = ".danmaku.xml"
+
+    // 一个合法的弹幕 XML 至少要有 <?xml ...?><i>…</i>，太小的文件是坏缓存
+    private const val MIN_DANMAKU_FILE_BYTES = 128L
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -178,8 +182,28 @@ object VideoDownloadManager {
 
     fun getCompletedCount(): Int = downloads.values.count { it.status == DownloadManager.STATUS_SUCCESSFUL }
 
+    /**
+     * 只查现成文件、不发任何网络请求：返回视频路径对应的可用本地弹幕 XML。
+     * 优先命中 `${videoPath}.danmaku.xml`，其次兼容早期命名 `<name>.danmaku.xml`。
+     */
+    fun localDanmakuFileFor(videoPath: String?): File? {
+        if (videoPath.isNullOrBlank()) return null
+        if (videoPath.startsWith("content://") || videoPath.startsWith("http")) return null
+        val exact = File("$videoPath$DANMAKU_FILE_SUFFIX")
+        if (isUsableDanmakuFile(exact)) return exact
+        val video = File(videoPath)
+        val parent = video.parentFile ?: return null
+        val legacy = File(parent, video.nameWithoutExtension + DANMAKU_FILE_SUFFIX)
+        return legacy.takeIf { isUsableDanmakuFile(it) }
+    }
+
+    private fun isUsableDanmakuFile(file: File): Boolean =
+        file.isFile && file.canRead() && file.length() >= MIN_DANMAKU_FILE_BYTES
+
     suspend fun ensureLocalDanmakuCache(aid: Long, cid: Long, videoPath: String): File? {
-        val existingFile = File("$videoPath.danmaku.xml")
+        if (videoPath.isBlank()) return null
+        if (videoPath.startsWith("content://") || videoPath.startsWith("http")) return null
+        val existingFile = File("$videoPath$DANMAKU_FILE_SUFFIX")
         val task = downloads.values.firstOrNull { info ->
             info.localUri == videoPath ||
                 (info.aid == aid && info.cid == cid && info.filename == File(videoPath).name)
@@ -466,7 +490,7 @@ object VideoDownloadManager {
         }
         lock.withLock {
             val info = downloads[id] ?: return@withLock
-            val danmakuFile = File(downloadDir, "${info.filename}.danmaku.xml")
+            val danmakuFile = File(downloadDir, "${info.filename}$DANMAKU_FILE_SUFFIX")
             if (danmakuFile.exists() && info.danmakuCacheVersion >= DANMAKU_CACHE_VERSION) {
                 return@withLock
             }
@@ -500,7 +524,7 @@ object VideoDownloadManager {
             }
             xmlBuilder.append("</i>")
 
-            val temporaryFile = File(downloadDir, "${info.filename}.danmaku.xml.tmp")
+            val temporaryFile = File(downloadDir, "${info.filename}$DANMAKU_FILE_SUFFIX.tmp")
             temporaryFile.writeText(xmlBuilder.toString())
             temporaryFile.copyTo(danmakuFile, overwrite = true)
             temporaryFile.delete()
