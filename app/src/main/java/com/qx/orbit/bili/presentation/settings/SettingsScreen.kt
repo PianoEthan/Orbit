@@ -484,6 +484,7 @@ fun SettingApsisPlayerScreen(navController: NavController) {
             // Using SharedPreferencesUtil to track states with correct default values based on BiliClient
             val settings = listOf(
                 Triple("player_longclick", "长按倍速", true),
+                Triple("player_audio_longpress_seek", "音频长按快进/快退", true),
                 Triple("player_loop", "洗脑循环", false),
                 Triple("player_background", "熄屏继续播放", false),
                 Triple("player_background_audio_only", "后台播放音频", false),
