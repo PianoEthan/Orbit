@@ -1,0 +1,79 @@
+package com.qx.orbit.bili.vision
+
+import androidx.compose.runtime.remember
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import com.qx.orbit.bili.core.api.*
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+
+class VisionPlayerScreenTest {
+    @get:Rule val compose = createComposeRule()
+
+    private val video = CoreVideo(42, "BV-player", "播放器测试视频", "", "作者", cid = 101)
+    private val qualities = listOf(CorePlaybackQuality(64, "720P"), CorePlaybackQuality(32, "480P"))
+    private val pages = listOf(
+        CoreVideoPage(1, "第一部分", 101, 120),
+        CoreVideoPage(2, "第二部分", 102, 180),
+        CoreVideoPage(3, "第三部分", 103, 240),
+    )
+
+    private fun testGateway(playback: CorePlayback) = object : PlaybackGateway {
+        override suspend fun resolve(video: CoreVideo) = playback
+        override suspend fun resolveQuality(video: CoreVideo, quality: Int) = playback.copy(
+            quality = quality,
+            video = video,
+        )
+    }
+
+    private fun testEpisodesModel(pagesList: List<CoreVideoPage>) = object : VideoGateway {
+        override suspend fun loadDetails(video: CoreVideo) =
+            CoreVideoDetails(video, "简介", 540, 1, 2, 3, pagesList)
+    }
+
+    @Test fun playerDialogsAllowSelectingQualitySpeedAndEpisode() {
+        val playback = CorePlayback(
+            video = video,
+            urls = listOf("https://cdn.test/video.mp4"),
+            quality = 64,
+            qualities = qualities,
+            audioUrl = "https://cdn.test/audio.mp4",
+        )
+        val gateway = testGateway(playback)
+        val detailsGateway = testEpisodesModel(pages)
+
+        compose.setContent {
+            val episodesModel = remember { VisionPlayerEpisodesViewModel(detailsGateway) }
+            VisionTheme {
+                VisionPlayerScreen(
+                    video = video,
+                    onBack = {},
+                    gateway = gateway,
+                    episodesModel = episodesModel,
+                )
+            }
+        }
+
+        // Verify quality dialog: initial default quality is 480P
+        compose.onNodeWithText("480P").assertIsDisplayed().performClick()
+        compose.onNodeWithText("选择清晰度").assertIsDisplayed()
+        compose.onNodeWithText("720P").performClick()
+        compose.onNodeWithText("选择清晰度").assertDoesNotExist()
+        compose.onNodeWithText("720P").assertIsDisplayed()
+
+        // Verify speed dialog
+        compose.onNodeWithText("1.0×").assertIsDisplayed().performClick()
+        compose.onNodeWithText("播放速度").assertIsDisplayed()
+        compose.onNodeWithText("1.5×").performClick()
+        compose.onNodeWithText("播放速度").assertDoesNotExist()
+        compose.onNodeWithText("1.5×").assertIsDisplayed()
+
+        // Verify episode picker dialog
+        compose.onNodeWithText("选集 P1").assertIsDisplayed().performClick()
+        compose.onNodeWithText("选择分 P").assertIsDisplayed()
+        compose.onNodeWithText("P2 第二部分").performScrollTo().performClick()
+        compose.onNodeWithText("选择分 P").assertDoesNotExist()
+        compose.onNodeWithText("选集 P2").assertIsDisplayed()
+    }
+}
