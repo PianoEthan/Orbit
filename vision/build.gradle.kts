@@ -32,6 +32,8 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":ijkplayer-java"))
+    implementation(project(":DFMNext"))
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
     implementation(libs.vision.material3)

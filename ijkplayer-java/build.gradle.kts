@@ -9,6 +9,7 @@ android {
             minorApiLevel = 1
         }
     }
+    defaultConfig { consumerProguardFiles("consumer-rules.pro") }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

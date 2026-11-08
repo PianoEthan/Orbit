@@ -1,5 +1,10 @@
 package com.qx.orbit.bili.vision
 
+import android.view.SurfaceView
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -51,10 +56,33 @@ class VisionPlayerScreenTest {
                     onBack = {},
                     gateway = gateway,
                     episodesModel = episodesModel,
+                    danmakuGateway = DanmakuGateway { null },
+                    playerFactory = { _, _ -> object : VisionPlayerAdapter {
+                        override fun bindSurfaceView(surfaceView: SurfaceView) = Unit
+                        override fun prepare(playback: CorePlayback, segment: Int, positionMs: Long) = Unit
+                        override fun play() = Unit
+                        override fun pause() = Unit
+                        override fun seekTo(positionMs: Long) = Unit
+                        override fun setPlaybackSpeed(speed: Float) = Unit
+                        override fun release() = Unit
+                        override fun setListener(listener: VisionPlayerListener?) = Unit
+                        override val currentPosition = 0L
+                        override val duration = 120000L
+                        override val currentMediaItemIndex = 0
+                        override val mediaItemCount = 1
+                        override val segmentDurationsMs = listOf(120000L)
+                        override val isPlaying = false
+                    } },
                 )
             }
         }
 
+        compose.onNodeWithText(if (VisionPreferences.danmakuEnabled) "弹幕：开" else "弹幕：关").assertIsDisplayed().performClick()
+        compose.onNodeWithText(if (VisionPreferences.danmakuEnabled) "弹幕：开" else "弹幕：关").assertIsDisplayed()
+        val screenshot = compose.onRoot().captureToImage().asAndroidBitmap()
+        File(InstrumentationRegistry.getInstrumentation().targetContext.externalCacheDir, "vision-player.png").outputStream().use {
+            screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
         // Verify quality dialog: initial default quality is 480P
         compose.onNodeWithText("480P").assertIsDisplayed().performClick()
         compose.onNodeWithText("选择清晰度").assertIsDisplayed()

@@ -28,8 +28,8 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 
 - **UI**: Jetpack Compose + Wear Material 3
 - **网络**: Retrofit + OkHttp
-- **视频播放**: ijkplayer(可选)/ExoPlayer
-- **弹幕**: DanmakuFlameMaster/DFM-Next
+- **视频播放**: Vision 默认 ijkPlayer（ARM64/ARM32 硬件解码）/ ExoPlayer Media3 回退与可选内核；Wear Full 默认 ijkPlayer，Lite 使用 Media3
+- **弹幕**: Vision 与 Wear 默认 DFM-Next；Wear 仍保留 DanmakuFlameMaster 可选引擎
 - **图片加载**: Coil
 - **小米 / OPPO 手表触觉兼容**：CN Wear Overlay
 

@@ -45,6 +45,19 @@ class VisionSettingsScreenTest {
         compose.runOnIdle { assertEquals(VisionThemeMode.LIGHT, VisionPreferences.themeMode) }
     }
 
+    @Test fun playerEngineAndDanmakuPreferencesCanBeChanged() {
+        compose.setContent { VisionTheme { VisionSettingsSectionScreen(VisionSettingsSection.PLAYBACK, onBack = {}) } }
+        compose.onNodeWithText(VisionPlayerEngine.IJK.title).performScrollTo().performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(VisionPlayerEngine.IJK, VisionPreferences.playerEngine) }
+        compose.onNodeWithText(VisionPlayerEngine.MEDIA3.title).performScrollTo().performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(VisionPlayerEngine.MEDIA3, VisionPreferences.playerEngine) }
+        compose.onNodeWithText("半透明 (60%)").performScrollTo().performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(0.6f, VisionPreferences.danmakuAlpha) }
+        compose.onNodeWithText("大 (适合远距离电视)").performScrollTo().performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(1.25f, VisionPreferences.danmakuTextScale) }
+        compose.onNodeWithText(VisionPlayerEngine.IJK.title).performScrollTo().performClick()
+    }
+
     @Test fun playbackTimeoutSelectionPersistsPreference() {
         compose.setContent { VisionTheme { VisionSettingsSectionScreen(VisionSettingsSection.PLAYBACK, onBack = {}) } }
         compose.onNodeWithText("8 秒").performScrollTo().performClick()

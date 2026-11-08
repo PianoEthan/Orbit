@@ -1202,7 +1202,7 @@ fun SettingDanmakuEngineScreen(navController: NavController) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val isRound = LocalScreenRound.current
-    var currentDanmakuEngine by remember { mutableStateOf(SharedPreferencesUtil.getString("danmaku_engine", "dfm")) }
+    var currentDanmakuEngine by remember { mutableStateOf(SharedPreferencesUtil.getString("danmaku_engine", "dfmnext")) }
 
     ScreenScaffold(
         scrollState = listState,

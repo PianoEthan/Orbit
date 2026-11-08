@@ -16,13 +16,13 @@ interface ProtobufDanmakuParser : DanmakuParser {
 }
 
 fun createProtobufParser(): ProtobufDanmakuParser =
-    if (SharedPreferencesUtil.getString("danmaku_engine", "dfm") == "dfm")
+    if (SharedPreferencesUtil.getString("danmaku_engine", "dfmnext") == "dfm")
         DFMProtobufParser() else DFMNextProtobufParser()
 
 fun createXmlParser(): DanmakuParser =
-    if (SharedPreferencesUtil.getString("danmaku_engine", "dfm") == "dfm")
+    if (SharedPreferencesUtil.getString("danmaku_engine", "dfmnext") == "dfm")
         DFMParser() else DFMNextParser()
 
 fun createEmptyParser(): DanmakuParser =
-    if (SharedPreferencesUtil.getString("danmaku_engine", "dfm") == "dfm")
+    if (SharedPreferencesUtil.getString("danmaku_engine", "dfmnext") == "dfm")
         DFMParser(empty = true) else DFMNextParser(empty = true)

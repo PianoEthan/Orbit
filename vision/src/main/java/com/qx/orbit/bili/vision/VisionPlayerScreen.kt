@@ -1,9 +1,9 @@
 package com.qx.orbit.bili.vision
 
+import android.content.Context
 import android.view.KeyEvent
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
-import androidx.annotation.OptIn as AndroidOptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -51,22 +51,16 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.common.Timeline
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.VideoSize
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.qx.orbit.bili.core.api.BilibiliDanmakuGateway
+import com.qx.orbit.bili.core.api.DanmakuGateway
 import com.qx.orbit.bili.core.api.BilibiliPlaybackGateway
 import com.qx.orbit.bili.core.api.CorePlayback
 import com.qx.orbit.bili.core.api.CoreVideo
 import com.qx.orbit.bili.core.api.PlaybackGateway
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import io.github.ynotbili.dfmnext.ui.widget.DanmakuView
 
-@AndroidOptIn(UnstableApi::class)
 @Composable
 internal fun VisionPlayerScreen(
     video: CoreVideo,
@@ -74,6 +68,8 @@ internal fun VisionPlayerScreen(
     historyModel: VisionPlaybackHistoryViewModel = viewModel(),
     gateway: PlaybackGateway = remember { BilibiliPlaybackGateway(cookieProvider = { VisionUserSession.cookie }) },
     episodesModel: VisionPlayerEpisodesViewModel = viewModel(),
+    danmakuGateway: DanmakuGateway = remember { BilibiliDanmakuGateway(cookieProvider = { VisionUserSession.cookie }) },
+    playerFactory: (Context, VisionPlayerEngine) -> VisionPlayerAdapter = ::createVisionPlayerAdapter,
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -115,28 +111,33 @@ internal fun VisionPlayerScreen(
     val playFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
-    val source = remember {
-        DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.95 Safari/537.36")
-            .setDefaultRequestProperties(mapOf("Referer" to "https://www.bilibili.com"))
+    val engine = effectiveVisionEngine(VisionPreferences.playerEngine)
+    val player = remember(context, video.bvid, engine) { playerFactory(context, engine) }
+    val danmakuHost = remember(video.bvid, danmakuGateway) { VisionDanmakuHost(danmakuGateway) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(playback?.video?.cid) { playback?.video?.cid?.let { danmakuHost.load(it, scope) } }
+    LaunchedEffect(VisionPreferences.danmakuEnabled, VisionPreferences.danmakuAlpha, VisionPreferences.danmakuTextScale) {
+        danmakuHost.setEnabled(VisionPreferences.danmakuEnabled)
+        danmakuHost.updateConfig(VisionPreferences.danmakuAlpha, VisionPreferences.danmakuTextScale)
     }
-    val player = remember(context, video.bvid) {
-        ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(source)).build()
+    LaunchedEffect(isPlaying, isBuffering, foreground) {
+        danmakuHost.setPlaying(isPlaying && !isBuffering && foreground)
     }
+    DisposableEffect(danmakuHost) { onDispose { danmakuHost.release() } }
     LaunchedEffect(player, playbackSpeed) {
         player.setPlaybackSpeed(supportedPlaybackSpeed(playbackSpeed))
     }
     val canControl = playback != null && error == null && !loading
+    LaunchedEffect(player, wantsPlayback, foreground, canControl) {
+        if (playbackShouldRun(wantsPlayback, foreground, canControl)) player.play() else player.pause()
+    }
     val historySyncFailed by historyModel.syncFailed.collectAsState()
     fun reportHistory(force: Boolean = false) {
         historyModel.setAccount(VisionUserSession.cookie)
         val current = playback ?: return
         if (loading || player.mediaItemCount == 0) return
         val segment = player.currentMediaItemIndex.coerceAtLeast(0)
-        val timeline = player.currentTimeline
-        val durations = (0 until segment).map { index ->
-            if (index < timeline.windowCount) timeline.getWindow(index, Timeline.Window()).durationMs else -1L
-        }
+        val durations = player.segmentDurationsMs
         val seconds = historyPositionSeconds(segment, player.currentPosition, durations) ?: return
         historyModel.sample(VisionHistoryProgress(current.video.id, current.video.cid, seconds), player.isPlaying, force)
     }
@@ -148,16 +149,21 @@ internal fun VisionPlayerScreen(
         markInteraction()
         if (!canControl) return
         wantsPlayback = !wantsPlayback
-        player.playWhenReady = playbackShouldRun(wantsPlayback, foreground, canControl)
+        if (playbackShouldRun(wantsPlayback, foreground, canControl)) player.play() else player.pause()
+    }
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs)
+        val elapsed = player.segmentDurationsMs.take(player.currentMediaItemIndex).sumOf { it.coerceAtLeast(0) } + positionMs
+        danmakuHost.synchronize(elapsed, player.isPlaying && foreground, supportedPlaybackSpeed(playbackSpeed))
     }
     fun seekBy(deltaMs: Long) {
         markInteraction()
-        if (canControl) player.seekTo(seekPlaybackPosition(player.currentPosition, deltaMs, durationMs))
+        if (canControl) seekTo(seekPlaybackPosition(player.currentPosition, deltaMs, durationMs))
     }
     BackHandler {
         if (controlsVisible && error == null) controlsVisible = false else onBack()
     }
-    LaunchedEffect(video.bvid, selectedCid, retryTrigger, requestedQuality) {
+    LaunchedEffect(player, video.bvid, selectedCid, retryTrigger, requestedQuality) {
         val previous = playback
         val switchingEpisode = selectedCid != activeCid
         val snapshot = playbackSwitchPosition(activeCid, selectedCid, resumeSnapshot ?: (resumeSegment to resumePosition))
@@ -166,11 +172,9 @@ internal fun VisionPlayerScreen(
         error = null
         player.pause()
         try {
-            val resolved = resolveVisionPlayback(gateway, targetVideo, requestedQuality)
-            val sources = buildVisionMediaSources(resolved, source)
+            val resolved = resolveVisionPlayback(gateway, targetVideo, requestedQuality, engine == VisionPlayerEngine.IJK)
             val seek = if (previous == null && snapshot.first == 0) playbackSegmentPosition(snapshot.second, resolved.segmentDurationsMs) else snapshot
-            player.setMediaSources(sources)
-            player.seekTo(seek.first.coerceIn(resolved.urls.indices), seek.second)
+            player.prepare(resolved, seek.first, seek.second)
             playback = resolved
             activeCid = resolved.video.cid
             resumePosition = seek.second
@@ -178,16 +182,15 @@ internal fun VisionPlayerScreen(
             resumeSnapshot = null
             scrubFraction = null
             qualityMessage = if (resolved.quality != requestedQuality) "请求画质未获授权或不可用，当前实际画质：${resolved.qualities.firstOrNull { it.id == resolved.quality }?.label ?: resolved.quality}" else null
-            player.prepare()
-            player.playWhenReady = playbackShouldRun(wantsPlayback, foreground, true)
+            if (playbackShouldRun(wantsPlayback, foreground, true)) player.play() else player.pause()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (exception: Exception) {
             coroutineContext.ensureActive()
-            if (previous != null && player.playbackState != Player.STATE_IDLE) {
+            if (previous != null && player.mediaItemCount > 0) {
                 qualityMessage = if (switchingEpisode) "选集切换失败，继续保留原集；可打开选集重试" else "画质切换失败，继续播放原画质"
                 resumeSnapshot = null
-                player.playWhenReady = playbackShouldRun(wantsPlayback, foreground, true)
+                if (playbackShouldRun(wantsPlayback, foreground, true)) player.play() else player.pause()
             } else error = exception.message ?: "无法载入视频，请检查网络后重试"
         } finally {
             if (coroutineContext.isActive) loading = false
@@ -196,25 +199,25 @@ internal fun VisionPlayerScreen(
     val latestCanControl by rememberUpdatedState(canControl)
     val latestReportHistory by rememberUpdatedState<(Boolean) -> Unit>({ reportHistory(it) })
     DisposableEffect(player, lifecycle) {
-        val listener = object : Player.Listener {
+        val listener = object : VisionPlayerListener {
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
                 latestReportHistory(!playing)
             }
-            override fun onPlaybackStateChanged(state: Int) {
-                isBuffering = state == Player.STATE_BUFFERING
-                if (state == Player.STATE_ENDED) {
+            override fun onPlaybackStateChanged(buffering: Boolean, isEnded: Boolean) {
+                isBuffering = buffering
+                if (isEnded) {
                     wantsPlayback = false
                     controlsVisible = true
                 }
             }
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    videoAspectRatio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
-                }
+            override fun onVideoSizeChanged(aspectRatio: Float) {
+                videoAspectRatio = aspectRatio
             }
-            override fun onPlayerError(exception: PlaybackException) {
-                error = "播放遇到错误 (${exception.errorCodeName})，当前流的可用地址已尝试"
+            override fun onError(message: String) {
+                error = message
+                isBuffering = false
+                isPlaying = false
                 controlsVisible = true
             }
         }
@@ -229,22 +232,22 @@ internal fun VisionPlayerScreen(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     foreground = true
-                    player.playWhenReady = playbackShouldRun(wantsPlayback, true, latestCanControl)
+                    if (playbackShouldRun(wantsPlayback, true, latestCanControl)) player.play() else player.pause()
                 }
                 else -> Unit
             }
         }
-        player.addListener(listener)
+        player.setListener(listener)
         lifecycle.addObserver(observer)
         onDispose {
             latestReportHistory(true)
             historyModel.endPlayback()
             lifecycle.removeObserver(observer)
-            player.removeListener(listener)
+            player.setListener(null)
             player.release()
         }
     }
-    LaunchedEffect(player) {
+    LaunchedEffect(player, danmakuHost, playbackSpeed, foreground) {
         while (true) {
             positionMs = player.currentPosition.coerceAtLeast(0)
             durationMs = player.duration.coerceAtLeast(0)
@@ -252,6 +255,8 @@ internal fun VisionPlayerScreen(
                 resumePosition = positionMs
                 resumeSegment = player.currentMediaItemIndex
             }
+            val elapsed = player.segmentDurationsMs.take(player.currentMediaItemIndex).sumOf { it.coerceAtLeast(0) } + positionMs
+            danmakuHost.synchronize(elapsed, player.isPlaying && foreground, supportedPlaybackSpeed(playbackSpeed))
             if (player.isPlaying) latestReportHistory(false)
             delay(500)
         }
@@ -363,7 +368,7 @@ internal fun VisionPlayerScreen(
                             markInteraction()
                             if (canControl) {
                                 wantsPlayback = action == PlaybackKeyAction.PLAY
-                                player.playWhenReady = playbackShouldRun(wantsPlayback, foreground, canControl)
+                                if (playbackShouldRun(wantsPlayback, foreground, canControl)) player.play() else player.pause()
                             }
                         }
                         PlaybackKeyAction.SEEK_FORWARD -> seekBy(10_000)
@@ -381,10 +386,18 @@ internal fun VisionPlayerScreen(
     ) {
         val viewport = fitVideoViewport(maxWidth.value, maxHeight.value, videoAspectRatio)
         val compact = maxWidth < 600.dp
-        AndroidView(
-            factory = { ctx -> SurfaceView(ctx).apply { player.setVideoSurfaceView(this) } },
-            modifier = Modifier.size(viewport.width.dp, viewport.height.dp),
-        )
+        key(player) {
+            AndroidView(
+                factory = { ctx -> SurfaceView(ctx).apply { player.bindSurfaceView(this) } },
+                modifier = Modifier.size(viewport.width.dp, viewport.height.dp),
+            )
+        }
+        key(danmakuHost) {
+            AndroidView(
+                factory = { ctx -> DanmakuView(ctx).apply { danmakuHost.bindView(this) } },
+                modifier = Modifier.size(viewport.width.dp, viewport.height.dp),
+            )
+        }
         if (error == null && (loading || isBuffering)) {
             CircularProgressIndicator(Modifier.size(48.dp), color = MaterialTheme.colorScheme.primary)
         }
@@ -443,7 +456,7 @@ internal fun VisionPlayerScreen(
                         state = sliderState,
                         onValueChange = { markInteraction(); scrubFraction = it },
                         onValueChangeFinished = {
-                            scrubFraction?.let { player.seekTo((it * durationMs).toLong()) }
+                            scrubFraction?.let { seekTo((it * durationMs).toLong()) }
                             scrubFraction = null
                             markInteraction()
                         },
@@ -451,6 +464,12 @@ internal fun VisionPlayerScreen(
                         modifier = Modifier.fillMaxWidth().semantics { contentDescription = "播放进度" },
                     )
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = {
+                            markInteraction()
+                            VisionPreferences.setDanmakuEnabled(context, !VisionPreferences.danmakuEnabled)
+                        }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text(if (VisionPreferences.danmakuEnabled) "弹幕：开" else "弹幕：关")
+                        }
                         PlayerIconButton({ seekBy(-10_000) }, { Icon(Icons.Default.FastRewind, "快退 10 秒", tint = Color.White) }, enabled = canControl)
                         Button(onClick = ::togglePlayback, enabled = canControl, modifier = Modifier.heightIn(min = 56.dp).focusRequester(playFocus)) {
                             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)

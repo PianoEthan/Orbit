@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 
 internal enum class VisionSettingsSection(val title: String, val description: String, val icon: ImageVector) {
     APPEARANCE("外观与主题", "深色、浅色、动态配色", Icons.Default.Palette),
-    PLAYBACK("播放与控制", "控制栏自动隐藏", Icons.Default.PlayCircle),
+    PLAYBACK("播放与控制", "播放器内核、弹幕与控制栏", Icons.Default.PlayCircle),
     INPUT("输入与遥控器", "九键输入与按键说明", Icons.Default.Keyboard),
     ABOUT("关于 Orbit Vision", "版本与应用信息", Icons.Default.Info),
 }
@@ -106,6 +106,34 @@ internal fun VisionSettingsSectionScreen(section: VisionSettingsSection, onBack:
                 }
             }
             VisionSettingsSection.PLAYBACK -> {
+                Text("播放器内核", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                Column(Modifier.selectableGroup()) {
+                    VisionPlayerEngine.entries.forEach { engine ->
+                        SettingsRadio(engine.title, VisionPreferences.playerEngine == engine) { VisionPreferences.setPlayerEngine(context, engine) }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+                Text("弹幕显示设置", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                SettingsToggle("启用弹幕", "播放视频时默认展示弹幕（使用 :DFMNext 引擎）", VisionPreferences.danmakuEnabled) { VisionPreferences.setDanmakuEnabled(context, it) }
+                Spacer(Modifier.height(16.dp))
+                Text("弹幕透明度", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.selectableGroup()) {
+                    listOf(1.0f to "不透明 (100%)", 0.85f to "适中 (85%)", 0.6f to "半透明 (60%)").forEach { (alpha, title) ->
+                        SettingsRadio(title, VisionPreferences.danmakuAlpha == alpha) { VisionPreferences.setDanmakuAlpha(context, alpha) }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("弹幕大小", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.selectableGroup()) {
+                    listOf(0.8f to "小", 1.0f to "标准 (推荐)", 1.25f to "大 (适合远距离电视)").forEach { (scale, title) ->
+                        SettingsRadio(title, VisionPreferences.danmakuTextScale == scale) { VisionPreferences.setDanmakuTextScale(context, scale) }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
                 Text("控制栏自动隐藏", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
                 Column(Modifier.selectableGroup()) {

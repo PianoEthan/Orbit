@@ -26,5 +26,5 @@ interface DanmakuPlayer {
 }
 
 fun createDanmakuPlayer(context: Context): DanmakuPlayer =
-    if (SharedPreferencesUtil.getString("danmaku_engine", "dfm") == "dfm")
+    if (SharedPreferencesUtil.getString("danmaku_engine", "dfmnext") == "dfm")
         DFMPlayer(context) else DFMNextPlayer(context)

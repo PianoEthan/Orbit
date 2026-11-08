@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 interface PlaybackGateway {
     suspend fun resolve(video: CoreVideo): CorePlayback
     suspend fun resolveQuality(video: CoreVideo, quality: Int): CorePlayback = resolve(video)
+    suspend fun resolveStream(video: CoreVideo, quality: Int, preferProgressive: Boolean = false): CorePlayback = resolveQuality(video, quality)
 }
 
 data class CorePlaybackQuality(val id: Int, val label: String)
@@ -27,22 +28,30 @@ class BilibiliPlaybackGateway(
     private val details: VideoGateway = BilibiliVideoGateway(client),
     private val cookieProvider: () -> String = { "" },
 ) : PlaybackGateway {
-    override suspend fun resolve(video: CoreVideo): CorePlayback = resolveQuality(video, 32)
+    override suspend fun resolve(video: CoreVideo): CorePlayback = resolveStream(video, 32, false)
 
-    override suspend fun resolveQuality(video: CoreVideo, quality: Int): CorePlayback {
+    override suspend fun resolveQuality(video: CoreVideo, quality: Int): CorePlayback = resolveStream(video, quality, false)
+
+    override suspend fun resolveStream(video: CoreVideo, quality: Int, preferProgressive: Boolean): CorePlayback {
         require(quality > 0)
         val resolved = if (video.cid > 0) video else details.loadDetails(video).video
         require(resolved.cid > 0) { "缺少视频分集信息" }
-        val url = client.signedBilibiliUrl("https://api.bilibili.com/x/player/wbi/playurl", mapOf(
+        val params = mutableMapOf(
             "bvid" to resolved.bvid,
             "cid" to resolved.cid.toString(),
             "qn" to quality.toString(),
-            "fnval" to "144",
             "fnver" to "0",
             "fourk" to "1",
             "high_quality" to "1",
             "gaia_source" to "pre-load",
-        ))
+        )
+        if (preferProgressive) {
+            params["fnval"] = "1"
+            params["platform"] = "html5"
+        } else {
+            params["fnval"] = "144"
+        }
+        val url = client.signedBilibiliUrl("https://api.bilibili.com/x/player/wbi/playurl", params)
         val data = client.getBilibiliJson(url, cookie = cookieProvider()).requireBilibiliData()
         val descriptions = data.get("accept_description")?.takeIf { it.isJsonArray }?.asJsonArray
         val qualities = data.get("accept_quality")?.takeIf { it.isJsonArray }?.asJsonArray?.mapIndexed { index, entry ->

@@ -104,6 +104,24 @@ class BilibiliPlaybackGatewayTest {
         assertEquals(listOf("https://cdn.test/480.m4s"), downgraded.urls)
     }
 
+    @Test fun progressiveStreamKeeps1080pRequestAndAudioVideoCombined() = runBlocking {
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val json = if (request.url.encodedPath.endsWith("nav")) nav else {
+                assertEquals("1", request.url.queryParameter("fnval"))
+                assertEquals("html5", request.url.queryParameter("platform"))
+                assertEquals("80", request.url.queryParameter("qn"))
+                """{"code":0,"data":{"quality":80,"durl":[{"url":"https://cdn.test/1080.mp4","length":120000,"backup_url":["https://backup.test/1080.mp4"]}]}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
+        }.build()
+        val result = BilibiliPlaybackGateway(client).resolveStream(video.copy(cid = 101), 80, true)
+        assertEquals(80, result.quality)
+        assertNull(result.audioUrl)
+        assertEquals(listOf(120000L), result.segmentDurationsMs)
+        assertEquals(listOf("https://backup.test/1080.mp4"), result.videoBackups)
+    }
+
     @Test
     fun rejectsPermissionFailureWithoutReturningPlayback() = runBlocking {
         val client = OkHttpClient.Builder().addInterceptor { chain ->

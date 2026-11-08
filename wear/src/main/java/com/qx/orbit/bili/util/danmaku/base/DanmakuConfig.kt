@@ -14,5 +14,5 @@ interface DanmakuConfig {
 }
 
 fun createDanmakuConfig(): DanmakuConfig =
-    if (SharedPreferencesUtil.getString("danmaku_engine", "dfm") == "dfm")
+    if (SharedPreferencesUtil.getString("danmaku_engine", "dfmnext") == "dfm")
         DFMConfig() else DFMNextConfig()
