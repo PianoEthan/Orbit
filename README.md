@@ -1,9 +1,12 @@
 # Orbit - Optimized Reincarnation of BiliTerminal
 
-> [!IMPORTANT]
-> **Notice：架构调整计划**
+> [!NOTE]
+> **多模块架构与多端适配**
 >
-> 本项目将调整为「统一 API 内核 + 多模块 UI」架构，分离底层接口能力与各 UI 模块。架构调整可能需要较长时间，期间可能较长时间不发布新的 Release，感谢理解与耐心等待。
+> 本项目已重构为「统一底层内核 + 多端 UI」架构：
+> - `:core`：跨端通用业务内核，承载账号凭据、WBI 签名、用户中心数据、动态、搜索及音视频解析等底层接口能力，无平台 UI 依赖；
+> - `:wear`：专为 Wear OS 手表设计的客户端界面与触觉扩展，使用 Wear Material 3；
+> - `:vision`：适配手机、平板与电视大屏的客户端（Orbit Vision），使用标准 Material 3 Expressive 设计，并支持遥控器 D-pad 与九键输入双模适配。
 
 哔哩终端的 Wear OS 重写项目。
 
@@ -42,12 +45,17 @@ git submodule update --init --recursive
 若您无法通过 SSH 克隆，建议自行修改 .git/config 在本地修改子模块地址为 HTTPS 或镜像。
 
 ```bash
-./gradlew assembleDebug
+# 构建手表端安装包 (Wear OS)
+./gradlew :wear:assembleLiteDebug
+./gradlew :wear:assembleFullDebug
+
+# 构建大屏与手机端安装包 (Orbit Vision)
+./gradlew :vision:assembleDebug
 ```
 
 ## 系统要求
 
-- 最低系统：Android 6.0+ (API 23+)。不保证全部功能正常使用。
+- 最低系统：Android 7.0+ (API 24+)。不保证全部功能正常使用。
 - 目标系统：Wear OS 6.0+ (API 36+)。
 - 推荐系统：Wear OS 3.0+ (API 30+)。
 - 最低内存(RAM)：1G
@@ -64,5 +72,6 @@ git submodule update --init --recursive
 - 本项目与 [BiliZepam](https://github.com/Re-BiliTerminal/BiliZepam-Compose) 没有任何关系。
 - 本项目与 [Re-WearBili](https://github.com/SpaceXC/Re-WearBili) 没有任何关系。
 
-## 许可证
+## 许可证与声明
 - 本项目使用 [GNU GPL-3.0 License](LICENSE) 开源。
+- 详细的用户权益、隐私安全、使用免责及开源规范，请查阅 [Orbit 用户协议与声明](STATEMENT.md)。

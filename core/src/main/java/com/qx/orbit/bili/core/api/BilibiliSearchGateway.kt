@@ -1,0 +1,90 @@
+package com.qx.orbit.bili.core.api
+
+import com.google.gson.JsonObject
+import java.net.URLEncoder
+import java.util.Locale
+import okhttp3.OkHttpClient
+import org.jsoup.Jsoup
+
+data class CoreHotword(
+    val keyword: String,
+    val showName: String = keyword,
+    val iconUrl: String = "",
+)
+
+fun interface SearchGateway {
+    suspend fun searchVideos(keyword: String, page: Int): List<CoreVideo>
+    suspend fun loadHotwords(): List<CoreHotword> = emptyList()
+    suspend fun loadSuggestions(keyword: String): List<String> = emptyList()
+}
+
+class BilibiliSearchGateway(private val client: OkHttpClient = OkHttpClient()) : SearchGateway {
+    override suspend fun searchVideos(keyword: String, page: Int): List<CoreVideo> {
+        require(keyword.isNotBlank()) { "请输入搜索内容" }
+        require(page > 0)
+        val url = client.signedBilibiliUrl("https://api.bilibili.com/x/web-interface/wbi/search/type", mapOf(
+            "keyword" to keyword.trim(), "page" to page.toString(), "search_type" to "video",
+        ))
+        val data = client.getBilibiliJson(url).requireBilibiliData()
+        val result = data.get("result")?.takeUnless { it.isJsonNull }?.asJsonArray ?: return emptyList()
+        return result.mapNotNull { entry ->
+            val item = entry.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            val bvid = item.text("bvid").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val title = Jsoup.parse(item.text("title")).text()
+            val pic = item.text("pic")
+            val cover = when {
+                pic.startsWith("//") -> "https:$pic"
+                pic.startsWith("http://") -> pic.replaceFirst("http://", "https://")
+                else -> pic
+            }
+            CoreVideo(
+                id = item.get("aid")?.takeUnless { it.isJsonNull }?.asLong ?: 0,
+                bvid = bvid,
+                title = title,
+                cover = cover,
+                author = item.text("author"),
+                cid = item.text("cid").toLongOrNull() ?: 0L,
+                durationText = item.text("duration").split(':').let { parts ->
+                    if (parts.size in 2..3 && parts.all { it.toIntOrNull() != null }) {
+                        parts.mapIndexed { index, part -> if (index == 0) part else part.padStart(2, '0') }.joinToString(":")
+                    } else item.text("duration")
+                },
+                viewText = item.text("play").let { value ->
+                    val count = value.toLongOrNull()
+                    when {
+                        count == null -> value
+                        count >= 100_000_000 -> String.format(Locale.ROOT, "%.1f亿", count / 100_000_000.0)
+                        count >= 10_000 -> String.format(Locale.ROOT, "%.1f万", count / 10_000.0)
+                        else -> count.toString()
+                    }
+                },
+            )
+        }.distinctBy { it.bvid }
+    }
+
+    override suspend fun loadHotwords(): List<CoreHotword> {
+        val json = client.getBilibiliJson("https://s.search.bilibili.com/main/hotword")
+        val list = json.getAsJsonArray("list") ?: return emptyList()
+        return list.mapNotNull { item ->
+            val obj = item.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            val keyword = obj.text("keyword").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val showName = obj.text("show_name").ifBlank { keyword }
+            val icon = obj.text("icon")
+            CoreHotword(keyword, showName, icon)
+        }
+    }
+
+    override suspend fun loadSuggestions(keyword: String): List<String> {
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val encoded = URLEncoder.encode(trimmed, "UTF-8")
+        val json = client.getBilibiliJson("https://s.search.bilibili.com/main/suggest?term=$encoded")
+        val result = json.getAsJsonObject("result") ?: return emptyList()
+        val tag = result.getAsJsonArray("tag") ?: return emptyList()
+        return tag.mapNotNull { item ->
+            item.takeIf { it.isJsonObject }?.asJsonObject?.text("value")?.takeIf { it.isNotBlank() }
+        }.distinct()
+    }
+}
+
+private fun JsonObject.text(name: String) = get(name)?.takeUnless { it.isJsonNull }?.asString.orEmpty()

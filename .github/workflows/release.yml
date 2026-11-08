@@ -53,8 +53,8 @@ jobs:
           printf '%s' "$ORBIT_KEYSTORE_BASE64" | base64 --decode > "$ORBIT_KEYSTORE_FILE"
           trap 'rm -f "$ORBIT_KEYSTORE_FILE"' EXIT
 
-          ./gradlew --no-daemon :app:assembleFullRelease
-          ./gradlew --no-daemon -Porbit.universalApkOnly=true :app:assembleLiteRelease
+          ./gradlew --no-daemon :wear:assembleFullRelease
+          ./gradlew --no-daemon -Porbit.universalApkOnly=true :wear:assembleLiteRelease
 
       - name: Publish GitHub Release
         shell: bash
@@ -64,11 +64,11 @@ jobs:
           set -euo pipefail
 
           mapfile -d '' lite_apks < <(
-            find app/build/outputs/apk/lite/release \
+            find wear/build/outputs/apk/lite/release \
               -type f -name '*-universal-release.apk' -print0 | sort -z
           )
           mapfile -d '' full_apks < <(
-            find app/build/outputs/apk/full/release \
+            find wear/build/outputs/apk/full/release \
               -type f -name '*.apk' -print0 | sort -z
           )
 

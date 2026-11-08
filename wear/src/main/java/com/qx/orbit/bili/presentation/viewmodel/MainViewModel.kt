@@ -2,17 +2,16 @@ package com.qx.orbit.bili.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.qx.orbit.bili.data.api.RecommendApi
 import com.qx.orbit.bili.data.model.VideoCard
-import com.qx.orbit.bili.data.api.UserInfoApi
 import com.qx.orbit.bili.data.api.UserInfoApi.NavInfoData
+import com.qx.orbit.bili.data.repository.DefaultHomeRepository
+import com.qx.orbit.bili.data.repository.HomeFeed
+import com.qx.orbit.bili.data.repository.HomeRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.qx.orbit.bili.data.remote.CookieManager
-import com.qx.orbit.bili.data.api.CookiesApi
-import com.qx.orbit.bili.data.api.CookieRefreshApi
 
 enum class TabMode(val title: String) {
     RECOMMEND("推荐"),
@@ -20,7 +19,9 @@ enum class TabMode(val title: String) {
     DYNAMIC("动态")
 }
 
-class MainViewModel : ViewModel() {
+class MainViewModel(
+    private val repository: HomeRepository = DefaultHomeRepository()
+) : ViewModel() {
 
     private val _currentTab = MutableStateFlow(TabMode.RECOMMEND)
     val currentTab: StateFlow<TabMode> = _currentTab.asStateFlow()
@@ -46,12 +47,8 @@ class MainViewModel : ViewModel() {
     init {
         viewModelScope.launch {
             try {
-                if (!CookieManager.getCookie().contains("buvid3")) {
-                    CookiesApi.checkCookies()
-                }
-                if (CookieManager.getCookie().contains("SESSDATA")) {
-                    launch { CookieRefreshApi.doCookieRefresh(auto = true) }
-                }
+                repository.initializeSession()
+                launch { repository.refreshSession() }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -63,7 +60,7 @@ class MainViewModel : ViewModel() {
     fun fetchNavInfo() {
         viewModelScope.launch {
             try {
-                val info = UserInfoApi.getNavInfo()
+                val info = repository.loadAccount()
                 _navInfo.value = info
                 info?.takeIf { it.isLogin && it.mid > 0L }?.let {
                     CookieManager.saveCurrentAccount(
@@ -101,8 +98,8 @@ class MainViewModel : ViewModel() {
                 }
 
                 val newItems = when (_currentTab.value) {
-                    TabMode.RECOMMEND -> RecommendApi.getRecommend(recommendPage++)
-                    TabMode.POPULAR -> RecommendApi.getPopular(popularPage++)
+                    TabMode.RECOMMEND -> repository.loadFeed(HomeFeed.RECOMMEND, recommendPage++)
+                    TabMode.POPULAR -> repository.loadFeed(HomeFeed.POPULAR, popularPage++)
                     TabMode.DYNAMIC -> emptyList()
                 }
 
@@ -127,10 +124,7 @@ class MainViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                RecommendApi.dislike(video.aid)
-                if (video.mid > 0) {
-                    UserInfoApi.blockUser(video.mid)
-                }
+                repository.removeVideo(video)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -154,8 +148,8 @@ class MainViewModel : ViewModel() {
                 else popularPage = 1
 
                 val newItems = when (_currentTab.value) {
-                    TabMode.RECOMMEND -> RecommendApi.getRecommend(recommendPage++)
-                    TabMode.POPULAR -> RecommendApi.getPopular(popularPage++)
+                    TabMode.RECOMMEND -> repository.loadFeed(HomeFeed.RECOMMEND, recommendPage++)
+                    TabMode.POPULAR -> repository.loadFeed(HomeFeed.POPULAR, popularPage++)
                     TabMode.DYNAMIC -> emptyList()
                 }
 

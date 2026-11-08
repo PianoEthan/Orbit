@@ -8,8 +8,11 @@
 .externalNativeBuild
 .cxx
 local.properties
-app/build/
-app/release/
+core/build/
+vision/build/
+vision/release/
+wear/build/
+wear/release/
 *.hprof
 /.agents/AGENTS.md
 /.kotlin/

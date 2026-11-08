@@ -42,7 +42,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Orbit"
-include(":app")
+include(":core")
+include(":wear")
 include(":ijkplayer-java")
 include(":DFMNext")
 include(":DanmakuFlameMaster")

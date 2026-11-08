@@ -29,7 +29,7 @@ android {
 
     defaultConfig {
         applicationId = "com.qx.orbit.bili"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 36
         versionCode = 524
         versionName = "0.5.24-Alpha"
@@ -107,6 +107,7 @@ androidComponents {
 
 
 dependencies {
+    implementation(project(":core"))
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
     implementation(libs.compose.foundation)

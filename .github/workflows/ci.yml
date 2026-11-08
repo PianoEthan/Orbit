@@ -34,10 +34,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Test shared core and build Vision
+        run: |
+          ./gradlew --no-daemon \
+            :core:testDebugUnitTest \
+            :vision:testDebugUnitTest \
+            :vision:assembleDebug \
+            :vision:lintDebug
+
       - name: Compile lite and full release variants
         run: |
           ./gradlew --no-daemon \
-            :app:compileLiteReleaseKotlin \
-            :app:compileFullReleaseKotlin \
-            :app:mergeLiteReleaseNativeLibs \
-            :app:mergeFullReleaseNativeLibs
+            :wear:compileLiteReleaseKotlin \
+            :wear:compileFullReleaseKotlin \
+            :wear:mergeLiteReleaseNativeLibs \
+            :wear:mergeFullReleaseNativeLibs

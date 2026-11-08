@@ -2,19 +2,21 @@
 agp = "9.3.3"
 appcompat = "1.8.0"
 coilCompose = "2.7.0"
-composeNavigation = "1.8.0-alpha02"
+composeNavigation = "1.8.0-alpha03"
 core = "3.5.4"
 dec = "0.1.2"
 eventbus = "3.3.1"
-jsoup = "1.23.2"
+jsoup = "1.24.1"
 lifecycleViewmodelCompose = "2.11.0"
 materialIconsExtended = "1.7.8"
 photoview = "2.3.0"
 kotlin = "2.4.21"
 composeBom = "2026.09.00"
-composeMaterial3 = "1.8.0-alpha02"
-composeFoundation = "1.8.0-alpha02"
-composeUiTooling = "1.8.0-alpha02"
+visionMaterial3 = "1.5.0-rc01"
+visionNavigation = "2.10.2"
+composeMaterial3 = "1.8.0-alpha03"
+composeFoundation = "1.8.0-alpha03"
+composeUiTooling = "1.8.0-alpha03"
 protobufJavalite = "4.36.2"
 recyclerview = "1.4.0"
 wearToolingPreview = "1.0.0"
@@ -41,6 +43,8 @@ jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtended" }
 material3 = { module = "androidx.compose.material3:material3" }
+vision-material3 = { module = "androidx.compose.material3:material3", version.ref = "visionMaterial3" }
+vision-navigation = { module = "androidx.navigation:navigation-compose", version.ref = "visionNavigation" }
 photoview = { module = "com.github.chrisbanes:PhotoView", version.ref = "photoview" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobufJavalite" }
