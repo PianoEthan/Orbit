@@ -50,6 +50,10 @@ class VisionPlayerScreenTest {
 
         compose.setContent {
             val episodesModel = remember { VisionPlayerEpisodesViewModel(detailsGateway) }
+            val subtitleModel = remember { VisionSubtitleViewModel(object : SubtitleGateway {
+                override suspend fun loadTracks(video: CoreVideo, cookie: String) = listOf(CoreSubtitleTrack(1, "zh", "中文字幕", "https://aisubtitle.hdslb.com/test", false))
+                override suspend fun loadCues(track: CoreSubtitleTrack, cookie: String) = listOf(CoreSubtitleCue(0, 10000, "当前播放字幕"))
+            }) }
             VisionTheme {
                 VisionPlayerScreen(
                     video = video,
@@ -57,6 +61,7 @@ class VisionPlayerScreenTest {
                     gateway = gateway,
                     episodesModel = episodesModel,
                     danmakuGateway = DanmakuGateway { null },
+                    subtitleModel = subtitleModel,
                     playerFactory = { _, _ -> object : VisionPlayerAdapter {
                         override fun bindSurfaceView(surfaceView: SurfaceView) = Unit
                         override fun prepare(playback: CorePlayback, segment: Int, positionMs: Long) = Unit
@@ -96,6 +101,12 @@ class VisionPlayerScreenTest {
         compose.onNodeWithText("1.5×").performClick()
         compose.onNodeWithText("播放速度").assertDoesNotExist()
         compose.onNodeWithText("1.5×").assertIsDisplayed()
+
+        compose.onNodeWithText("CC 字幕").performClick()
+        compose.onNodeWithText("中文字幕").performClick()
+        compose.onNodeWithText("当前播放字幕").assertIsDisplayed()
+        compose.onNodeWithText("放大视频").performClick()
+        compose.onNodeWithText("还原视频").performClick()
 
         // Verify episode picker dialog
         compose.onNodeWithText("选集 P1").assertIsDisplayed().performClick()

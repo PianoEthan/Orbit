@@ -59,6 +59,7 @@ fun VisionHomeScreen(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenUserCenter: () -> Unit,
+    onOpenSeasons: () -> Unit = {},
 ) {
     val feed by viewModel.feed.collectAsState()
     val revision by viewModel.feedRevision.collectAsState()
@@ -110,6 +111,7 @@ fun VisionHomeScreen(
                                 Tab(feed == source, onClick = { viewModel.selectFeed(source) }, text = { Text(title, style = MaterialTheme.typography.titleMedium) })
                             }
                         }
+                        TextButton(onClick = onOpenSeasons, modifier = Modifier.heightIn(min = 48.dp)) { Text("番剧/影视") }
                         IconButton(onClick = viewModel::refresh) { Icon(Icons.Default.Refresh, "刷新内容") }
                     }
                     VisionVideoFeed(viewModel, onVideoClick, Modifier.weight(1f), source = "${feed.name}:$revision")

@@ -4,6 +4,7 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.qx.orbit.bili.core.api.BilibiliHistoryReporter
+import com.qx.orbit.bili.core.api.CoreVideo
 import com.qx.orbit.bili.core.api.HistoryReporter
 import com.qx.orbit.bili.core.api.parseCookieValue
 import kotlinx.coroutines.CancellationException
@@ -14,7 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
-internal data class VisionHistoryProgress(val aid: Long, val cid: Long, val seconds: Long)
+internal data class VisionHistoryProgress(val aid: Long, val cid: Long, val seconds: Long, val episodeId: Long = 0L, val seasonId: Long = 0L)
 
 internal class VisionPlaybackHistoryViewModel(
     private val reporter: HistoryReporter = BilibiliHistoryReporter(),
@@ -75,7 +76,11 @@ internal class VisionPlaybackHistoryViewModel(
                 val key = pending.keys.first()
                 val next = pending.remove(key) ?: continue
                 try {
-                    withTimeout(10_000) { reporter.report(next.aid, next.cid, next.seconds, session, parseCookieValue(session, "bili_jct")) }
+                    withTimeout(10_000) {
+                        val csrf = parseCookieValue(session, "bili_jct")
+                        if (next.episodeId > 0) reporter.reportEpisode(CoreVideo(next.aid, "", "", "", "", cid = next.cid, episodeId = next.episodeId, seasonId = next.seasonId), next.seconds, session, csrf)
+                        else reporter.report(next.aid, next.cid, next.seconds, session, csrf)
+                    }
                     if (request == generation) _syncFailed.value = false
                 } catch (_: TimeoutCancellationException) {
                     if (request == generation) _syncFailed.value = true

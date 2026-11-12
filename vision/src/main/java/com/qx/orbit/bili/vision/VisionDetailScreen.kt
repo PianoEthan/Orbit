@@ -45,7 +45,11 @@ fun VisionDetailScreen(
     onComposeReply: (Long, Long, Long) -> Unit = { _, _, _ -> },
     replyRevision: Int = 0,
     onCover: (String) -> Unit = {},
+    onCreator: (Long) -> Unit = {},
+    onVideo: (CoreVideo) -> Unit = onPlay,
+    relatedModel: VisionRelatedViewModel = viewModel(),
 ) {
+    val related by relatedModel.state.collectAsState()
     val details by viewModel.details.collectAsState()
     val loading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -61,6 +65,7 @@ fun VisionDetailScreen(
     val cookie = VisionUserSession.cookie
     LaunchedEffect(cookie) { viewModel.setAccount(cookie) }
     LaunchedEffect(video.bvid) { viewModel.load(video) }
+    LaunchedEffect(video.bvid, cookie) { relatedModel.load(video.bvid, cookie) }
     LaunchedEffect(replyRevision) { if (replyRevision > 0) viewModel.refreshReplies() }
     LaunchedEffect(video.bvid, inputMode.inputMode, loading) {
         if (!loading && details != null && inputMode.inputMode == InputMode.Keyboard) {
@@ -90,7 +95,11 @@ fun VisionDetailScreen(
                         item(key = "information") {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(display.title, style = MaterialTheme.typography.headlineSmall)
-                                Text(display.author, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if ((current?.ownerMid ?: 0L) > 0L) {
+                                    TextButton(onClick = { current?.ownerMid?.let(onCreator) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                        Text("${display.author} · 查看 UP 主空间", style = MaterialTheme.typography.titleMedium)
+                                    }
+                                } else Text(display.author, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 current?.let {
                                     Text("播放 ${it.viewCount} · 点赞 ${it.likeCount} · 评论 ${it.replyCount}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -123,8 +132,26 @@ fun VisionDetailScreen(
                             }
                         }
                         when (tab) {
-                            0 -> item(key = "description") {
-                                Text(current?.description?.ifBlank { "暂无简介" } ?: "正在加载简介", style = MaterialTheme.typography.bodyLarge)
+                            0 -> {
+                                item(key = "description") { Text(current?.description?.ifBlank { "暂无简介" } ?: "正在加载简介", style = MaterialTheme.typography.bodyLarge) }
+                                if (!current?.collectionVideos.isNullOrEmpty()) {
+                                    item(key = "collection-title") { Text("合集 · ${current?.collectionTitle.orEmpty()}", style = MaterialTheme.typography.titleLarge) }
+                                    items(current?.collectionVideos.orEmpty(), key = { "collection-${it.bvid}" }) { item ->
+                                        FilledTonalButton(onClick = { onVideo(item) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text(item.title) }
+                                    }
+                                }
+                                item(key = "related-title") { Text("相关推荐", style = MaterialTheme.typography.titleLarge) }
+                                items(related.videos, key = { "related-${it.bvid}" }) { item -> VisionExpressiveVideoCard(item, onClick = { onVideo(item) }) }
+                                item(key = "related-status") {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (related.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                                        related.error?.let {
+                                            Text(it, color = MaterialTheme.colorScheme.error)
+                                            FilledTonalButton(onClick = { relatedModel.load(video.bvid, cookie) }) { Text("重试相关推荐") }
+                                        }
+                                        if (!related.loading && related.error == null && related.videos.isEmpty()) Text("暂无相关推荐")
+                                    }
+                                }
                             }
                             1 -> {
                                 if (current?.pages.isNullOrEmpty() && !loading) item { Text("暂无选集") }

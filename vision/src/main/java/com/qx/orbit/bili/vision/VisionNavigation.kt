@@ -56,6 +56,7 @@ internal fun VisionNavigation() {
                     onOpenSearch = { controller.navigate("search") { launchSingleTop = true } },
                     onOpenSettings = { controller.navigate("settings") { launchSingleTop = true } },
                     onOpenUserCenter = { controller.navigate("user") { launchSingleTop = true } },
+                    onOpenSeasons = { controller.navigate("seasons") { launchSingleTop = true } },
                 )
             }
             composable("search") {
@@ -82,6 +83,22 @@ internal fun VisionNavigation() {
                     entry.savedStateHandle.get<ArrayList<String>>("imageSources") ?: ArrayList(controller.previousBackStackEntry?.savedStateHandle?.get<ArrayList<String>>("imageSources").orEmpty()).also { entry.savedStateHandle["imageSources"] = it }
                 }
                 VisionImageScreen(sources, requireNotNull(entry.arguments).getInt("index"), onBack = { controller.popBackStack() })
+            }
+            composable("creator/{mid}", arguments = listOf(navArgument("mid") { type = NavType.LongType })) { entry ->
+                VisionCreatorScreen(requireNotNull(entry.arguments).getLong("mid"),
+                    onBack = { controller.popBackStack() }, onLogin = { controller.navigate("login") { launchSingleTop = true } },
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } })
+            }
+            composable("seasons") {
+                VisionSeasonCatalogScreen(onBack = { controller.popBackStack() },
+                    onSeason = { controller.navigate("season/$it") { launchSingleTop = true } },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } })
+            }
+            composable("season/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+                VisionSeasonDetailScreen(requireNotNull(entry.arguments).getLong("id"), onBack = { controller.popBackStack() },
+                    onPlay = { controller.navigate(videoRoute("player", it)) { launchSingleTop = true } },
+                    onSeason = { controller.navigate("season/$it") { launchSingleTop = true } },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } })
             }
             composable("login") {
                 VisionLoginScreen(
@@ -126,7 +143,7 @@ internal fun VisionNavigation() {
             }
             listOf("detail", "player").forEach { screen ->
                 composable(
-                    "$screen/{bvid}?cid={cid}&title={title}&cover={cover}&author={author}&aid={aid}&position={position}",
+                    "$screen/{bvid}?cid={cid}&title={title}&cover={cover}&author={author}&aid={aid}&position={position}&episode={episode}&season={season}",
                     arguments = listOf(
                         navArgument("bvid") { type = NavType.StringType },
                         navArgument("cid") { type = NavType.LongType; defaultValue = 0L },
@@ -135,6 +152,8 @@ internal fun VisionNavigation() {
                         navArgument("author") { type = NavType.StringType; defaultValue = "" },
                         navArgument("aid") { type = NavType.LongType; defaultValue = 0L },
                         navArgument("position") { type = NavType.LongType; defaultValue = 0L },
+                        navArgument("episode") { type = NavType.LongType; defaultValue = 0L },
+                        navArgument("season") { type = NavType.LongType; defaultValue = 0L },
                     ),
                 ) { entry ->
                     val args = requireNotNull(entry.arguments)
@@ -142,6 +161,7 @@ internal fun VisionNavigation() {
                         id = args.getLong("aid"), bvid = requireNotNull(args.getString("bvid")), cid = args.getLong("cid"),
                         title = args.getString("title").orEmpty(), cover = args.getString("cover").orEmpty(),
                         author = args.getString("author").orEmpty(), startPositionMs = args.getLong("position").coerceAtLeast(0),
+                        episodeId = args.getLong("episode"), seasonId = args.getLong("season"),
                     )
                     val revision by entry.savedStateHandle.getStateFlow("replyRevision", 0).collectAsState()
                     if (screen == "detail") {
@@ -149,7 +169,9 @@ internal fun VisionNavigation() {
                             controller.navigate(videoRoute("player", it)) { launchSingleTop = true }
                         }, viewModel = viewModel(), onLogin = { controller.navigate("login") { launchSingleTop = true } },
                             onReplyThread = { aid, root -> controller.navigate("replies/$aid/$root") { launchSingleTop = true } },
-                            onComposeReply = { aid, root, parent -> controller.navigate("composeReply/$aid/$root/$parent") { launchSingleTop = true } }, replyRevision = revision, onCover = { openImages(listOf(it), 0) })
+                            onComposeReply = { aid, root, parent -> controller.navigate("composeReply/$aid/$root/$parent") { launchSingleTop = true } }, replyRevision = revision, onCover = { openImages(listOf(it), 0) },
+                            onCreator = { controller.navigate("creator/$it") { launchSingleTop = true } },
+                            onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } })
                     } else VisionPlayerScreen(video, onBack = { controller.popBackStack() }, historyModel = historyModel)
                 }
             }
@@ -158,4 +180,4 @@ internal fun VisionNavigation() {
 }
 
 private fun videoRoute(screen: String, video: CoreVideo): String =
-    "$screen/${Uri.encode(video.bvid)}?cid=${video.cid}&title=${Uri.encode(video.title)}&cover=${Uri.encode(video.cover)}&author=${Uri.encode(video.author)}&aid=${video.id}&position=${video.startPositionMs}"
+    "$screen/${Uri.encode(video.bvid)}?cid=${video.cid}&title=${Uri.encode(video.title)}&cover=${Uri.encode(video.cover)}&author=${Uri.encode(video.author)}&aid=${video.id}&position=${video.startPositionMs}&episode=${video.episodeId}&season=${video.seasonId}"

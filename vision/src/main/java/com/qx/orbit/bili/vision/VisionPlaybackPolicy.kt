@@ -1,5 +1,13 @@
 package com.qx.orbit.bili.vision
 
+internal enum class PlaybackCompletion { STOP, REPEAT, NEXT }
+
+internal fun playbackCompletion(loop: Boolean, autoNext: Boolean, currentCid: Long, cids: List<Long>): PlaybackCompletion = when {
+    loop -> PlaybackCompletion.REPEAT
+    autoNext && cids.indexOf(currentCid).let { it >= 0 && it < cids.lastIndex } -> PlaybackCompletion.NEXT
+    else -> PlaybackCompletion.STOP
+}
+
 internal val visionPlaybackSpeeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
 internal fun supportedPlaybackSpeed(speed: Float): Float = speed.takeIf { it in visionPlaybackSpeeds } ?: 1f

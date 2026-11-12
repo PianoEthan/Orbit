@@ -33,12 +33,21 @@ object VisionPreferences {
         private set
     var danmakuTextScale by mutableFloatStateOf(1.0f)
         private set
+    var loopPlayback by mutableStateOf(false)
+        private set
+    var autoNextPart by mutableStateOf(false)
+        private set
+    var videoZoomEnabled by mutableStateOf(true)
+        private set
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         themeMode = runCatching { VisionThemeMode.valueOf(prefs.getString("theme_mode", VisionThemeMode.DARK.name).orEmpty()) }.getOrDefault(VisionThemeMode.DARK)
         dynamicColor = prefs.getBoolean("dynamic_color", false)
         controlsTimeoutMs = prefs.getLong("controls_timeout", 4500L).takeIf { it in listOf(0L, 4500L, 8000L) } ?: 4500L
+        loopPlayback = prefs.getBoolean("loop_playback", false)
+        autoNextPart = prefs.getBoolean("auto_next_part", false)
+        videoZoomEnabled = prefs.getBoolean("video_zoom", true)
         preferNineKey = prefs.getBoolean("nine_key", false)
         playerEngine = runCatching { VisionPlayerEngine.valueOf(prefs.getString("player_engine", VisionPlayerEngine.IJK.name).orEmpty()) }.getOrDefault(VisionPlayerEngine.IJK)
         danmakuEnabled = prefs.getBoolean("danmaku_enabled", true)
@@ -75,6 +84,18 @@ object VisionPreferences {
         val bounded = alpha.coerceIn(0.2f, 1f)
         danmakuAlpha = bounded
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putFloat("danmaku_alpha", bounded).apply()
+    }
+    fun setLoopPlayback(context: Context, enabled: Boolean) {
+        loopPlayback = enabled
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean("loop_playback", enabled).apply()
+    }
+    fun setAutoNextPart(context: Context, enabled: Boolean) {
+        autoNextPart = enabled
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean("auto_next_part", enabled).apply()
+    }
+    fun setVideoZoomEnabled(context: Context, enabled: Boolean) {
+        videoZoomEnabled = enabled
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean("video_zoom", enabled).apply()
     }
     fun setDanmakuTextScale(context: Context, scale: Float) {
         val bounded = scale.coerceIn(0.5f, 2.0f)

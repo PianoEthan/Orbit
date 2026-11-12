@@ -114,6 +114,10 @@ internal fun VisionSettingsSectionScreen(section: VisionSettingsSection, onBack:
                     }
                 }
                 Spacer(Modifier.height(24.dp))
+                SettingsToggle("循环播放", "当前视频播放结束后从头播放，优先于自动下一 P。", VisionPreferences.loopPlayback) { VisionPreferences.setLoopPlayback(context, it) }
+                SettingsToggle("自动播放下一 P", "当前分 P 播放结束后继续下一 P。", VisionPreferences.autoNextPart) { VisionPreferences.setAutoNextPart(context, it) }
+                SettingsToggle("视频缩放与平移", "双指捏合缩放、拖动平移；也可使用播放器中的缩放按钮。", VisionPreferences.videoZoomEnabled) { VisionPreferences.setVideoZoomEnabled(context, it) }
+                Spacer(Modifier.height(24.dp))
                 Text("弹幕显示设置", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
                 SettingsToggle("启用弹幕", "播放视频时默认展示弹幕（使用 :DFMNext 引擎）", VisionPreferences.danmakuEnabled) { VisionPreferences.setDanmakuEnabled(context, it) }

@@ -1,6 +1,8 @@
 package com.qx.orbit.bili.core.api
 
 import com.google.gson.JsonObject
+import kotlinx.coroutines.CancellationException
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 
 interface PlaybackGateway {
@@ -33,6 +35,10 @@ class BilibiliPlaybackGateway(
     override suspend fun resolveQuality(video: CoreVideo, quality: Int): CorePlayback = resolveStream(video, quality, false)
 
     override suspend fun resolveStream(video: CoreVideo, quality: Int, preferProgressive: Boolean): CorePlayback {
+        return resolveStreamForSession(video, quality, preferProgressive, cookieProvider())
+    }
+
+    private suspend fun resolveStreamForSession(video: CoreVideo, quality: Int, preferProgressive: Boolean, cookie: String): CorePlayback {
         require(quality > 0)
         val resolved = if (video.cid > 0) video else details.loadDetails(video).video
         require(resolved.cid > 0) { "缺少视频分集信息" }
@@ -51,8 +57,21 @@ class BilibiliPlaybackGateway(
         } else {
             params["fnval"] = "144"
         }
-        val url = client.signedBilibiliUrl("https://api.bilibili.com/x/player/wbi/playurl", params)
-        val data = client.getBilibiliJson(url, cookie = cookieProvider()).requireBilibiliData()
+        val data = if (resolved.episodeId > 0L) {
+            params.remove("bvid")
+            params["ep_id"] = resolved.episodeId.toString()
+            params["avid"] = resolved.id.toString()
+            params.remove("platform")
+            val url = "https://api.bilibili.com/pgc/player/web/playurl".toHttpUrl().newBuilder()
+                .apply { params.forEach { (key, value) -> addQueryParameter(key, value) } }.build()
+            val response = client.getBilibiliJson(url.toString(), cookie)
+            check(response.get("code")?.asInt == 0) { response.get("message")?.asString ?: "番剧播放解析失败" }
+            checkNotNull(response.get("result")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: response.get("data")?.takeIf { it.isJsonObject }?.asJsonObject) { "番剧播放数据为空" }
+        } else {
+            val url = client.signedBilibiliUrl("https://api.bilibili.com/x/player/wbi/playurl", params)
+            client.getBilibiliJson(url, cookie = cookie).requireBilibiliData()
+        }
         val descriptions = data.get("accept_description")?.takeIf { it.isJsonArray }?.asJsonArray
         val qualities = data.get("accept_quality")?.takeIf { it.isJsonArray }?.asJsonArray?.mapIndexed { index, entry ->
             val id = entry.asInt
@@ -99,7 +118,18 @@ class BilibiliPlaybackGateway(
         val available = if (qualities.any { it.id == actualQuality }) qualities
             else qualities + CorePlaybackQuality(actualQuality, "画质 $actualQuality")
         val durations = if (audioUrl == null) data.objects("durl").map { it.get("length")?.takeUnless { value -> value.isJsonNull }?.asLong ?: 0L } else emptyList()
-        return CorePlayback(resolved, urls, actualQuality, available, audioUrl, videoBackups, audioBackups, segmentBackups, durations)
+        val playback = CorePlayback(resolved, urls, actualQuality, available, audioUrl, videoBackups, audioBackups, segmentBackups, durations)
+        if (!preferProgressive || audioUrl != null) return playback
+        val alternative = try {
+            resolveStreamForSession(resolved, quality, false, cookie)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return playback
+        }
+        val mergedQualities = (alternative.qualities + playback.qualities).distinctBy { it.id }.sortedByDescending { it.id }
+        return if (actualQuality < quality && alternative.quality > actualQuality) alternative.copy(qualities = mergedQualities)
+            else playback.copy(qualities = mergedQualities)
     }
 
     private fun JsonObject.objects(key: String): List<JsonObject> =

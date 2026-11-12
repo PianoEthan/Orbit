@@ -44,6 +44,10 @@ data class CoreVideoDetails(
     val likeCount: Long,
     val replyCount: Long,
     val pages: List<CoreVideoPage> = emptyList(),
+    val ownerMid: Long = 0L,
+    val ownerAvatar: String = "",
+    val collectionTitle: String = "",
+    val collectionVideos: List<CoreVideo> = emptyList(),
 )
 
 data class CoreTripleResult(val liked: Boolean, val coined: Boolean, val favorited: Boolean, val coinCount: Int)
@@ -95,6 +99,15 @@ class BilibiliVideoGateway(
             author = owner?.string("name").orEmpty().ifBlank { video.author },
             cid = data.long("cid") ?: video.cid,
         )
+        val season = data.get("ugc_season")?.takeIf { it.isJsonObject }?.asJsonObject
+        val collection = season?.get("sections")?.takeIf { it.isJsonArray }?.asJsonArray?.flatMap { section ->
+            section.takeIf { it.isJsonObject }?.asJsonObject?.get("episodes")?.takeIf { it.isJsonArray }?.asJsonArray?.mapNotNull { entry ->
+                val episode = entry.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+                val archive = episode.get("arc")?.takeIf { it.isJsonObject }?.asJsonObject?.deepCopy() ?: JsonObject()
+                listOf("aid", "bvid", "cid", "title").forEach { key -> if (!archive.has(key)) episode.get(key)?.let { archive.add(key, it) } }
+                archive.coreArchiveVideo()
+            }.orEmpty()
+        }.orEmpty().distinctBy { it.bvid }
         return CoreVideoDetails(
             video = resolved,
             description = data.string("desc").orEmpty(),
@@ -103,6 +116,10 @@ class BilibiliVideoGateway(
             likeCount = stat?.long("like") ?: 0,
             replyCount = stat?.long("reply") ?: 0,
             pages = pages,
+            ownerMid = owner?.long("mid") ?: 0L,
+            ownerAvatar = normalizeUrl(owner?.string("face")),
+            collectionTitle = season?.string("title").orEmpty(),
+            collectionVideos = collection,
         )
     }
 

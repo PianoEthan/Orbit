@@ -6,6 +6,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VisionPlaybackPolicyTest {
+    @Test fun completionStopsAtLastPartAndLoopTakesPriority() {
+        assertEquals(PlaybackCompletion.REPEAT, playbackCompletion(true, true, 101, listOf(101, 102)))
+        assertEquals(PlaybackCompletion.NEXT, playbackCompletion(false, true, 101, listOf(101, 102)))
+        assertEquals(PlaybackCompletion.STOP, playbackCompletion(false, true, 102, listOf(101, 102)))
+        assertEquals(PlaybackCompletion.STOP, playbackCompletion(false, true, 999, listOf(101, 102)))
+        assertEquals(PlaybackCompletion.STOP, playbackCompletion(false, false, 101, listOf(101, 102)))
+    }
     @Test fun speedOptionsMatchSupportedPlaybackRangeAndRejectInvalidRestoredValues() {
         assertEquals(listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f), visionPlaybackSpeeds)
         visionPlaybackSpeeds.forEach { assertEquals(it, supportedPlaybackSpeed(it)) }

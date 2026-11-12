@@ -5,6 +5,7 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -20,6 +21,18 @@ internal suspend fun OkHttpClient.getBilibiliJson(url: String, cookie: String = 
         .header("User-Agent", BILIBILI_USER_AGENT)
         .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
         .build()
+    return executeBilibiliJson(request)
+}
+
+internal suspend fun OkHttpClient.postBilibiliForm(url: String, cookie: String, fields: Map<String, String>): JsonObject {
+    val form = FormBody.Builder().apply { fields.forEach { (key, value) -> add(key, value) } }.build()
+    val request = Request.Builder().url(url).post(form)
+        .header("Referer", "https://www.bilibili.com/")
+        .header("User-Agent", BILIBILI_USER_AGENT).header("Cookie", cookie).build()
+    return newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build().executeBilibiliJson(request)
+}
+
+private suspend fun OkHttpClient.executeBilibiliJson(request: Request): JsonObject {
     val body = suspendCancellableCoroutine<String> { continuation ->
         val call = newCall(request)
         continuation.invokeOnCancellation { call.cancel() }

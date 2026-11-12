@@ -51,7 +51,7 @@ internal fun effectiveVisionEngine(requested: VisionPlayerEngine, abis: List<Str
 
 internal fun createVisionPlayerAdapter(context: Context, engine: VisionPlayerEngine): VisionPlayerAdapter =
     when (engine) {
-        VisionPlayerEngine.IJK -> VisionIjkPlayerAdapter()
+        VisionPlayerEngine.IJK -> VisionAdaptivePlayerAdapter(context)
         VisionPlayerEngine.MEDIA3 -> VisionMedia3PlayerAdapter(context)
     }
 

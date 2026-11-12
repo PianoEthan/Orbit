@@ -25,4 +25,6 @@ data class CoreVideo(
     val durationText: String = "",
     val viewText: String = "",
     val startPositionMs: Long = 0L,
+    val episodeId: Long = 0L,
+    val seasonId: Long = 0L,
 )

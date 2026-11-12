@@ -108,8 +108,8 @@ class BilibiliPlaybackGatewayTest {
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
             val json = if (request.url.encodedPath.endsWith("nav")) nav else {
-                assertEquals("1", request.url.queryParameter("fnval"))
-                assertEquals("html5", request.url.queryParameter("platform"))
+                assertTrue(request.url.queryParameter("fnval") in listOf("1", "144"))
+                if (request.url.queryParameter("fnval") == "1") assertEquals("html5", request.url.queryParameter("platform"))
                 assertEquals("80", request.url.queryParameter("qn"))
                 """{"code":0,"data":{"quality":80,"durl":[{"url":"https://cdn.test/1080.mp4","length":120000,"backup_url":["https://backup.test/1080.mp4"]}]}}"""
             }

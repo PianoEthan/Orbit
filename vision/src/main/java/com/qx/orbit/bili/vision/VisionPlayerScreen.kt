@@ -70,7 +70,12 @@ internal fun VisionPlayerScreen(
     episodesModel: VisionPlayerEpisodesViewModel = viewModel(),
     danmakuGateway: DanmakuGateway = remember { BilibiliDanmakuGateway(cookieProvider = { VisionUserSession.cookie }) },
     playerFactory: (Context, VisionPlayerEngine) -> VisionPlayerAdapter = ::createVisionPlayerAdapter,
+    subtitleModel: VisionSubtitleViewModel = viewModel(),
 ) {
+    val subtitles by subtitleModel.state.collectAsState()
+    var choosingSubtitle by remember { mutableStateOf(false) }
+    var videoZoomed by rememberSaveable(video.bvid, video.cid) { mutableStateOf(false) }
+    var elapsedMs by remember { mutableLongStateOf(0L) }
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val inputMode = LocalInputModeManager.current
@@ -78,7 +83,7 @@ internal fun VisionPlayerScreen(
     LaunchedEffect(video.bvid) { episodesModel.open(video) }
     var selectedCid by rememberSaveable(video.bvid, video.cid) { mutableLongStateOf(video.cid) }
     var activeCid by rememberSaveable(video.bvid, video.cid) { mutableLongStateOf(video.cid) }
-    val targetVideo = video.copy(cid = selectedCid)
+    val targetVideo = if (video.seasonId > 0 && selectedCid != video.cid) episodesModel.episodeVideo(selectedCid) ?: video.copy(cid = selectedCid) else video.copy(cid = selectedCid)
     var requestedQuality by rememberSaveable(video.bvid) { mutableIntStateOf(32) }
     var choosingQuality by remember { mutableStateOf(false) }
     var choosingSpeed by remember { mutableStateOf(false) }
@@ -116,6 +121,9 @@ internal fun VisionPlayerScreen(
     val danmakuHost = remember(video.bvid, danmakuGateway) { VisionDanmakuHost(danmakuGateway) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(playback?.video?.cid) { playback?.video?.cid?.let { danmakuHost.load(it, scope) } }
+    LaunchedEffect(playback?.video?.cid, VisionUserSession.cookie) {
+        playback?.video?.let { subtitleModel.open(it, VisionUserSession.cookie) }
+    }
     LaunchedEffect(VisionPreferences.danmakuEnabled, VisionPreferences.danmakuAlpha, VisionPreferences.danmakuTextScale) {
         danmakuHost.setEnabled(VisionPreferences.danmakuEnabled)
         danmakuHost.updateConfig(VisionPreferences.danmakuAlpha, VisionPreferences.danmakuTextScale)
@@ -137,9 +145,9 @@ internal fun VisionPlayerScreen(
         val current = playback ?: return
         if (loading || player.mediaItemCount == 0) return
         val segment = player.currentMediaItemIndex.coerceAtLeast(0)
-        val durations = player.segmentDurationsMs
+        val durations = player.segmentDurationsMs.take(segment)
         val seconds = historyPositionSeconds(segment, player.currentPosition, durations) ?: return
-        historyModel.sample(VisionHistoryProgress(current.video.id, current.video.cid, seconds), player.isPlaying, force)
+        historyModel.sample(VisionHistoryProgress(current.video.id, current.video.cid, seconds, current.video.episodeId, current.video.seasonId), player.isPlaying, force)
     }
     fun markInteraction() {
         lastInteractionTime = System.currentTimeMillis()
@@ -163,7 +171,7 @@ internal fun VisionPlayerScreen(
     BackHandler {
         if (controlsVisible && error == null) controlsVisible = false else onBack()
     }
-    LaunchedEffect(player, video.bvid, selectedCid, retryTrigger, requestedQuality) {
+    LaunchedEffect(player, video.bvid, selectedCid, retryTrigger, requestedQuality, VisionUserSession.cookie) {
         val previous = playback
         val switchingEpisode = selectedCid != activeCid
         val snapshot = playbackSwitchPosition(activeCid, selectedCid, resumeSnapshot ?: (resumeSegment to resumePosition))
@@ -196,6 +204,21 @@ internal fun VisionPlayerScreen(
             if (coroutineContext.isActive) loading = false
         }
     }
+    val onPlaybackEnded by rememberUpdatedState<() -> Unit>({
+        val next = episodes.pages.getOrNull(episodes.pages.indexOfFirst { it.cid == activeCid } + 1)
+        when (playbackCompletion(VisionPreferences.loopPlayback, VisionPreferences.autoNextPart, activeCid, episodes.pages.map { it.cid })) {
+            PlaybackCompletion.REPEAT -> {
+                resumeSnapshot = 0 to 0L
+                resumePosition = 0L
+                resumeSegment = 0
+                wantsPlayback = true
+                retryTrigger++
+            }
+            PlaybackCompletion.NEXT -> next?.let { wantsPlayback = true; selectedCid = it.cid }
+            PlaybackCompletion.STOP -> wantsPlayback = false
+        }
+        controlsVisible = true
+    })
     val latestCanControl by rememberUpdatedState(canControl)
     val latestReportHistory by rememberUpdatedState<(Boolean) -> Unit>({ reportHistory(it) })
     DisposableEffect(player, lifecycle) {
@@ -206,10 +229,7 @@ internal fun VisionPlayerScreen(
             }
             override fun onPlaybackStateChanged(buffering: Boolean, isEnded: Boolean) {
                 isBuffering = buffering
-                if (isEnded) {
-                    wantsPlayback = false
-                    controlsVisible = true
-                }
+                if (isEnded) onPlaybackEnded()
             }
             override fun onVideoSizeChanged(aspectRatio: Float) {
                 videoAspectRatio = aspectRatio
@@ -256,20 +276,21 @@ internal fun VisionPlayerScreen(
                 resumeSegment = player.currentMediaItemIndex
             }
             val elapsed = player.segmentDurationsMs.take(player.currentMediaItemIndex).sumOf { it.coerceAtLeast(0) } + positionMs
+            elapsedMs = elapsed
             danmakuHost.synchronize(elapsed, player.isPlaying && foreground, supportedPlaybackSpeed(playbackSpeed))
             if (player.isPlaying) latestReportHistory(false)
-            delay(500)
+            delay(100)
         }
     }
     val controlsTimeout = VisionPreferences.controlsTimeoutMs
-    LaunchedEffect(controlsVisible, isPlaying, isBuffering, error, lastInteractionTime, scrubFraction, controlsTimeout, choosingQuality, choosingSpeed, choosingEpisode) {
-        if (controlsVisible && isPlaying && !isBuffering && error == null && scrubFraction == null && controlsTimeout > 0 && !choosingQuality && !choosingSpeed && !choosingEpisode) {
+    LaunchedEffect(controlsVisible, isPlaying, isBuffering, error, lastInteractionTime, scrubFraction, controlsTimeout, choosingQuality, choosingSpeed, choosingEpisode, choosingSubtitle) {
+        if (controlsVisible && isPlaying && !isBuffering && error == null && scrubFraction == null && controlsTimeout > 0 && !choosingQuality && !choosingSpeed && !choosingEpisode && !choosingSubtitle) {
             delay(controlsTimeout)
             controlsVisible = false
         }
     }
-    LaunchedEffect(canControl, error, controlsVisible, inputMode.inputMode, choosingSpeed, choosingQuality, choosingEpisode) {
-        if (!choosingSpeed && !choosingQuality && !choosingEpisode && inputMode.inputMode == InputMode.Keyboard) {
+    LaunchedEffect(canControl, error, controlsVisible, inputMode.inputMode, choosingSpeed, choosingQuality, choosingEpisode, choosingSubtitle) {
+        if (!choosingSpeed && !choosingQuality && !choosingEpisode && !choosingSubtitle && inputMode.inputMode == InputMode.Keyboard) {
             withFrameNanos { }
             when {
                 error != null -> retryFocus.requestFocus()
@@ -281,6 +302,10 @@ internal fun VisionPlayerScreen(
             }
         }
     }
+    if (choosingSubtitle) VisionSubtitlePicker(subtitles,
+        onSelect = { subtitleModel.select(it); choosingSubtitle = false; markInteraction() },
+        onRetry = { subtitles.selected?.let(subtitleModel::select) ?: subtitleModel.loadTracks() },
+        onDismiss = { choosingSubtitle = false; markInteraction() })
     if (choosingEpisode) {
         VisionPlayerEpisodePicker(episodes, activeCid,
             onSelect = { cid ->
@@ -298,7 +323,7 @@ internal fun VisionPlayerScreen(
             title = { Text("选择清晰度") },
             text = {
                 Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${if (playback?.audioUrl != null) "当前使用 DASH 音视频分离流" else "当前使用 MP4 播放流"}；需要登录或大会员的画质以服务器授权为准。", style = MaterialTheme.typography.bodySmall)
+                    Text("${if (playback?.audioUrl != null) "当前使用 DASH · ExoPlayer 音视频合并" else if (engine == VisionPlayerEngine.IJK) "当前使用 MP4 · ijkPlayer" else "当前使用 MP4 · ExoPlayer"}；高清仅有 DASH 时自动切换内核，实际画质以服务器授权为准。", style = MaterialTheme.typography.bodySmall)
                     playback?.qualities.orEmpty().forEach { quality ->
                         TextButton(onClick = {
                             choosingQuality = false
@@ -386,17 +411,27 @@ internal fun VisionPlayerScreen(
     ) {
         val viewport = fitVideoViewport(maxWidth.value, maxHeight.value, videoAspectRatio)
         val compact = maxWidth < 600.dp
-        key(player) {
-            AndroidView(
-                factory = { ctx -> SurfaceView(ctx).apply { player.bindSurfaceView(this) } },
-                modifier = Modifier.size(viewport.width.dp, viewport.height.dp),
-            )
+        VisionVideoViewport(viewport, videoZoomed, VisionPreferences.videoZoomEnabled) { videoModifier ->
+            key(player) {
+                AndroidView(
+                    factory = { ctx -> SurfaceView(ctx).apply { player.bindSurfaceView(this) } },
+                    modifier = videoModifier,
+                )
+            }
         }
         key(danmakuHost) {
             AndroidView(
                 factory = { ctx -> DanmakuView(ctx).apply { danmakuHost.bindView(this) } },
                 modifier = Modifier.size(viewport.width.dp, viewport.height.dp),
             )
+        }
+        val subtitleText = remember(subtitles.cues, elapsedMs) { activeSubtitle(subtitles.cues, elapsedMs) }
+        if (subtitleText.isNotBlank()) {
+            Surface(modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 24.dp)
+                .padding(bottom = if (controlsVisible) 260.dp else 40.dp).widthIn(max = 1000.dp),
+                color = Color.Black.copy(alpha = 0.8f), shape = MaterialTheme.shapes.small) {
+                Text(subtitleText, color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp))
+            }
         }
         if (error == null && (loading || isBuffering)) {
             CircularProgressIndicator(Modifier.size(48.dp), color = MaterialTheme.colorScheme.primary)
@@ -470,6 +505,9 @@ internal fun VisionPlayerScreen(
                         }, modifier = Modifier.heightIn(min = 56.dp)) {
                             Text(if (VisionPreferences.danmakuEnabled) "弹幕：开" else "弹幕：关")
                         }
+                        FilledTonalButton(onClick = { markInteraction(); choosingSubtitle = true }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text(if (subtitles.selected == null) "CC 字幕" else "CC · ${subtitles.selected?.label.orEmpty()}")
+                        }
                         PlayerIconButton({ seekBy(-10_000) }, { Icon(Icons.Default.FastRewind, "快退 10 秒", tint = Color.White) }, enabled = canControl)
                         Button(onClick = ::togglePlayback, enabled = canControl, modifier = Modifier.heightIn(min = 56.dp).focusRequester(playFocus)) {
                             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
@@ -484,6 +522,9 @@ internal fun VisionPlayerScreen(
                         FilledTonalButton(onClick = { markInteraction(); restoreEpisodeFocus = true; choosingEpisode = true }, enabled = !loading,
                             modifier = Modifier.heightIn(min = 56.dp).focusRequester(episodeFocus)) {
                             Text(episodes.pages.firstOrNull { it.cid == activeCid }?.let { "选集 P${it.page}" } ?: "选集")
+                        }
+                        if (VisionPreferences.videoZoomEnabled) FilledTonalButton(onClick = { markInteraction(); videoZoomed = !videoZoomed }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text(if (videoZoomed) "还原视频" else "放大视频")
                         }
                     }
                 }

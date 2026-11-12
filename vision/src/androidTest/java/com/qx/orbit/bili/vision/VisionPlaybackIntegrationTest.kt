@@ -32,6 +32,8 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class VisionPlaybackIntegrationTest {
     @get:Rule val compose = createComposeRule()
@@ -95,8 +97,16 @@ class VisionPlaybackIntegrationTest {
         return file
     }
 
-    private fun checkPlayback(engine: VisionPlayerEngine, failover: Boolean = false) {
+    private fun checkPlayback(engine: VisionPlayerEngine, failover: Boolean = false, dash: Boolean = false) {
         val fixture = create1080pFixture()
+        val audio = if (dash) File(fixture.parentFile, "vision-test-audio.wav").also { file ->
+            val samples = 44100 * 4
+            val buffer = ByteBuffer.allocate(44 + samples * 2).order(ByteOrder.LITTLE_ENDIAN)
+            buffer.put("RIFF".toByteArray()).putInt(36 + samples * 2).put("WAVEfmt ".toByteArray())
+                .putInt(16).putShort(1).putShort(1).putInt(44100).putInt(88200).putShort(2).putShort(16)
+                .put("data".toByteArray()).putInt(samples * 2)
+            file.writeBytes(buffer.array())
+        } else null
         lateinit var adapter: VisionPlayerAdapter
         var error: String? = null
         var aspect = 0f
@@ -112,7 +122,7 @@ class VisionPlaybackIntegrationTest {
                         override fun onError(message: String) { error = message }
                     })
                     val stream = if (failover) CorePlayback(video, listOf(fixture.absolutePath + ".missing"), videoBackups = listOf(fixture.absolutePath))
-                        else CorePlayback(video, listOf(fixture.absolutePath))
+                        else CorePlayback(video, listOf(fixture.absolutePath), audioUrl = audio?.absolutePath)
                     adapter.prepare(stream, 0, 0)
                     adapter.pause()
                     onDispose { adapter.release() }
@@ -137,11 +147,17 @@ class VisionPlaybackIntegrationTest {
             }
             compose.waitUntil(10000) { compose.runOnIdle { error != null || adapter.isPlaying } }
             compose.runOnIdle { assertNull(error); adapter.pause() }
-        } finally { fixture.delete() }
+            if (dash) {
+                compose.runOnIdle { adapter.prepare(CorePlayback(video, listOf(fixture.absolutePath)), 0, 0); adapter.play() }
+                compose.waitUntil(15000) { compose.runOnIdle { error != null || adapter.currentPosition > 0 } }
+                compose.runOnIdle { assertNull(error); adapter.pause() }
+            }
+        } finally { fixture.delete(); audio?.delete() }
     }
 
     @Test fun ijkDecodes1080pAndHonorsPausedPreparation() = checkPlayback(VisionPlayerEngine.IJK)
     @Test fun media3Decodes1080pAndHonorsPausedPreparation() = checkPlayback(VisionPlayerEngine.MEDIA3)
+    @Test fun ijkPreferencePlaysDash1080pWithSeparateAudioAndCanReturnToMp4() = checkPlayback(VisionPlayerEngine.IJK, dash = true)
 
     @Test fun ijkFallsBackToBackupAddress() = checkPlayback(VisionPlayerEngine.IJK, true)
     @Test fun media3FallsBackToBackupAddress() = checkPlayback(VisionPlayerEngine.MEDIA3, true)

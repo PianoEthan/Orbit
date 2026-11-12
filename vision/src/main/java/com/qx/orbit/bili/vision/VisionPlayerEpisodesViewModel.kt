@@ -2,6 +2,8 @@ package com.qx.orbit.bili.vision
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.qx.orbit.bili.core.api.BilibiliSeasonGateway
+import com.qx.orbit.bili.core.api.SeasonGateway
 import com.qx.orbit.bili.core.api.BilibiliVideoGateway
 import com.qx.orbit.bili.core.api.CoreVideo
 import com.qx.orbit.bili.core.api.CoreVideoPage
@@ -18,7 +20,9 @@ internal data class VisionPlayerEpisodesState(
     val error: String? = null,
 )
 
-internal class VisionPlayerEpisodesViewModel(private val gateway: VideoGateway = BilibiliVideoGateway()) : ViewModel() {
+internal class VisionPlayerEpisodesViewModel(private val gateway: VideoGateway = BilibiliVideoGateway(), private val seasons: SeasonGateway = BilibiliSeasonGateway()) : ViewModel() {
+    private val seasonVideos = mutableMapOf<Long, CoreVideo>()
+    fun episodeVideo(cid: Long): CoreVideo? = seasonVideos[cid]
     private val _state = MutableStateFlow(VisionPlayerEpisodesState())
     val state = _state.asStateFlow()
     private var video: CoreVideo? = null
@@ -34,8 +38,20 @@ internal class VisionPlayerEpisodesViewModel(private val gateway: VideoGateway =
         _state.value = VisionPlayerEpisodesState(if (same) _state.value.pages else emptyList(), loading = true)
         job = viewModelScope.launch {
             try {
-                val result = gateway.loadDetails(target)
-                if (request == generation) _state.value = VisionPlayerEpisodesState(result.pages.filter { it.cid > 0 }.distinctBy { it.cid })
+                if (target.seasonId > 0) {
+                    val result = seasons.loadSeason(target.seasonId, VisionUserSession.cookie)
+                    if (request == generation) {
+                        seasonVideos.clear()
+                        result.episodes.forEach { seasonVideos[it.video.cid] = it.video }
+                        _state.value = VisionPlayerEpisodesState(result.episodes.mapIndexed { index, episode -> CoreVideoPage(index + 1, episode.title, episode.video.cid, 0) })
+                    }
+                } else {
+                    val result = gateway.loadDetails(target)
+                    if (request == generation) {
+                        seasonVideos.clear()
+                        _state.value = VisionPlayerEpisodesState(result.pages.filter { it.cid > 0 }.distinctBy { it.cid })
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
