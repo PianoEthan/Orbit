@@ -1,5 +1,7 @@
 package com.qx.orbit.bili.core.api
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -15,7 +17,11 @@ class BilibiliFeedGateway(
         .build(),
     private val cookieProvider: () -> String = { "" },
 ) : FeedGateway {
-    override suspend fun loadFeed(feed: CoreFeed, page: Int): List<CoreVideo> {
+    override suspend fun loadFeed(feed: CoreFeed, page: Int): List<CoreVideo> = withContext(Dispatchers.Default) {
+        loadFeedData(feed, page)
+    }
+
+    private suspend fun loadFeedData(feed: CoreFeed, page: Int): List<CoreVideo> {
         require(page > 0)
         val url = when (feed) {
             CoreFeed.RECOMMEND -> client.signedBilibiliUrl(

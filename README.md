@@ -24,20 +24,26 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 
 注意：项目仍在开发阶段，部分功能仍处于实验性，有Bug请到仓库 issue 反馈，有能力欢迎提交pr。
 
-## Orbit Vision 第一阶段
+## 关于 Orbit Vision
 
-Vision 已接入 UP 主资料与投稿、关注/取消关注、相关推荐、视频合集、CC 字幕选择、循环播放、自动下一 P 和缩放控制，以及番剧/国创/电影/电视剧/纪录片/综艺目录、季度切换、追番追剧、剧集播放与进度同步。
+Orbit Vision 是专为电视大屏、平板电脑、折叠屏及智能手机打造的全场景哔哩哔哩客户端，与 Orbit（Wear OS）共用底层跨端内核 `:core`。
 
-默认优先使用 ijkPlayer 播放 MP4；画质列表同时查询 DASH 能力。所选高清仅有 DASH 时自动交给 Media3 合并音视频，不将服务器降级的低清流标记为高清。1080p、会员及地区限制仍以 B 站授权为准。
+界面完全基于 Jetpack Compose 与标准 Material 3 Expressive 规范设计，支持沉浸式无顶栏布局、手机底栏与大屏侧边栏（NavigationRail）响应式自适应切换，提供深色、浅色及 Android 12+ 动态壁纸配色。
 
-Vision 尚未对齐手表端的直播、离线下载、后台音频、消息私信、完整动态/评论管理、多账号与凭据刷新、收藏夹管理、外部链接入口及互动视频；九键输入本阶段不作调整。
+目前已经支持推荐与热门流、视频详情与分P选集、UP主空间与投稿查看、关注与拉黑、相关推荐与系列合集、番剧/国创/电影/电视剧/纪录片/综艺全量索引、剧集多季切换与追番追剧、动态图文与多图查看器、评论区主评与楼中楼子回复发表、稍后再看与多收藏夹管理等等。
+
+播放器针对大屏体验深度调优，默认采用 ijkPlayer 进行硬件加速解码，并在高画质流仅提供 DASH 格式时智能调度 Media3 (ExoPlayer) 进行音视频自动合并，确保 1080P 高清流畅播放；内置 DFMNext 高性能 60 帧平滑弹幕引擎，支持 CC 字幕切换、视频缩放平移、洗脑循环与自动连播，各清晰度以账号实际授权为准。
+
+专为电视遥控器打造舒适的交互体验：项目获焦时具备富有表现力的平滑形变与高亮微动效，独立搜索页采用左侧输入与右侧热词建议的左右分栏布局，并针对 D-pad 遥控器首创免弹窗的内联九键输入浮层。
+
+注意：Vision 模块仍在活跃演进中，直播、离线缓存、后台音频与消息私信等手表端特性正在持续对齐，欢迎体验与反馈。
 
 ## 技术栈
 
-- **UI**: Jetpack Compose + Wear Material 3
-- **网络**: Retrofit + OkHttp
-- **视频播放**: Vision 默认 ijkPlayer（ARM64/ARM32 硬件解码）/ ExoPlayer Media3 回退与可选内核；Wear Full 默认 ijkPlayer，Lite 使用 Media3
-- **弹幕**: Vision 与 Wear 默认 DFM-Next；Wear 仍保留 DanmakuFlameMaster 可选引擎
+- **UI**: Jetpack Compose (Wear Material 3 / Material 3 Expressive)
+- **网络**: Retrofit + OkHttp + Gson
+- **视频播放**: ijkplayer (ARM64/ARM32 硬件加速) / Media3-ExoPlayer (DASH/MP4 自适应)
+- **弹幕**: DFM-Next (60帧平滑渲染) / DanmakuFlameMaster
 - **图片加载**: Coil
 - **小米 / OPPO 手表触觉兼容**：CN Wear Overlay
 

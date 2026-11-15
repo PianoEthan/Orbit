@@ -30,8 +30,19 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import coil.request.ImageRequest
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -166,7 +177,7 @@ internal fun VisionVideoFeed(viewModel: VisionHomeViewModel, onVideoClick: (Core
                     if (event.type == KeyEventType.KeyUp && event.key == Key.PageDown) { viewModel.loadMore(); true } else false
                 },
             ) {
-                items(videos, key = { if (it.bvid.isNotBlank()) it.bvid else "video_${it.id}" }) { video ->
+                items(videos, key = { if (it.bvid.isNotBlank()) it.bvid else "video_${it.id}" }, contentType = { "video" }) { video ->
                     val requester = remember { FocusRequester() }
                     LaunchedEffect(restoreFocus, returnVideo) {
                         if (restoreFocus && returnVideo == video.bvid) {
@@ -209,17 +220,37 @@ private fun FeedStatus(loading: Boolean, error: String?, hasMore: Boolean, empty
 internal fun VisionExpressiveVideoCard(video: CoreVideo, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) 1.035f else 1f, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(), label = "cardScale")
-    val radius by animateDpAsState(if (focused) 28.dp else 12.dp, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(), label = "cardRadius")
-    val color by animateColorAsState(if (focused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(), label = "cardColor")
+    val scale = animateFloatAsState(if (focused) 1.035f else 1f, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(), label = "cardScale")
+    val radius = animateDpAsState(if (focused) 28.dp else 12.dp, animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(), label = "cardRadius")
+    val color = animateColorAsState(if (focused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(), label = "cardColor")
+    val shape = remember {
+        object : Shape {
+            override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+                val corner = with(density) { radius.value.toPx() }.coerceAtMost(size.minDimension / 2)
+                return Outline.Rounded(RoundRect(0f, 0f, size.width, size.height, CornerRadius(corner)))
+            }
+        }
+    }
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val widthDp = LocalConfiguration.current.screenWidthDp
+    val imageWidth = with(density) { (widthDp / visionGridColumns(widthDp.toFloat())).dp.roundToPx() }.coerceIn(160, 1280)
+    val request = remember(video.cover, imageWidth, context) {
+        ImageRequest.Builder(context).data(visionThumbnailUrl(video.cover, imageWidth))
+            .size(imageWidth, imageWidth * 9 / 16).crossfade(false)
+            .setHeader("Referer", "https://www.bilibili.com/").build()
+    }
+    val scrim = remember { Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))) }
     Card(
-        onClick = onClick, modifier = modifier.fillMaxWidth().zIndex(if (focused) 1f else 0f).scale(scale),
-        interactionSource = interactionSource, shape = RoundedCornerShape(radius),
-        colors = CardDefaults.cardColors(containerColor = color), border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+        onClick = onClick, modifier = modifier.fillMaxWidth().zIndex(if (focused) 1f else 0f)
+            .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            .drawBehind { drawRoundRect(color.value, cornerRadius = CornerRadius(radius.value.toPx())) },
+        interactionSource = interactionSource, shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent), border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(radius))) {
-            AsyncImage(video.cover, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))))
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            AsyncImage(request, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().background(scrim))
             Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(16.dp))
                 Text(video.viewText, style = MaterialTheme.typography.labelSmall, color = Color.White, modifier = Modifier.weight(1f))

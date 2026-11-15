@@ -2,6 +2,8 @@ package com.qx.orbit.bili.core.api
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -54,7 +56,7 @@ private suspend fun OkHttpClient.executeBilibiliJson(request: Request): JsonObje
             }
         })
     }
-    return JsonParser.parseString(body).asJsonObject
+    return withContext(Dispatchers.Default) { JsonParser.parseString(body).asJsonObject }
 }
 
 internal fun JsonObject.requireBilibiliData(): JsonObject {
