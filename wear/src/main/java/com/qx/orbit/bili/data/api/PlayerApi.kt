@@ -13,6 +13,7 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.util.AccountUtil
 import com.qx.orbit.bili.util.PlayerConfig
 import com.qx.orbit.bili.util.SharedPreferencesUtil
+import com.qx.orbit.bili.util.VideoDownloadManager
 import android.util.Base64
 import java.io.Serializable
 import java.net.URLEncoder
@@ -522,6 +523,20 @@ object PlayerApi {
         )
     }
 
+    /**
+     * 凉腕播放器的 danmaku 入参只支持「http 开头的地址」或「本地文件绝对路径」。
+     * 离线缓存视频优先给同目录的本地 XML（不依赖网络），拿不到再退回官方网络地址；
+     * cid 缺失（如手动扫描进来的本地文件）时宁可不传，避免塞一个 0.xml 给它。
+     */
+    private suspend fun resolveAliangDanmakuSource(pd: PlayerData): String? = withContext(Dispatchers.IO) {
+        if (pd.type == PlayerData.TYPE_LOCAL) {
+            VideoDownloadManager.localDanmakuFileFor(pd.videoUrl)?.let { return@withContext it.absolutePath }
+            runCatching { VideoDownloadManager.ensureLocalDanmakuCache(pd.aid, pd.cid, pd.videoUrl) }
+            VideoDownloadManager.localDanmakuFileFor(pd.videoUrl)?.let { return@withContext it.absolutePath }
+        }
+        if (pd.cid > 0) "https://comment.bilibili.com/${pd.cid}.xml" else null
+    }
+
     fun jumpToPlayer(context: Context, navController: NavController, playerData: PlayerData, forcePlayerChoice: String? = null) {
         val playerChoice = forcePlayerChoice ?: SharedPreferencesUtil.getString("player", "apsisPlayer")
         when (playerChoice) {
@@ -533,11 +548,15 @@ object PlayerApi {
                             PlayerData.TYPE_BANGUMI -> getBangumi(playerData)
                             else -> playerData
                         }
+                        // 凉腕只认「http 开头的地址」或「本地绝对路径」，离线缓存必须给本地 XML
+                        val danmakuSource = resolveAliangDanmakuSource(pd)
                         withContext(Dispatchers.Main) {
                             val intent = Intent().apply {
                                 setClassName("com.aliangmaker.media", "com.aliangmaker.media.PlayVideoActivity")
                                 putExtra("name", pd.title)
-                                putExtra("danmaku", "https://comment.bilibili.com/${pd.cid}.xml")
+                                if (danmakuSource != null) {
+                                    putExtra("danmaku", danmakuSource)
+                                }
                                 putExtra("live_mode", pd.type == PlayerData.TYPE_LIVE)
                                 data = Uri.parse(pd.videoUrl)
                                 if (pd.type != PlayerData.TYPE_LOCAL) {

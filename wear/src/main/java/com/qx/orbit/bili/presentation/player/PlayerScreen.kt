@@ -104,7 +104,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -791,16 +790,17 @@ fun PlayerScreen(
                     setDanmakuTransparency(0.4f)
                 }
                 danmakuConfig = config
-                var xmlFile = VideoDownloadManager.ensureLocalDanmakuCache(
-                    aid = playerData.aid,
-                    cid = playerData.cid,
-                    videoPath = resolvedLocalPath
-                ) ?: File("$resolvedLocalPath.danmaku.xml")
-                if (!xmlFile.exists()) {
-                    val fallbackPath = resolvedLocalPath.replace(".mp4", ".danmaku.xml").replace(".m4s", ".danmaku.xml")
-                    xmlFile = File(fallbackPath.toUri().path ?: "")
+                var xmlFile = VideoDownloadManager.localDanmakuFileFor(resolvedLocalPath)
+                if (xmlFile == null) {
+                    // 缓存缺失时尝试补下载（需要联网），失败就按无弹幕处理
+                    VideoDownloadManager.ensureLocalDanmakuCache(
+                        aid = playerData.aid,
+                        cid = playerData.cid,
+                        videoPath = resolvedLocalPath
+                    )
+                    xmlFile = VideoDownloadManager.localDanmakuFileFor(resolvedLocalPath)
                 }
-                if (xmlFile.exists()) {
+                if (xmlFile != null) {
                     val parser = createXmlParser()
                     parser.load(xmlFile.inputStream())
                     danmakuPlayer.prepare(parser, config)
