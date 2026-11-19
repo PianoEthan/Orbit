@@ -1,9 +1,9 @@
 package com.qx.orbit.bili.presentation.player
 
 import android.media.AudioManager
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +27,7 @@ import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,8 +42,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -80,8 +83,21 @@ import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.viewmodel.PlayerViewModel
 import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.player.OrbitPlayer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
+
+private const val AUDIO_HOLD_SEEK_ENABLED_KEY = "player_audio_longpress_seek"
+private const val AUDIO_HOLD_SEEK_HINT_KEY = "player_audio_longpress_seek_hint"
+
+private fun formatAudioTime(timeMs: Long): String {
+    val totalSeconds = timeMs.coerceAtLeast(0L) / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%d:%02d".format(minutes, seconds)
+}
 
 @OptIn(ExperimentalHorologistApi::class)
 @Composable
@@ -107,6 +123,62 @@ fun AudioPlayerScreen(
     var showVolumeScreen by remember { mutableStateOf(false) }
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showMoreDialog by remember { mutableStateOf(false) }
+
+    // 长按快进/快退：按住期间只预览目标位置，松手时一次性 seek（避免反复 seek 造成卡顿/发热）
+    var holdSeekEnabled by remember { mutableStateOf(SharedPreferencesUtil.getBoolean(AUDIO_HOLD_SEEK_ENABLED_KEY, true)) }
+    var holdAnchorMs by remember { mutableLongStateOf(0L) }
+    var holdStartedAtMs by remember { mutableLongStateOf(0L) }
+    var holdRewind by remember { mutableStateOf(false) }
+    val holdActive = holdStartedAtMs > 0L
+    val canHoldSeek = holdSeekEnabled && !viewModel.isLive && totalDuration > 0L
+    val hapticFeedback = LocalHapticFeedback.current
+
+    // 纯手势功能需要一次发现提示，否则用户永远不知道可以长按
+    LaunchedEffect(Unit) {
+        if (holdSeekEnabled && !SharedPreferencesUtil.getBoolean(AUDIO_HOLD_SEEK_HINT_KEY, false)) {
+            SharedPreferencesUtil.putBoolean(AUDIO_HOLD_SEEK_HINT_KEY, true)
+            RoundToast.show(context, "长按左右两侧可快退/快进")
+        }
+    }
+
+    fun startHoldSeek(rewind: Boolean) {
+        holdAnchorMs = currentProgress.coerceIn(0L, totalDuration)
+        holdRewind = rewind
+        holdStartedAtMs = SystemClock.elapsedRealtime()
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    fun cancelHoldSeek() {
+        holdStartedAtMs = 0L
+    }
+
+    fun commitHoldSeek() {
+        val startedAt = holdStartedAtMs
+        val rewind = holdRewind
+        holdStartedAtMs = 0L
+        if (startedAt <= 0L) return
+        val heldMs = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
+        val offsetMs = audioHoldSeekOffsetMs(heldMs)
+        viewModel.seekTo(
+            audioHoldSeekTargetMs(holdAnchorMs, if (rewind) -offsetMs else offsetMs, totalDuration)
+        )
+    }
+
+    val holdCallbacks = AudioHoldSeekCallbacks(
+        enabled = canHoldSeek,
+        onTap = {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastTitleClickTime < 2000) {
+                onBack()
+            } else {
+                lastTitleClickTime = currentTime
+                RoundToast.show(context, "再次点击退出播放")
+            }
+        },
+        onHoldStart = { rewind -> startHoldSeek(rewind) },
+        onHoldCancel = { cancelHoldSeek() },
+        onHoldCommit = { commitHoldSeek() }
+    )
 
     // Extract theme color from cover image
     var audioColorScheme by remember { mutableStateOf<androidx.wear.compose.material3.ColorScheme?>(null) }
@@ -135,29 +207,21 @@ fun AudioPlayerScreen(
     }
 
     MaterialTheme(colorScheme = audioColorScheme ?: defaultColorScheme) {
+    Box(modifier = Modifier.fillMaxSize()) {
     com.google.android.horologist.media.ui.material3.screens.player.PlayerScreen(
         mediaDisplay = {
+            // 铺满顶部整块区域，长按快进的命中范围就不只是标题条
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastTitleClickTime < 2000) {
-                            onBack()
-                        } else {
-                            lastTitleClickTime = currentTime
-                            RoundToast.show(context, "再次点击退出播放")
-                        }
-                    }
-                    .padding(horizontal = 36.dp),
-            ){
+                    .fillMaxSize()
+                    .audioHoldSeekGestures(holdCallbacks),
+                contentAlignment = Alignment.BottomCenter
+            ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 36.dp)
                         .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                         .drawWithContent {
                             drawContent()
@@ -190,11 +254,8 @@ fun AudioPlayerScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = if (currentSubtitle != null) playerData.title else run {
-                                val cur = currentProgress / 1000
-                                val tot = totalDuration / 1000
-                                "%d:%02d / %d:%02d".format(cur / 60, cur % 60, tot / 60, tot % 60)
-                            },
+                            text = if (currentSubtitle != null) playerData.title else
+                                "${formatAudioTime(currentProgress)} / ${formatAudioTime(totalDuration)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             maxLines = 1
@@ -306,7 +367,12 @@ fun AudioPlayerScreen(
             }
         },
         background = {
-            Box(modifier = Modifier.fillMaxSize()) {
+            // 背景层在按钮之下：按钮自己的点击优先，其余空白处都能长按
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .audioHoldSeekGestures(holdCallbacks.copy(onTap = null))
+            ) {
                 AsyncImage(
                     model = playerData.cover.replace("http://", "https://"),
                     contentDescription = "Background Cover",
@@ -333,6 +399,16 @@ fun AudioPlayerScreen(
             }
         }
     )
+
+    if (holdActive) {
+        AudioHoldSeekOverlay(
+            startedAtMs = holdStartedAtMs,
+            anchorMs = holdAnchorMs,
+            durationMs = totalDuration,
+            rewind = holdRewind
+        )
+    }
+    } // Box
 
     // --- Dialogs ---
     Dialog(
@@ -463,6 +539,19 @@ fun AudioPlayerScreen(
                 }
             }
             item {
+                Button(
+                    onClick = {
+                        holdSeekEnabled = !holdSeekEnabled
+                        SharedPreferencesUtil.putBoolean(AUDIO_HOLD_SEEK_ENABLED_KEY, holdSeekEnabled)
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec)
+                ) {
+                    Text(text = if (holdSeekEnabled) "长按快进/快退: 开" else "长按快进/快退: 关")
+                }
+            }
+            item {
                 val isLooping = remember { mutableStateOf(SharedPreferencesUtil.getBoolean("player_loop", false)) }
                 Button(
                     onClick = {
@@ -482,4 +571,43 @@ fun AudioPlayerScreen(
     }
 
     } // MaterialTheme
+}
+
+/** 按住快进/快退时的遮罩预览：只显示目标位置，松手才真正 seek。 */
+@Composable
+private fun AudioHoldSeekOverlay(
+    startedAtMs: Long,
+    anchorMs: Long,
+    durationMs: Long,
+    rewind: Boolean
+) {
+    var elapsedMs by remember(startedAtMs) { mutableLongStateOf(0L) }
+    LaunchedEffect(startedAtMs) {
+        while (true) {
+            elapsedMs = (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L)
+            delay(60L)
+        }
+    }
+    val offsetMs = audioHoldSeekOffsetMs(elapsedMs)
+    val targetMs = audioHoldSeekTargetMs(anchorMs, if (rewind) -offsetMs else offsetMs, durationMs)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (rewind) "快退 -${formatAudioTime(offsetMs)}" else "快进 +${formatAudioTime(offsetMs)}",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${formatAudioTime(targetMs)} / ${formatAudioTime(durationMs)}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
 }
