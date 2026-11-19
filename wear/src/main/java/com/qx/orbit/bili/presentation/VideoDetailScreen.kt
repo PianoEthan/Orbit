@@ -137,6 +137,7 @@ import com.qx.orbit.bili.presentation.ui.components.staggeredEntrance
 import com.qx.orbit.bili.presentation.ui.components.UserAvatar
 import com.qx.orbit.bili.presentation.ui.components.UserNameText
 import com.qx.orbit.bili.presentation.ui.components.WysTimeText
+import com.qx.orbit.bili.presentation.util.currentCachePageIndex
 import com.qx.orbit.bili.presentation.util.navigateToVideoDetail
 import com.qx.orbit.bili.presentation.util.rememberSafeRotaryScrollableBehavior
 import com.qx.orbit.bili.presentation.util.toPreview
@@ -774,6 +775,42 @@ fun VideoDetailScreen(
                             Text("仅音频+字幕")
                         }
                     }
+                    // 换目标：默认缓存当前这集，需要别的分P/合集集数时从这里进
+                    val cacheDialogInfo = videoInfo
+                    if (cacheDialogInfo != null) {
+                        if (cacheDialogInfo.cids.size > 1) {
+                            item {
+                                Button(
+                                    onClick = {
+                                        showCacheDialog = false
+                                        selectedCachePageIndices = emptySet()
+                                        isPageMultiSelect = false
+                                        showCachePageDialog = true
+                                    },
+                                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                                    colors = ButtonDefaults.filledTonalButtonColors()
+                                ) {
+                                    Text("缓存其他分P")
+                                }
+                            }
+                        }
+                        if ((cacheDialogInfo.collection?.sections?.flatMap { it.episodes } ?: emptyList()).size > 1) {
+                            item {
+                                Button(
+                                    onClick = {
+                                        showCacheDialog = false
+                                        showCacheCollectionDialog = true
+                                    },
+                                    modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
+                                    transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
+                                    colors = ButtonDefaults.filledTonalButtonColors()
+                                ) {
+                                    Text("缓存合集其他集")
+                                }
+                            }
+                        }
+                    }
                 }
                 item { Spacer(Modifier.height(20.dp)) }
             }
@@ -1221,17 +1258,12 @@ fun VideoDetailScreen(
                             onCollectionClick = { showCollectionDialog = true },
                             onCacheClick = {
                                 val info = videoInfo ?: return@VideoInfoPage
-                                val collectionEpisodes = info.collection?.sections?.flatMap { it.episodes } ?: emptyList()
                                 isPageMultiSelect = false
                                 selectedCachePageIndices = emptySet()
-                                if (info.cids.size > 1) {
-                                    showCachePageDialog = true
-                                } else if (collectionEpisodes.size > 1) {
-                                    showCacheCollectionDialog = true
-                                } else {
-                                    targetCollectionEpisodeForCache = null
-                                    openCacheDialogForPage(0)
-                                }
+                                // 直接缓存当前这集；想换成别的分P/合集其他集，在清晰度弹窗里再切
+                                openCacheDialogForPage(
+                                    currentCachePageIndex(info.cids, info.history?.cid)
+                                )
                             }
                         )
                         1 -> VideoCommentsPage(
