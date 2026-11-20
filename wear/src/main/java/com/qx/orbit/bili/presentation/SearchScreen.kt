@@ -213,9 +213,24 @@ fun SearchInputScreen(navController: NavHostController) {
                         onClick = { performSearch(suggestion) },
                         modifier = Modifier.fillMaxWidth().adaptiveTransformedHeight(this, transformationSpec),
                         transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
-                        Text(suggestion, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = suggestion,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.graphicsLayer {
+                                if (isRound) {
+                                    with(transformationSpec) {
+                                        applyContentTransformation(scrollProgress)
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -262,9 +277,24 @@ fun SearchInputScreen(navController: NavHostController) {
                             onClick = { performSearch(history) },
                             modifier = Modifier.fillMaxWidth(),
                             transformation = if (isRound) SurfaceTransformation(transformationSpec) else null,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
                         ) {
-                            Text(text = history, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                text = history,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.graphicsLayer {
+                                    if (isRound) {
+                                        with(transformationSpec) {
+                                            applyContentTransformation(scrollProgress)
+                                        }
+                                    }
+                                }
+                            )
                         }
                     }
                 }
