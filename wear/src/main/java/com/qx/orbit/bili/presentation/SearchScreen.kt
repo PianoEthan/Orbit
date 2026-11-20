@@ -204,7 +204,12 @@ fun SearchInputScreen(navController: NavHostController) {
             
             if (suggestions.isNotEmpty()) {
                 item {
-                    ListHeader(modifier = Modifier.adaptiveTransformedHeight(this, transformationSpec)) {
+                    ListHeader(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .adaptiveTransformedHeight(this, transformationSpec),
+                        transformation = if (isRound) SurfaceTransformation(transformationSpec) else null
+                    ) {
                         Text("搜索建议", color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -222,14 +227,7 @@ fun SearchInputScreen(navController: NavHostController) {
                             text = suggestion,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.graphicsLayer {
-                                if (isRound) {
-                                    with(transformationSpec) {
-                                        applyContentTransformation(scrollProgress)
-                                    }
-                                }
-                            }
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -286,14 +284,7 @@ fun SearchInputScreen(navController: NavHostController) {
                                 text = history,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.graphicsLayer {
-                                    if (isRound) {
-                                        with(transformationSpec) {
-                                            applyContentTransformation(scrollProgress)
-                                        }
-                                    }
-                                }
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
