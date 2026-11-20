@@ -1231,10 +1231,10 @@ fun PlayerScreen(
                 PlayerGestureCallbacks(
                     zoomEnabled = SharedPreferencesUtil.getBoolean("player_scale", true),
                     oneFingerZoomEnabled = SharedPreferencesUtil.getBoolean("player_one_finger_zoom", false),
-                    canPan = scale > 1f && !showControls,
-                    canSeek = showControls && isPrepared && !isLive && totalDuration > 0L,
+                    canPan = scale > 1.05f && !showControls,
+                    canSeek = isPrepared && !isLive && totalDuration > 0L && scale <= 1.05f,
                     canLongPress = foregroundVideo && isPrepared && isPlaying && !showControls && !isLive &&
-                        SharedPreferencesUtil.getBoolean("player_longclick", true),
+                        scale <= 1.05f && SharedPreferencesUtil.getBoolean("player_longclick", true),
                     onTap = {
                         if (showControls) showControls = false else interactionCounter++
                     },
@@ -1256,26 +1256,42 @@ fun PlayerScreen(
                     onSeekStart = {
                         val root = playerCoordinates
                         val bar = seekBarCoordinates
-                        if (root?.isAttached == true && bar?.isAttached == true) {
-                            val bounds = root.localBoundingBoxOf(bar, clipBounds = false)
-                            val position = viewModel.savePosition().coerceIn(0L, totalDuration)
-                            seekSession = DistanceSeekSession(totalDuration, position, bounds.width)
-                            dragProgress = position.toFloat() / totalDuration
-                            danmakuPlayer.pause()
-                            interactionCounter++
+                        val rootWidth = root?.size?.width?.toFloat() ?: (200f * density)
+                        val rootHeight = root?.size?.height?.toFloat() ?: (200f * density)
+                        val barWidth = if (bar?.isAttached == true && root?.isAttached == true) {
+                            root.localBoundingBoxOf(bar, clipBounds = false).width
+                        } else {
+                            (120f * density).coerceAtMost(rootWidth * 0.7f)
                         }
+                        val position = viewModel.savePosition().coerceIn(0L, totalDuration)
+                        seekSession = DistanceSeekSession(totalDuration, position, barWidth)
+                        dragProgress = position.toFloat() / totalDuration
+                        danmakuPlayer.pause()
+                        interactionCounter++
                     },
                     onSeekDrag = { dx, position ->
                         val root = playerCoordinates
                         val bar = seekBarCoordinates
-                        if (root?.isAttached == true && bar?.isAttached == true) {
+                        val distance: Float
+                        if (bar?.isAttached == true && root?.isAttached == true) {
                             val bounds = root.localBoundingBoxOf(bar, clipBounds = false)
                             val distanceX = max(0f, max(bounds.left - position.x, position.x - bounds.right))
                             val distanceY = max(0f, max(bounds.top - position.y, position.y - bounds.bottom))
-                            val distance = sqrt(distanceX * distanceX + distanceY * distanceY) / density
-                            seekSession?.drag(dx, distance)?.let { target ->
-                                dragProgress = target.toFloat() / totalDuration
-                            }
+                            distance = sqrt(distanceX * distanceX + distanceY * distanceY) / density
+                        } else {
+                            val rootWidth = root?.size?.width?.toFloat() ?: (200f * density)
+                            val rootHeight = root?.size?.height?.toFloat() ?: (200f * density)
+                            val barHalfWidth = (60f * density)
+                            val barBottomY = rootHeight - (24f * density)
+                            val barTopY = barBottomY - (6f * density)
+                            val barLeft = (rootWidth / 2f) - barHalfWidth
+                            val barRight = (rootWidth / 2f) + barHalfWidth
+                            val distanceX = max(0f, max(barLeft - position.x, position.x - barRight))
+                            val distanceY = max(0f, max(barTopY - position.y, position.y - barBottomY))
+                            distance = sqrt(distanceX * distanceX + distanceY * distanceY) / density
+                        }
+                        seekSession?.drag(dx, distance)?.let { target ->
+                            dragProgress = (target.toFloat() / totalDuration).coerceIn(0f, 1f)
                         }
                     },
                     onSeekEnd = { commit ->
@@ -1705,17 +1721,60 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+        }
 
-                PlayerBottomProgressBar(
-                    isLive = isLive,
-                    timeStamp = playerData.timeStamp,
-                    dragProgress = dragProgress,
-                    totalDuration = totalDuration,
-                    currentProgressProvider = { currentProgress },
-                    viewModel = viewModel,
-                    onPositioned = { seekBarCoordinates = it },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+        AnimatedVisibility(
+            visible = (showControls || dragProgress >= 0f) && !interactionBlocked,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            PlayerBottomProgressBar(
+                isLive = isLive,
+                timeStamp = playerData.timeStamp,
+                dragProgress = dragProgress,
+                totalDuration = totalDuration,
+                currentProgressProvider = { currentProgress },
+                viewModel = viewModel,
+                onPositioned = { seekBarCoordinates = it },
+                modifier = Modifier
+            )
+        }
+
+        AnimatedVisibility(
+            visible = dragProgress >= 0f && !isLive && totalDuration > 0L,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            val targetMs = (dragProgress * totalDuration).toLong()
+            val deltaMs = targetMs - currentProgress
+            val deltaSec = deltaMs / 1000
+            val deltaText = if (deltaSec >= 0) "+${deltaSec}s" else "${deltaSec}s"
+
+            Box(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "${formatPlayerTime(targetMs)} / ${formatPlayerTime(totalDuration)}",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = deltaText,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
         

@@ -15,6 +15,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import kotlin.math.abs
 
 internal data class PlayerGestureCallbacks(
@@ -36,12 +37,13 @@ internal data class PlayerGestureCallbacks(
 internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifier {
     val latest by rememberUpdatedState(callbacks)
     val density = LocalDensity.current.density
+    val view = LocalView.current
     return pointerInput(density) {
         awaitEachGesture {
+            val parent = view.parent
             var seeking = false
             var holding = false
             suspend fun AwaitPointerEventScope.track(down: PointerInputChange, secondTap: Boolean): Boolean {
-                if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) return false
                 var gesture = PlayerDragGesture.None
                 val pointers = PlayerPointerSequence(down.id.value)
                 var transforming = false
@@ -53,18 +55,15 @@ internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifie
                     val remaining = deadline - currentEvent.changes.maxOf { it.uptimeMillis }
                     val waitingForHold = !secondTap && !holding && gesture == PlayerDragGesture.None
                     val event = if (waitingForHold) {
-                        if (remaining <= 0L) null else withTimeoutOrNull(remaining) { awaitPointerEvent() }
-                    } else awaitPointerEvent()
+                        if (remaining <= 0L) null else withTimeoutOrNull(remaining) { awaitPointerEvent(PointerEventPass.Initial) }
+                    } else awaitPointerEvent(PointerEventPass.Initial)
                     if (event == null) {
                         if (latest.canLongPress) {
                             holding = true
                             latest.onLongPress(true)
-                        } else {
-                            gesture = PlayerDragGesture.Cancel
                         }
                         continue
                     }
-                    if (event.changes.any { it.isConsumed }) return false
                     val pressedIds = event.changes.filter { it.pressed }.map { it.id.value }
                     pointers.update(pressedIds)
                     val pressed = pressedIds.size
@@ -89,8 +88,6 @@ internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifie
                         if (latest.zoomEnabled && transforming) {
                             latest.onTransform(pan, zoom)
                             event.changes.forEach { it.consume() }
-                        } else if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) {
-                            return false
                         }
                         continue
                     }
@@ -99,8 +96,6 @@ internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifie
                         if (latest.zoomEnabled && transforming) {
                             latest.onTransform(event.calculatePan(), 1f)
                             event.changes.forEach { it.consume() }
-                        } else if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) {
-                            return false
                         }
                         continue
                     }
@@ -147,17 +142,15 @@ internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifie
                         else -> if (holding) pointer.consume()
                     }
                     lastPosition = pointer.position
-                    if (!pointer.isConsumed && awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) {
-                        return false
-                    }
                 }
             }
             try {
-                val first = awaitFirstDown()
+                val first = awaitFirstDown(pass = PointerEventPass.Initial)
+                parent?.requestDisallowInterceptTouchEvent(true)
                 if (track(first, false)) {
-                    val firstUp = currentEvent.changes.first { it.id == first.id }
+                    val firstUp = currentEvent.changes.firstOrNull { it.id == first.id } ?: first
                     val second = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
-                        awaitFirstDown()
+                        awaitFirstDown(pass = PointerEventPass.Initial)
                     }
                     if (second == null) {
                         latest.onTap()
@@ -173,7 +166,8 @@ internal fun Modifier.playerGestures(callbacks: PlayerGestureCallbacks): Modifie
                 }
             } finally {
                 if (seeking) latest.onSeekEnd(false)
-                latest.onLongPress(false)
+                if (holding) latest.onLongPress(false)
+                parent?.requestDisallowInterceptTouchEvent(false)
             }
         }
     }
