@@ -350,10 +350,8 @@ fun PlayerScreen(
     val vmCurrentProgress by viewModel.currentProgress.collectAsState()
     val totalDuration by viewModel.totalDuration.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val bufferSpeed by viewModel.bufferSpeed.collectAsState()
     val subtitles by viewModel.subtitles.collectAsState()
     val currentSubtitleId by viewModel.currentSubtitleId.collectAsState()
-    val currentSubtitle by viewModel.currentSubtitle.collectAsState()
     val videoWidth by viewModel.videoWidth.collectAsState()
     val videoHeight by viewModel.videoHeight.collectAsState()
 
@@ -384,7 +382,6 @@ fun PlayerScreen(
     val isLongPressSpeedUp by viewModel.isLongPressSpeedUp.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val effectiveSpeed by viewModel.effectiveSpeed.collectAsState()
-    val liveElapsedSeconds by viewModel.liveElapsedSeconds.collectAsState()
 
     LaunchedEffect(isLive, playerData.timeStamp) {
         if (isLive) viewModel.startLiveElapsedTimer(playerData.timeStamp)
@@ -1172,6 +1169,7 @@ fun PlayerScreen(
     }
 
     if (isAudioPlayer) {
+        val audioSubtitle by viewModel.currentSubtitle.collectAsState()
         AudioPlayerScreen(
             viewModel = viewModel,
             playerData = playerData,
@@ -1180,7 +1178,7 @@ fun PlayerScreen(
             isPlaying = isPlaying,
             currentProgress = currentProgress,
             totalDuration = totalDuration,
-            currentSubtitle = currentSubtitle,
+            currentSubtitle = audioSubtitle,
             currentSubtitleId = currentSubtitleId,
             playbackSpeed = playbackSpeed,
             subtitleLinks = subtitleLinks,
@@ -1446,22 +1444,10 @@ fun PlayerScreen(
                 }
         )
 
-        if (isLoading) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                CircularProgressIndicator()
-                if (bufferSpeed.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = bufferSpeed,
-                        color = Color.White.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
+        PlayerLoadingOverlay(
+            viewModel = viewModel,
+            modifier = Modifier.align(Alignment.Center)
+        )
 
         if (isLongPressSpeedUp) {
             Row(
@@ -1487,19 +1473,10 @@ fun PlayerScreen(
             }
         }
 
-        currentSubtitle?.let { text ->
-            Text(
-                text = text,
-                color = Color.White,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 40.dp, start = 8.dp, end = 8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
-        }
+        PlayerSubtitleOverlay(
+            viewModel = viewModel,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
         errorMessage?.let {
             Text(
@@ -1729,55 +1706,16 @@ fun PlayerScreen(
                     }
                 }
 
-                val formatTime = { timeMs: Long ->
-                    val totalSeconds = timeMs / 1000
-                    val h = totalSeconds / 3600
-                    val m = (totalSeconds % 3600) / 60
-                    val s = totalSeconds % 60
-                    if (h > 0) "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-                    else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp)
-                ) {
-                    if (isLive) {
-                        Text(
-                            text = if (playerData.timeStamp > 0) "直播 ${formatTime(liveElapsedSeconds * 1000)}"
-                            else "直播中",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    } else {
-                        val displayProgress = if (dragProgress >= 0f) dragProgress else (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
-                        val displayTimeMs = if (dragProgress >= 0f) (dragProgress * totalDuration).toLong() else currentProgress
-
-                        Box(
-                            modifier = Modifier
-                                .width(120.dp)
-                                .height(6.dp)
-                                .onGloballyPositioned { seekBarCoordinates = it }
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Color.White.copy(alpha = 0.3f))
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(displayProgress)
-                                    .fillMaxHeight()
-                                    .background(Color.White)
-                            )
-                        }
-                        Text(
-                            text = "${formatTime(displayTimeMs)} / ${formatTime(totalDuration)}",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
+                PlayerBottomProgressBar(
+                    isLive = isLive,
+                    timeStamp = playerData.timeStamp,
+                    dragProgress = dragProgress,
+                    totalDuration = totalDuration,
+                    currentProgressProvider = { currentProgress },
+                    viewModel = viewModel,
+                    onPositioned = { seekBarCoordinates = it },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
         
@@ -2158,6 +2096,113 @@ private fun calculatePlayerScaleMultiplier(
             } else {
                 1f
             }
+        }
+    }
+}
+
+internal fun formatPlayerTime(timeMs: Long): String {
+    val totalSeconds = (timeMs / 1000).coerceAtLeast(0L)
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+    else "${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+}
+
+@Composable
+private fun PlayerLoadingOverlay(
+    viewModel: PlayerViewModel,
+    modifier: Modifier = Modifier
+) {
+    val isLoading by viewModel.isLoading.collectAsState()
+    val bufferSpeed by viewModel.bufferSpeed.collectAsState()
+    if (isLoading) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator()
+            if (bufferSpeed.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = bufferSpeed,
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerSubtitleOverlay(
+    viewModel: PlayerViewModel,
+    modifier: Modifier = Modifier
+) {
+    val currentSubtitle by viewModel.currentSubtitle.collectAsState()
+    currentSubtitle?.let { text ->
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = modifier
+                .padding(bottom = 40.dp, start = 8.dp, end = 8.dp)
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun PlayerBottomProgressBar(
+    isLive: Boolean,
+    timeStamp: Long,
+    dragProgress: Float,
+    totalDuration: Long,
+    currentProgressProvider: () -> Long,
+    viewModel: PlayerViewModel,
+    onPositioned: (LayoutCoordinates) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.padding(bottom = 16.dp)
+    ) {
+        if (isLive) {
+            val liveElapsedSeconds by viewModel.liveElapsedSeconds.collectAsState()
+            Text(
+                text = if (timeStamp > 0) "直播 ${formatPlayerTime(liveElapsedSeconds * 1000)}"
+                else "直播中",
+                color = Color.White,
+                fontSize = 12.sp
+            )
+        } else {
+            val currentProgress = currentProgressProvider()
+            val displayProgress = if (dragProgress >= 0f) dragProgress else (currentProgress.toFloat() / totalDuration.coerceAtLeast(1L)).coerceIn(0f, 1f)
+            val displayTimeMs = if (dragProgress >= 0f) (dragProgress * totalDuration).toLong() else currentProgress
+
+            Box(
+                modifier = Modifier
+                    .width(120.dp)
+                    .height(6.dp)
+                    .onGloballyPositioned { onPositioned(it) }
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.3f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(displayProgress)
+                        .fillMaxHeight()
+                        .background(Color.White)
+                )
+            }
+            Text(
+                text = "${formatPlayerTime(displayTimeMs)} / ${formatPlayerTime(totalDuration)}",
+                color = Color.White,
+                fontSize = 12.sp
+            )
         }
     }
 }
