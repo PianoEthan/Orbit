@@ -1,5 +1,4 @@
 pluginManagement {
-    includeBuild("cnwearoverlay")
     repositories {
         google()
         mavenCentral()

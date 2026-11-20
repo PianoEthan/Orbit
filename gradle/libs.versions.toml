@@ -30,6 +30,7 @@ shizuku = "13.1.5"
 materialColorUtilities = "6.0.0"
 horologist = "0.8.3-alpha"
 media3 = "1.11.1"
+cnwearoverlay = "1.2.2"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -78,4 +79,5 @@ media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp"
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+cnwearoverlay = { id = "cc.star0.wear.lib.cnwearoverlay", version.ref = "cnwearoverlay" }
 

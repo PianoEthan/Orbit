@@ -49,7 +49,7 @@ Orbit Vision 是专为电视大屏、平板电脑、折叠屏及智能手机打�
 
 ## 构建
 
-请先同步 Git 子模块，构建需要 DFMNext 和 CN Wear Overlay：
+请先同步 Git 子模块，构建需要 DFMNext：
 
 ```bash
 git submodule sync --recursive
