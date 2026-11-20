@@ -765,7 +765,7 @@ fun PlayerScreen(
                 }
                 danmakuConfig = config
                 danmakuPlayer.prepare(parser, config)
-                danmakuPlayer.enableDrawingCache(true)
+                danmakuPlayer.enableDrawingCache(false)
             } else if (isLocal) {
                 val config = createDanmakuConfig().apply {
                     val duplicateMergingEnabled = SharedPreferencesUtil.getBoolean("player_danmaku_mergeduplicate", false)
@@ -807,7 +807,7 @@ fun PlayerScreen(
                 } else {
                     danmakuPlayer.prepare(createEmptyParser(), config)
                 }
-                danmakuPlayer.enableDrawingCache(true)
+                danmakuPlayer.enableDrawingCache(false)
             } else {
                 val config = createDanmakuConfig().apply {
                     val enableAdvanced = SharedPreferencesUtil.getBoolean("player_danmaku_advanced_enable", true)
@@ -818,7 +818,7 @@ fun PlayerScreen(
                 }
                 danmakuConfig = config
                 danmakuPlayer.prepare(createEmptyParser(), config)
-                danmakuPlayer.enableDrawingCache(true)
+                danmakuPlayer.enableDrawingCache(false)
             }
 
             if (!isLive) {
