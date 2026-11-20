@@ -876,6 +876,15 @@ fun PlayerScreen(
                 }
                 if (BuildConfig.HAS_IJK) {
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (useAudioOnlySource) 1 else 0)
+                    val useMediaCodec = SharedPreferencesUtil.getBoolean("player_mediacodec", true)
+                    if (!useAudioOnlySource && useMediaCodec) {
+                        mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1)
+                        mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", 1)
+                        mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1)
+                        mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
+                    } else if (!useAudioOnlySource) {
+                        mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
+                    }
                 }
                 if (useAudioOnlySource) {
                     mediaPlayer.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "max-buffer-size", 1024 * 1024)

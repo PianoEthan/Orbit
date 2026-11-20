@@ -21,6 +21,7 @@ import com.qx.orbit.bili.data.interaction.InteractionProgressStore
 import com.qx.orbit.bili.data.model.SubtitleLink
 import com.qx.orbit.bili.data.remote.CookieManager
 import com.qx.orbit.bili.presentation.player.effectivePlaybackSpeed
+import com.qx.orbit.bili.util.SharedPreferencesUtil
 import com.qx.orbit.bili.util.player.OrbitPlayer
 import com.qx.orbit.bili.util.player.DelegatingOrbitPlayer
 import com.qx.orbit.bili.util.player.createOrbitPlayer
@@ -470,6 +471,15 @@ class PlayerViewModel(
         }
         if (BuildConfig.HAS_IJK) {
             _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "vn", if (isAudioOnlyMode) 1 else 0)
+            val useMediaCodec = SharedPreferencesUtil.getBoolean("player_mediacodec", true)
+            if (!isAudioOnlyMode && useMediaCodec) {
+                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1)
+                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec-auto-rotate", 1)
+                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1)
+                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1)
+            } else if (!isAudioOnlyMode) {
+                _player.setOption(OrbitPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0)
+            }
         }
         if (isAudioOnlyMode) {
             // Power-saving: disable video decode (IJK only), minimize buffer
