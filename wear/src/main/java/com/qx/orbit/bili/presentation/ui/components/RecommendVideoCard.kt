@@ -54,13 +54,16 @@ fun RecommendVideoCard(
         transformation = transformation
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Append Bilibili image processing suffix for 16:9
-            val coverUrl = if (item.cover.contains("@")) item.cover else "${item.cover}@480w_270h_1c.webp"
+            // Append Bilibili image processing suffix for 16:9 on wearable screen
+            val rawCover = if (item.cover.startsWith("http://")) item.cover.replaceFirst("http://", "https://") else item.cover
+            val coverUrl = if (rawCover.contains("@")) rawCover else "${rawCover}@320w_180h_1c.webp"
             
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(coverUrl)
-                    .crossfade(true)
+                    .crossfade(150)
+                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                     .build(),
                 contentDescription = item.title,
                 contentScale = ContentScale.Crop,
