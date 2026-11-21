@@ -688,9 +688,10 @@ internal fun SearchResultRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             AsyncImage(
-                model = remember(imageUrl, context) {
+                model = remember(imageUrl, roundedImage, context) {
                     if (imageUrl.isBlank()) null else ImageRequest.Builder(context)
-                        .data(visionThumbnailUrl(imageUrl, 240)).size(240)
+                        .data(if (roundedImage) imageUrl else visionThumbnailUrl(imageUrl, 240))
+                        .size(if (roundedImage) 160 else 240)
                         .setHeader("Referer", "https://www.bilibili.com/").crossfade(false).build()
                 },
                 contentDescription = null,

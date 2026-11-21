@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -38,13 +39,21 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
                             AsyncImage(creator.avatar, null, Modifier.size(72.dp).clip(CircleShape))
                             Text(creator.name, style = MaterialTheme.typography.headlineMedium)
                             Text(creator.signature.ifBlank { "暂无签名" })
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("${creator.fans} 粉丝", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { onFollowList(VisionFollowMode.FOLLOWING) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                    Text("${creator.following} 关注")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            ) {
+                                TextButton(
+                                    onClick = { onFollowList(VisionFollowMode.FANS) },
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    Text("${creator.fans} 粉丝", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                TextButton(onClick = { onFollowList(VisionFollowMode.FANS) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                    Text("粉丝列表")
+                                TextButton(
+                                    onClick = { onFollowList(VisionFollowMode.FOLLOWING) },
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    Text("${creator.following} 关注", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             if (mid != VisionUserSession.mid) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

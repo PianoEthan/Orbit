@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -142,10 +143,11 @@ private fun VisionFollowUserRow(
             AsyncImage(
                 model = remember(user.face, context) {
                     if (user.face.isBlank()) null else ImageRequest.Builder(context)
-                        .data(visionThumbnailUrl(user.face, 160)).size(160)
+                        .data(user.face).size(160)
                         .setHeader("Referer", "https://www.bilibili.com/").crossfade(false).build()
                 },
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.size(48.dp).clip(CircleShape),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -168,15 +170,27 @@ private fun VisionFollowUserRow(
                 }
             }
             if (showRelation) {
-                FilledTonalButton(
-                    onClick = onToggleFollow,
-                    enabled = !busy,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                ) {
-                    if (busy) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text(if (following) "已关注" else "关注")
+                if (following) {
+                    OutlinedButton(
+                        onClick = onToggleFollow,
+                        enabled = !busy,
+                        modifier = Modifier.height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Text("已关注", style = MaterialTheme.typography.labelLarge)
+                    }
+                } else {
+                    Button(
+                        onClick = onToggleFollow,
+                        enabled = !busy,
+                        modifier = Modifier.height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else Text("关注", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

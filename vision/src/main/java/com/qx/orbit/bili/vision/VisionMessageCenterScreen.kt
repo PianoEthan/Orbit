@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -201,12 +202,14 @@ private fun MessageRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             AsyncImage(
-                model = remember(imageUrl, context) {
+                model = remember(imageUrl, roundedImage, context) {
                     if (imageUrl.isBlank()) null else ImageRequest.Builder(context)
-                        .data(visionThumbnailUrl(imageUrl, 160)).size(160)
+                        .data(if (roundedImage) imageUrl else visionThumbnailUrl(imageUrl, 160))
+                        .size(160)
                         .setHeader("Referer", "https://www.bilibili.com/").crossfade(false).build()
                 },
                 contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.size(44.dp).clip(if (roundedImage) CircleShape else MaterialTheme.shapes.small),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
