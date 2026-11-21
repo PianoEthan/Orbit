@@ -41,11 +41,15 @@ internal fun VisionUserCenterScreen(
     onVideoClick: (CoreVideo) -> Unit,
     viewModel: VisionUserCenterViewModel = viewModel(),
     onOpenDynamics: () -> Unit = {},
+    onOpenFollowList: (VisionFollowMode) -> Unit = {},
+    onOpenFavManager: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val isLoggedIn = VisionUserSession.isLoggedIn
     val profile = VisionUserSession.profile
     val cookie = VisionUserSession.cookie
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     val activeTab by viewModel.tab.collectAsState()
     val history by viewModel.history.collectAsState()
     val historyHasMore by viewModel.historyHasMore.collectAsState()
@@ -83,9 +87,14 @@ internal fun VisionUserCenterScreen(
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Spacer(Modifier.weight(1f))
-                if (isLoggedIn) IconButton(onClick = viewModel::refresh, enabled = !loading) { Icon(Icons.Default.Refresh, "刷新数据") }
+                if (isLoggedIn) {
+                    TextButton(onClick = { onOpenFollowList(VisionFollowMode.FOLLOWING) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("我的关注") }
+                    TextButton(onClick = { onOpenFollowList(VisionFollowMode.FANS) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("我的粉丝") }
+                    TextButton(onClick = onOpenFavManager, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("管理收藏夹") }
+                    IconButton(onClick = viewModel::refresh, enabled = !loading) { Icon(Icons.Default.Refresh, "刷新数据") }
+                }
             }
             if (!isLoggedIn) {
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),

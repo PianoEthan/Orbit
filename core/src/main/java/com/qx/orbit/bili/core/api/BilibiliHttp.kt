@@ -8,8 +8,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -34,7 +36,36 @@ internal suspend fun OkHttpClient.postBilibiliForm(url: String, cookie: String, 
     return newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build().executeBilibiliJson(request)
 }
 
+internal suspend fun OkHttpClient.postBilibiliJson(
+    url: String,
+    cookie: String,
+    body: JsonObject,
+    referer: String = "https://www.bilibili.com/",
+): JsonObject {
+    val request = Request.Builder().url(url)
+        .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .header("Referer", referer)
+        .header("User-Agent", BILIBILI_USER_AGENT)
+        .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
+        .build()
+    return newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build().executeBilibiliJson(request)
+}
+
+internal suspend fun OkHttpClient.getBilibiliHtml(url: String, cookie: String = ""): String {
+    val request = Request.Builder().url(url)
+        .header("Referer", "https://www.bilibili.com/")
+        .header("User-Agent", BILIBILI_USER_AGENT)
+        .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
+        .build()
+    return executeBilibiliText(request)
+}
+
 private suspend fun OkHttpClient.executeBilibiliJson(request: Request): JsonObject {
+    val body = executeBilibiliText(request)
+    return withContext(Dispatchers.Default) { JsonParser.parseString(body).asJsonObject }
+}
+
+private suspend fun OkHttpClient.executeBilibiliText(request: Request): String {
     val body = suspendCancellableCoroutine<String> { continuation ->
         val call = newCall(request)
         continuation.invokeOnCancellation { call.cancel() }
@@ -56,7 +87,7 @@ private suspend fun OkHttpClient.executeBilibiliJson(request: Request): JsonObje
             }
         })
     }
-    return withContext(Dispatchers.Default) { JsonParser.parseString(body).asJsonObject }
+    return body
 }
 
 internal fun JsonObject.requireBilibiliData(): JsonObject {

@@ -10,12 +10,15 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -49,7 +52,16 @@ internal fun VisionNavigation() {
             popEnterTransition = { fadeIn(effects) + slideInHorizontally(spatial) { -it / 12 } },
             popExitTransition = { fadeOut(effects) + slideOutHorizontally(spatial) { it / 8 } },
         ) {
-            composable("home") {
+            composable("home") { entry ->
+                val unreadModel: VisionUnreadViewModel = viewModel()
+                val unreadCount by unreadModel.count.collectAsState()
+                DisposableEffect(entry) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) unreadModel.refresh()
+                    }
+                    entry.lifecycle.addObserver(observer)
+                    onDispose { entry.lifecycle.removeObserver(observer) }
+                }
                 VisionHomeScreen(
                     viewModel = viewModel(),
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
@@ -57,12 +69,43 @@ internal fun VisionNavigation() {
                     onOpenSettings = { controller.navigate("settings") { launchSingleTop = true } },
                     onOpenUserCenter = { controller.navigate("user") { launchSingleTop = true } },
                     onOpenSeasons = { controller.navigate("seasons") { launchSingleTop = true } },
+                    onOpenLive = { controller.navigate("lives") { launchSingleTop = true } },
+                    onOpenMessages = { controller.navigate("messages") { launchSingleTop = true } },
+                    unreadCount = unreadCount,
                 )
+            }
+            composable("messages") {
+                VisionMessageCenterScreen(
+                    onBack = { controller.popBackStack() },
+                    onOpenChat = { controller.navigate("chat/$it?sessionType=1") { launchSingleTop = true } },
+                )
+            }
+            composable(
+                "chat/{talkerId}?sessionType={sessionType}",
+                arguments = listOf(
+                    navArgument("talkerId") { type = NavType.LongType },
+                    navArgument("sessionType") { type = NavType.IntType; defaultValue = 1 },
+                ),
+            ) { entry ->
+                val args = requireNotNull(entry.arguments)
+                VisionPrivateChatScreen(args.getLong("talkerId"), args.getInt("sessionType"), onBack = { controller.popBackStack() })
+            }
+            composable("lives") {
+                VisionLiveListScreen(
+                    onBack = { controller.popBackStack() },
+                    onRoomClick = { controller.navigate("live/$it") { launchSingleTop = true } },
+                )
+            }
+            composable("live/{roomId}", arguments = listOf(navArgument("roomId") { type = NavType.LongType })) { entry ->
+                VisionLiveScreen(requireNotNull(entry.arguments).getLong("roomId"), onBack = { controller.popBackStack() })
             }
             composable("search") {
                 VisionSearchScreen(
                     onBack = { controller.popBackStack() },
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
+                    onRoomClick = { controller.navigate("live/${it.roomId}") { launchSingleTop = true } },
+                    onUserClick = { controller.navigate("creator/${it.mid}") { launchSingleTop = true } },
+                    onSeasonClick = { controller.navigate("season/${it.seasonId}") { launchSingleTop = true } },
                 )
             }
             composable("user") {
@@ -71,12 +114,39 @@ internal fun VisionNavigation() {
                     onNavigateToLogin = { controller.navigate("login") { launchSingleTop = true } },
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
                     onOpenDynamics = { controller.navigate("dynamics") { launchSingleTop = true } },
+                    onOpenFollowList = { mode -> controller.navigate("follow/${VisionUserSession.mid}?mode=${mode.name}") { launchSingleTop = true } },
+                    onOpenFavManager = { controller.navigate("favManager") { launchSingleTop = true } },
                 )
+            }
+            composable("favManager") {
+                VisionFavManagerScreen(onBack = { controller.popBackStack() },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } })
             }
             composable("dynamics") {
                 VisionDynamicScreen(onBack = { controller.popBackStack() },
                     onLogin = { controller.navigate("login") { launchSingleTop = true } },
-                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages)
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
+                    onOpenDetail = { controller.navigate("dynamicDetail/$it") { launchSingleTop = true } },
+                    onOpenArticle = { controller.navigate("article/$it") { launchSingleTop = true } },
+                    onOpenOpus = { controller.navigate("opus/$it") { launchSingleTop = true } })
+            }
+            composable("dynamicDetail/{dynamicId}", arguments = listOf(navArgument("dynamicId") { type = NavType.StringType })) { entry ->
+                VisionDynamicDetailScreen(requireNotNull(entry.arguments).getString("dynamicId").orEmpty(),
+                    onBack = { controller.popBackStack() },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } },
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
+                    onOpenArticle = { controller.navigate("article/$it") { launchSingleTop = true } },
+                    onOpenOpus = { controller.navigate("opus/$it") { launchSingleTop = true } })
+            }
+            composable("article/{cv}", arguments = listOf(navArgument("cv") { type = NavType.LongType })) { entry ->
+                VisionArticleScreen(requireNotNull(entry.arguments).getLong("cv").toString(), isOpus = false,
+                    onBack = { controller.popBackStack() }, onImages = openImages,
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
+            }
+            composable("opus/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                VisionArticleScreen(requireNotNull(entry.arguments).getString("id").orEmpty(), isOpus = true,
+                    onBack = { controller.popBackStack() }, onImages = openImages,
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
             }
             composable("images/{index}", arguments = listOf(navArgument("index") { type = NavType.IntType })) { entry ->
                 val sources = remember(entry) {
@@ -87,7 +157,24 @@ internal fun VisionNavigation() {
             composable("creator/{mid}", arguments = listOf(navArgument("mid") { type = NavType.LongType })) { entry ->
                 VisionCreatorScreen(requireNotNull(entry.arguments).getLong("mid"),
                     onBack = { controller.popBackStack() }, onLogin = { controller.navigate("login") { launchSingleTop = true } },
-                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } })
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
+                    onFollowList = { mode ->
+                        val target = requireNotNull(entry.arguments).getLong("mid")
+                        controller.navigate("follow/$target?mode=${mode.name}") { launchSingleTop = true }
+                    })
+            }
+            composable(
+                "follow/{mid}?mode={mode}",
+                arguments = listOf(
+                    navArgument("mid") { type = NavType.LongType },
+                    navArgument("mode") { type = NavType.StringType; defaultValue = "FOLLOWING" },
+                ),
+            ) { entry ->
+                val args = requireNotNull(entry.arguments)
+                val mode = runCatching { VisionFollowMode.valueOf(args.getString("mode") ?: "FOLLOWING") }.getOrDefault(VisionFollowMode.FOLLOWING)
+                VisionFollowListScreen(args.getLong("mid"), mode,
+                    onBack = { controller.popBackStack() },
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
             }
             composable("seasons") {
                 VisionSeasonCatalogScreen(onBack = { controller.popBackStack() },

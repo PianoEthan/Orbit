@@ -21,6 +21,7 @@ import kotlin.coroutines.resumeWithException
 
 fun interface DanmakuGateway {
     suspend fun loadXmlDanmaku(cid: Long): ByteArray?
+    suspend fun sendDanmaku(cid: Long, bvid: String, msg: String, progressMs: Long, color: Int, mode: Int, cookie: String, csrf: String): Boolean = false
 }
 
 class BilibiliDanmakuGateway(
@@ -61,6 +62,19 @@ class BilibiliDanmakuGateway(
         } catch (_: IOException) {
             null
         }
+    }
+
+    override suspend fun sendDanmaku(cid: Long, bvid: String, msg: String, progressMs: Long, color: Int, mode: Int, cookie: String, csrf: String): Boolean {
+        require(cid > 0 && msg.isNotBlank() && msg.codePointCount(0, msg.length) <= CoreDanmaku.MAX_LENGTH) { "弹幕需为 1–${CoreDanmaku.MAX_LENGTH} 字" }
+        require(cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v2/dm/post", cookie,
+            mapOf(
+                "oid" to cid.toString(), "type" to "1", "msg" to msg, "bvid" to bvid,
+                "progress" to progressMs.toString(), "color" to color.toString(), "mode" to mode.toString(), "csrf" to csrf,
+            ),
+        )
+        return json.get("code")?.asInt == 0
     }
 }
 

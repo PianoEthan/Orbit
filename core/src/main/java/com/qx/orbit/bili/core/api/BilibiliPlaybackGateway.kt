@@ -69,6 +69,8 @@ class BilibiliPlaybackGateway(
             checkNotNull(response.get("result")?.takeIf { it.isJsonObject }?.asJsonObject
                 ?: response.get("data")?.takeIf { it.isJsonObject }?.asJsonObject) { "番剧播放数据为空" }
         } else {
+            // 未登录 try_look 可试看 1080p
+            if (cookie.isBlank()) params["try_look"] = "1"
             val url = client.signedBilibiliUrl("https://api.bilibili.com/x/player/wbi/playurl", params)
             client.getBilibiliJson(url, cookie = cookie).requireBilibiliData()
         }

@@ -21,5 +21,15 @@ class VisionLayoutPolicyTest {
         assertEquals(3, visionGridColumns(800f))
         assertEquals(4, visionGridColumns(1000f))
         assertEquals(6, visionGridColumns(1440f))
+        assertEquals(6, visionGridColumns(3840f))
+    }
+
+    @Test
+    fun listGridKeepsRowCellsWideEnoughForAvatarAndActions() {
+        assertEquals(1, visionListColumns(599f))
+        assertEquals(2, visionListColumns(600f))
+        assertEquals(2, visionListColumns(1000f))
+        assertEquals(3, visionListColumns(1440f))
+        assertEquals(3, visionListColumns(3840f))
     }
 }

@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -34,8 +36,9 @@ internal fun VisionUserFolderPicker(folders: List<CoreFavFolder>, selectedId: Lo
             focus.requestFocus()
         }
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("选择收藏夹") }, text = {
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 400.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    AlertDialog(onDismissRequest = onDismiss, modifier = if (wide) Modifier.widthIn(max = 560.dp) else Modifier, properties = DialogProperties(usePlatformDefaultWidth = !wide), title = { Text("选择收藏夹") }, text = {
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = if (wide) 480.dp else 400.dp), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(folders, key = { it.id }) { folder ->
                 val interaction = remember { MutableInteractionSource() }
                 val focused by interaction.collectIsFocusedAsState()

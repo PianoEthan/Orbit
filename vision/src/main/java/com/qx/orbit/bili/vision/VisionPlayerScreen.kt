@@ -88,6 +88,8 @@ internal fun VisionPlayerScreen(
     var choosingQuality by remember { mutableStateOf(false) }
     var choosingSpeed by remember { mutableStateOf(false) }
     var choosingEpisode by remember { mutableStateOf(false) }
+    var sendingDanmaku by remember { mutableStateOf(false) }
+    var danmakuProgress by remember { mutableLongStateOf(0L) }
     val episodeFocus = remember { FocusRequester() }
     var restoreEpisodeFocus by remember { mutableStateOf(false) }
     var playbackSpeed by rememberSaveable(video.bvid) { mutableFloatStateOf(1f) }
@@ -283,14 +285,14 @@ internal fun VisionPlayerScreen(
         }
     }
     val controlsTimeout = VisionPreferences.controlsTimeoutMs
-    LaunchedEffect(controlsVisible, isPlaying, isBuffering, error, lastInteractionTime, scrubFraction, controlsTimeout, choosingQuality, choosingSpeed, choosingEpisode, choosingSubtitle) {
-        if (controlsVisible && isPlaying && !isBuffering && error == null && scrubFraction == null && controlsTimeout > 0 && !choosingQuality && !choosingSpeed && !choosingEpisode && !choosingSubtitle) {
+    LaunchedEffect(controlsVisible, isPlaying, isBuffering, error, lastInteractionTime, scrubFraction, controlsTimeout, choosingQuality, choosingSpeed, choosingEpisode, choosingSubtitle, sendingDanmaku) {
+        if (controlsVisible && isPlaying && !isBuffering && error == null && scrubFraction == null && controlsTimeout > 0 && !choosingQuality && !choosingSpeed && !choosingEpisode && !choosingSubtitle && !sendingDanmaku) {
             delay(controlsTimeout)
             controlsVisible = false
         }
     }
-    LaunchedEffect(canControl, error, controlsVisible, inputMode.inputMode, choosingSpeed, choosingQuality, choosingEpisode, choosingSubtitle) {
-        if (!choosingSpeed && !choosingQuality && !choosingEpisode && !choosingSubtitle && inputMode.inputMode == InputMode.Keyboard) {
+    LaunchedEffect(canControl, error, controlsVisible, inputMode.inputMode, choosingSpeed, choosingQuality, choosingEpisode, choosingSubtitle, sendingDanmaku) {
+        if (!choosingSpeed && !choosingQuality && !choosingEpisode && !choosingSubtitle && !sendingDanmaku && inputMode.inputMode == InputMode.Keyboard) {
             withFrameNanos { }
             when {
                 error != null -> retryFocus.requestFocus()
@@ -505,6 +507,13 @@ internal fun VisionPlayerScreen(
                         }, modifier = Modifier.heightIn(min = 56.dp)) {
                             Text(if (VisionPreferences.danmakuEnabled) "弹幕：开" else "弹幕：关")
                         }
+                        if (VisionUserSession.isLoggedIn) FilledTonalButton(onClick = {
+                            markInteraction()
+                            danmakuProgress = elapsedMs
+                            sendingDanmaku = true
+                        }, modifier = Modifier.heightIn(min = 56.dp)) {
+                            Text("发送弹幕")
+                        }
                         FilledTonalButton(onClick = { markInteraction(); choosingSubtitle = true }, modifier = Modifier.heightIn(min = 56.dp)) {
                             Text(if (subtitles.selected == null) "CC 字幕" else "CC · ${subtitles.selected?.label.orEmpty()}")
                         }
@@ -530,6 +539,11 @@ internal fun VisionPlayerScreen(
                 }
             }
         }
+        if (sendingDanmaku) VisionDanmakuComposerOverlay(
+            danmakuProgress, activeCid, video.bvid,
+            onDismiss = { sendingDanmaku = false; markInteraction() },
+            modifier = Modifier.align(Alignment.BottomCenter).zIndex(6f),
+        )
     }
 }
 
