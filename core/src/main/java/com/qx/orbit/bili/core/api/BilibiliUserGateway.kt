@@ -64,6 +64,10 @@ interface UserDataGateway {
     suspend fun loadDynamicVideoPage(cookie: String, offset: String = ""): CoreDynamicVideoPage = CoreDynamicVideoPage(loadDynamicVideos(cookie, offset), null)
     suspend fun loadFollowingList(mid: Long, page: Int, cookie: String = ""): CoreFollowPage = error("暂不支持关注列表")
     suspend fun loadFollowerList(mid: Long, page: Int, cookie: String = ""): CoreFollowPage = error("暂不支持粉丝列表")
+    suspend fun createFavFolder(title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean = false
+    suspend fun editFavFolder(mediaId: Long, title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean = false
+    suspend fun deleteFavFolder(mediaId: Long, cookie: String, csrf: String): Boolean = false
+    suspend fun moveFavVideos(aids: List<Long>, fromFolder: Long, toFolder: Long, cookie: String, csrf: String): Boolean = false
 }
 
 class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient()) : UserDataGateway {
@@ -166,6 +170,42 @@ class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient())
             )
         }.orEmpty().distinctBy { it.bvid }
         return CoreFavVideoPage(videos, data.get("has_more")?.takeUnless { it.isJsonNull }?.asBoolean ?: (medias?.size() == 20))
+    }
+
+    override suspend fun createFavFolder(title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean {
+        require(title.isNotBlank() && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/add", cookie,
+            mapOf("title" to title, "intro" to intro, "privacy" to privacy.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun editFavFolder(mediaId: Long, title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean {
+        require(mediaId > 0 && title.isNotBlank() && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/edit", cookie,
+            mapOf("media_id" to mediaId.toString(), "title" to title, "intro" to intro, "privacy" to privacy.toString(), "cover" to "", "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun deleteFavFolder(mediaId: Long, cookie: String, csrf: String): Boolean {
+        require(mediaId > 0 && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/del", cookie,
+            mapOf("media_ids" to mediaId.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun moveFavVideos(aids: List<Long>, fromFolder: Long, toFolder: Long, cookie: String, csrf: String): Boolean {
+        require(aids.isNotEmpty() && fromFolder > 0 && toFolder > 0 && fromFolder != toFolder && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/medialist/gateway/coll/resource/deal", cookie,
+            mapOf("rid" to aids.joinToString(","), "type" to "2", "add_media_ids" to toFolder.toString(), "del_media_ids" to fromFolder.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
     }
 
     override suspend fun loadDynamicVideos(cookie: String, offset: String): List<CoreVideo> = loadDynamicVideoPage(cookie, offset).videos

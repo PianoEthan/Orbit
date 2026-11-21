@@ -42,6 +42,7 @@ internal fun VisionUserCenterScreen(
     viewModel: VisionUserCenterViewModel = viewModel(),
     onOpenDynamics: () -> Unit = {},
     onOpenFollowList: (VisionFollowMode) -> Unit = {},
+    onOpenFavManager: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val isLoggedIn = VisionUserSession.isLoggedIn
@@ -91,6 +92,7 @@ internal fun VisionUserCenterScreen(
                 if (isLoggedIn) {
                     TextButton(onClick = { onOpenFollowList(VisionFollowMode.FOLLOWING) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("我的关注") }
                     TextButton(onClick = { onOpenFollowList(VisionFollowMode.FANS) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("我的粉丝") }
+                    TextButton(onClick = onOpenFavManager, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("管理收藏夹") }
                     IconButton(onClick = viewModel::refresh, enabled = !loading) { Icon(Icons.Default.Refresh, "刷新数据") }
                 }
             }
