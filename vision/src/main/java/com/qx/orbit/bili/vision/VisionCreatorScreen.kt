@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -35,14 +36,16 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         IconButton(onClick = onBack, modifier = Modifier.padding(8.dp).focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val headerWide = maxWidth >= 600.dp
             LazyVerticalGrid(columns = GridCells.Fixed(visionGridColumns(maxWidth.value)), contentPadding = PaddingValues(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.visionReadableWidth(headerWide), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         state.creator?.let { creator ->
                             AsyncImage(creator.avatar, null, Modifier.size(72.dp).clip(CircleShape))
                             Text(creator.name, style = MaterialTheme.typography.headlineMedium)
-                            Text(creator.signature.ifBlank { "暂无签名" })
+                            Text(creator.signature.ifBlank { "暂无签名" }, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -79,6 +82,7 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
                             FilledTonalButton(onClick = viewModel::refreshProfile) { Text("重试资料") }
                         }
                         Text("视频投稿", style = MaterialTheme.typography.titleLarge)
+                    }
                     }
                 }
                 items(state.videos, key = { it.bvid }) { video -> VisionExpressiveVideoCard(video, onClick = { onVideo(video) }) }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -28,8 +30,11 @@ internal fun VisionFavoritePicker(
     VisionInitialFocus(firstFocus, state.folders.size)
     LaunchedEffect(cookie, mid) { viewModel.load(cookie, mid) }
     DisposableEffect(viewModel) { onDispose { viewModel.stop() } }
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = if (wide) Modifier.widthIn(max = 560.dp) else Modifier,
+        properties = DialogProperties(usePlatformDefaultWidth = !wide),
         title = { Text("收藏到收藏夹") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -41,7 +46,7 @@ internal fun VisionFavoritePicker(
                         FilledTonalButton(onClick = { viewModel.load(cookie, mid) }) { Text("重试收藏夹") }
                     }
                     state.folders.isEmpty() -> Text("当前没有可用收藏夹")
-                    else -> LazyColumn(Modifier.heightIn(max = 360.dp).selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    else -> LazyColumn(Modifier.heightIn(max = if (wide) 480.dp else 360.dp).selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         itemsIndexed(state.folders, key = { _, folder -> folder.id }) { index, folder ->
                             Row(
                                 Modifier.fillMaxWidth().selectable(selected = state.selected == folder.id, role = Role.RadioButton, onClick = { viewModel.select(folder.id) })

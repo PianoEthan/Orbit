@@ -83,11 +83,14 @@ internal fun VisionSeasonDetailScreen(seasonId: Long, onBack: () -> Unit, onPlay
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         IconButton(onClick = onBack, modifier = Modifier.padding(8.dp).focusRequester(detailBackFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val sidePad = if (maxWidth >= 600.dp) ((maxWidth.value - 840f).coerceAtLeast(0f) / 2).dp else 0.dp
+            val detailWide = maxWidth >= 600.dp
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp + sidePad, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.detail?.let { detail ->
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AsyncImage(detail.season.cover, null, Modifier.height(240.dp).aspectRatio(0.7f), contentScale = ContentScale.Crop)
+                        AsyncImage(detail.season.cover, null, Modifier.height(if (detailWide) 320.dp else 240.dp).aspectRatio(0.7f), contentScale = ContentScale.Crop)
                         Text(detail.season.title, style = MaterialTheme.typography.headlineMedium)
                         Text(detail.description)
                         val resume = detail.episodes.firstOrNull { it.id == detail.lastEpisodeId } ?: detail.episodes.firstOrNull()
@@ -109,7 +112,7 @@ internal fun VisionSeasonDetailScreen(seasonId: Long, onBack: () -> Unit, onPlay
                 }
                 item { Text("剧集与花絮", style = MaterialTheme.typography.titleLarge) }
                 items(detail.episodes, key = { it.id }) { episode ->
-                    FilledTonalButton(onClick = { onPlay(episode.video) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    FilledTonalButton(onClick = { onPlay(episode.video) }, modifier = Modifier.fillMaxWidth().widthIn(max = 560.dp).heightIn(min = 56.dp)) {
                         Text(listOf(episode.title, episode.badge).filter { it.isNotBlank() }.joinToString(" · "))
                     }
                 }
@@ -117,6 +120,7 @@ internal fun VisionSeasonDetailScreen(seasonId: Long, onBack: () -> Unit, onPlay
             item {
                 if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error); FilledTonalButton(onClick = viewModel::retry) { Text("重试剧集详情") } }
+            }
             }
         }
     }
