@@ -120,6 +120,13 @@ internal fun VisionNavigation() {
             composable("dynamics") {
                 VisionDynamicScreen(onBack = { controller.popBackStack() },
                     onLogin = { controller.navigate("login") { launchSingleTop = true } },
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
+                    onOpenDetail = { controller.navigate("dynamicDetail/$it") { launchSingleTop = true } })
+            }
+            composable("dynamicDetail/{dynamicId}", arguments = listOf(navArgument("dynamicId") { type = NavType.StringType })) { entry ->
+                VisionDynamicDetailScreen(requireNotNull(entry.arguments).getString("dynamicId").orEmpty(),
+                    onBack = { controller.popBackStack() },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } },
                     onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages)
             }
             composable("images/{index}", arguments = listOf(navArgument("index") { type = NavType.IntType })) { entry ->

@@ -1,5 +1,6 @@
 package com.qx.orbit.bili.core.api
 
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -20,6 +21,8 @@ data class CoreDynamicPage(val items: List<CoreDynamic>, val nextOffset: String?
 
 fun interface DynamicGateway {
     suspend fun load(cookie: String, offset: String): CoreDynamicPage
+    suspend fun loadDetail(id: String, cookie: String): CoreDynamic = error("暂不支持动态详情")
+    suspend fun repost(dynamicId: String, text: String, cookie: String, csrf: String): Boolean = false
 }
 
 class BilibiliDynamicGateway(private val client: OkHttpClient = OkHttpClient()) : DynamicGateway {
@@ -34,6 +37,39 @@ class BilibiliDynamicGateway(private val client: OkHttpClient = OkHttpClient()) 
             if (it.asJsonPrimitive.isBoolean) it.asBoolean else it.asInt != 0
         } ?: false
         return CoreDynamicPage(items, data.text("offset").takeIf { hasMore && it.isNotBlank() && it != offset })
+    }
+
+    override suspend fun loadDetail(id: String, cookie: String): CoreDynamic {
+        require(id.isNotBlank())
+        val url = "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail".toHttpUrl().newBuilder()
+            .addQueryParameter("id", id).addQueryParameter("features", "itemOpusStyle").build()
+        val item = client.getBilibiliJson(url.toString(), cookie).requireBilibiliData().obj("item")
+            ?: error("动态不存在或已删除")
+        return parse(item, 0) ?: error("动态解析失败")
+    }
+
+    override suspend fun repost(dynamicId: String, text: String, cookie: String, csrf: String): Boolean {
+        require(dynamicId.isNotBlank() && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val body = JsonObject().apply {
+            add("dyn_req", JsonObject().apply {
+                add("content", JsonObject().apply {
+                    add("contents", JsonArray().apply {
+                        add(JsonObject().apply {
+                            addProperty("raw_text", text.ifBlank { "转发动态" })
+                            addProperty("type", 1)
+                            addProperty("biz_id", "")
+                        })
+                    })
+                })
+                addProperty("scene", 4)
+            })
+            add("web_repost_src", JsonObject().apply { addProperty("dyn_id_str", dynamicId) })
+        }
+        val json = client.postBilibiliJson(
+            "https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=$csrf", cookie, body,
+            referer = "https://t.bilibili.com/",
+        )
+        return json.get("code")?.asInt == 0
     }
 
     private fun parse(item: JsonObject, depth: Int): CoreDynamic? {
