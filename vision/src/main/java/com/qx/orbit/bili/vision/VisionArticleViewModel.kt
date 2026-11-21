@@ -15,6 +15,10 @@ internal data class VisionArticleState(
     val article: CoreArticle? = null,
     val loading: Boolean = false,
     val error: String? = null,
+    val busy: Boolean = false,
+    val message: String? = null,
+    val liked: Boolean = false,
+    val favorited: Boolean = false,
 )
 
 internal class VisionArticleViewModel(private val gateway: ArticleGateway = BilibiliArticleGateway()) : ViewModel() {
@@ -33,6 +37,35 @@ internal class VisionArticleViewModel(private val gateway: ArticleGateway = Bili
                 throw cancelled
             } catch (_: Exception) {
                 _state.value = VisionArticleState(error = "内容加载失败，请重试")
+            }
+        }
+    }
+
+    fun like(cv: Long, cookie: String, csrf: String) {
+        val target = !_state.value.liked
+        interact("点赞成功", { gateway.likeArticle(cv, target, cookie, csrf) }) { ok -> if (ok) _state.value.copy(liked = target) else _state.value }
+    }
+
+    fun favorite(cv: Long, cookie: String, csrf: String) {
+        val target = !_state.value.favorited
+        interact("收藏成功", { gateway.favoriteArticle(cv, target, cookie, csrf) }) { ok -> if (ok) _state.value.copy(favorited = target) else _state.value }
+    }
+
+    fun coin(cv: Long, upid: Long, cookie: String, csrf: String) {
+        interact("投币成功", { gateway.coinArticle(cv, upid, 1, cookie, csrf) }) { _state.value }
+    }
+
+    private fun interact(successMessage: String, block: suspend () -> Boolean, transform: (Boolean) -> VisionArticleState) {
+        if (_state.value.busy) return
+        _state.value = _state.value.copy(busy = true, message = null)
+        viewModelScope.launch {
+            try {
+                val ok = block()
+                _state.value = transform(ok).copy(busy = false, message = if (ok) successMessage else "操作失败，请重试")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(busy = false, message = "操作失败，请重试")
             }
         }
     }

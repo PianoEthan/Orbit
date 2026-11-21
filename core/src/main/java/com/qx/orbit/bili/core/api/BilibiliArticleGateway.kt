@@ -64,6 +64,33 @@ class BilibiliArticleGateway(private val client: OkHttpClient = OkHttpClient()) 
         )
     }
 
+    override suspend fun likeArticle(cv: Long, like: Boolean, cookie: String, csrf: String): Boolean {
+        require(cv > 0 && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/article/like", cookie,
+            mapOf("id" to cv.toString(), "type" to if (like) "1" else "2", "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun favoriteArticle(cv: Long, add: Boolean, cookie: String, csrf: String): Boolean {
+        require(cv > 0 && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/article/favorites/${if (add) "add" else "del"}", cookie,
+            mapOf("id" to cv.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun coinArticle(cv: Long, upid: Long, multiply: Int, cookie: String, csrf: String): Boolean {
+        require(cv > 0 && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/web-interface/coin/add", cookie,
+            mapOf("aid" to cv.toString(), "upid" to upid.toString(), "multiply" to multiply.coerceIn(1, 2).toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
     private fun parseParagraphs(paragraphs: JsonArray): List<CoreArticleBlock> {
         val blocks = mutableListOf<CoreArticleBlock>()
         paragraphs.forEach { element ->

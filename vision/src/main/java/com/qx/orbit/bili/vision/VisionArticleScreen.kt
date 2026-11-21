@@ -16,6 +16,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,6 +39,7 @@ internal fun VisionArticleScreen(
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
     val backFocus = remember { FocusRequester() }
+    var confirmingCoin by remember { mutableStateOf(false) }
     VisionInitialFocus(backFocus, state.article?.id)
     BackHandler(onBack = onBack)
     LaunchedEffect(id, isOpus, cookie) { viewModel.open(id, isOpus, cookie) }
@@ -77,12 +81,43 @@ internal fun VisionArticleScreen(
                             }
                             HorizontalDivider()
                             ArticleBlocks(article.blocks, onImages)
+                            if (!isOpus) {
+                                HorizontalDivider()
+                                val cv = id.toLongOrNull() ?: 0L
+                                if (!VisionUserSession.isLoggedIn) {
+                                    Text("登录后可点赞、投币或收藏", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilledTonalButton(onClick = { viewModel.like(cv, cookie, VisionUserSession.csrf) }, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp).visionFocusBorder()) {
+                                            Text(if (state.liked) "已点赞 · 取消" else "点赞")
+                                        }
+                                        FilledTonalButton(onClick = { confirmingCoin = true }, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp).visionFocusBorder()) { Text("投币") }
+                                        FilledTonalButton(onClick = { viewModel.favorite(cv, cookie, VisionUserSession.csrf) }, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp).visionFocusBorder()) {
+                                            Text(if (state.favorited) "已收藏 · 取消" else "收藏")
+                                        }
+                                    }
+                                    if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                                    state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+    if (confirmingCoin) AlertDialog(
+        onDismissRequest = { confirmingCoin = false },
+        title = { Text("投 1 枚硬币？") },
+        text = { Text("将使用当前账号向该专栏投 1 枚硬币，投币后不可撤回。") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmingCoin = false
+                viewModel.coin(id.toLongOrNull() ?: 0L, state.article?.authorMid ?: 0L, cookie, VisionUserSession.csrf)
+            }) { Text("确认") }
+        },
+        dismissButton = { TextButton(onClick = { confirmingCoin = false }) { Text("取消") } },
+    )
 }
 
 @Composable
