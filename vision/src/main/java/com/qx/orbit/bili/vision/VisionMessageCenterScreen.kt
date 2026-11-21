@@ -19,6 +19,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -42,6 +44,8 @@ internal fun VisionMessageCenterScreen(
     viewModel: VisionMessageCenterViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     BackHandler(onBack = onBack)
     LaunchedEffect(Unit) { viewModel.refresh() }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -50,7 +54,7 @@ internal fun VisionMessageCenterScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Text("消息", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 if (state.unread.total > 0) {
@@ -151,7 +155,6 @@ private fun MessageTabContent(
                     subtitle = notice.content,
                     trailing = if (notice.timeStamp > 0) formatVisionMessageTime(notice.timeStamp) else "",
                     roundedImage = true,
-                    enabled = false,
                     onClick = {},
                 )
             }

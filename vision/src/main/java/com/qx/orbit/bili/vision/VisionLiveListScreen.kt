@@ -13,6 +13,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +29,8 @@ internal fun VisionLiveListScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val isLoggedIn = VisionUserSession.isLoggedIn
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     BackHandler(onBack = onBack)
     LaunchedEffect(Unit) { if (state.rooms.isEmpty()) viewModel.selectFeed(state.feed) }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -35,7 +39,7 @@ internal fun VisionLiveListScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Text("直播", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
             }
             Row(

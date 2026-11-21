@@ -236,7 +236,7 @@ private fun FeedStatus(loading: Boolean, error: String?, hasMore: Boolean, empty
             loading -> { LoadingIndicator(); Text("正在加载视频", style = MaterialTheme.typography.bodyMedium) }
             error != null -> { Text(error, color = MaterialTheme.colorScheme.error); FilledTonalButton(onClick = onRetry) { Text("重新加载") } }
             empty -> { Text("暂无视频", color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = onRetry) { Text("刷新") } }
-            hasMore -> FilledTonalButton(onClick = onRetry) { Text("加载更多") }
+            hasMore -> FilledTonalButton(onClick = onRetry, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("加载更多") }
             else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

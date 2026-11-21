@@ -94,7 +94,7 @@ private fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImage
             var overflows by remember(item.text) { mutableStateOf(false) }
             Text(item.text, style = MaterialTheme.typography.bodyLarge, maxLines = if (expanded) Int.MAX_VALUE else 6,
                 onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow })
-            if (overflows || expanded) TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起正文" else "展开正文") }
+            if (overflows || expanded) TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text(if (expanded) "收起正文" else "展开正文") }
         }
         item.images.withIndex().toList().chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

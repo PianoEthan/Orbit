@@ -93,6 +93,8 @@ internal fun VisionSearchScreen(
     val history = VisionSearchHistory.history
 
     val keyboard = LocalSoftwareKeyboardController.current
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
 
     val submitSearch: (String) -> Unit = { keyword ->
         val trimmed = keyword.trim()
@@ -133,6 +135,7 @@ internal fun VisionSearchScreen(
                             onSearch = { submitSearch(text) },
                             onBack = onBack,
                             nineKey = nineKey,
+                            backFocus = backFocus,
                         )
 
                         Row(
@@ -239,6 +242,7 @@ internal fun VisionSearchScreen(
                             onSearch = { submitSearch(text) },
                             onBack = onBack,
                             nineKey = nineKey,
+                            backFocus = backFocus,
                         )
 
                         Row(
@@ -326,13 +330,14 @@ private fun SearchInputHeader(
     onSearch: () -> Unit,
     onBack: () -> Unit,
     nineKey: Boolean,
+    backFocus: FocusRequester = remember { FocusRequester() },
 ) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
         OutlinedTextField(

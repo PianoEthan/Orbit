@@ -19,6 +19,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -42,6 +46,8 @@ internal fun VisionFollowListScreen(
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
     val isSelf = mid == VisionUserSession.mid
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     BackHandler(onBack = onBack)
     LaunchedEffect(mid, mode, cookie) { viewModel.open(mid, mode, cookie) }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -50,7 +56,7 @@ internal fun VisionFollowListScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Text(
                     if (mode == VisionFollowMode.FOLLOWING) "关注列表" else "粉丝列表",
                     style = MaterialTheme.typography.titleLarge,
@@ -203,7 +209,7 @@ private fun VisionFollowUserRow(
                     OutlinedButton(
                         onClick = onToggleFollow,
                         enabled = !busy,
-                        modifier = Modifier.height(36.dp),
+                        modifier = Modifier.heightIn(min = if (LocalInputModeManager.current.inputMode == InputMode.Keyboard) 48.dp else 36.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
@@ -215,7 +221,7 @@ private fun VisionFollowUserRow(
                     Button(
                         onClick = onToggleFollow,
                         enabled = !busy,
-                        modifier = Modifier.height(36.dp),
+                        modifier = Modifier.heightIn(min = if (LocalInputModeManager.current.inputMode == InputMode.Keyboard) 48.dp else 36.dp),
                         contentPadding = PaddingValues(horizontal = 20.dp),
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)

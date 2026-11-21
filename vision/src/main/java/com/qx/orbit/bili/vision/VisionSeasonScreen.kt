@@ -12,6 +12,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -26,11 +28,13 @@ internal fun VisionSeasonCatalogScreen(onBack: () -> Unit, onSeason: (Long) -> U
     var followed by rememberSaveable { mutableStateOf(false) }
     val cookie = VisionUserSession.cookie
     val state by viewModel.state.collectAsState()
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     LaunchedEffect(type, followed, cookie) { viewModel.openCatalog(type, followed, VisionUserSession.mid, cookie) }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Row(Modifier.fillMaxWidth().padding(8.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+            IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
             TextButton(onClick = { followed = !followed; if (type !in 1..2) type = 1 }) { Text(if (followed) "查看全部剧集" else "我的追番追剧") }
         }
         val types = if (followed) listOf(1 to "追番", 2 to "追剧") else listOf(1 to "番剧", 4 to "国创", 2 to "电影", 5 to "电视剧", 3 to "纪录片", 7 to "综艺")
@@ -44,7 +48,7 @@ internal fun VisionSeasonCatalogScreen(onBack: () -> Unit, onSeason: (Long) -> U
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 items(state.items.size, key = { state.items[it].id }) { index ->
                     val season = state.items[index]
-                    Card(onClick = { onSeason(season.id) }, modifier = Modifier.fillMaxWidth()) {
+                    Card(onClick = { onSeason(season.id) }, modifier = Modifier.fillMaxWidth().visionFocusBorder(MaterialTheme.shapes.medium)) {
                         AsyncImage(season.cover, null, Modifier.fillMaxWidth().aspectRatio(0.7f), contentScale = ContentScale.Crop)
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(season.title, style = MaterialTheme.typography.titleMedium)
@@ -73,10 +77,12 @@ internal fun VisionSeasonDetailScreen(seasonId: Long, onBack: () -> Unit, onPlay
     onLogin: () -> Unit, viewModel: VisionSeasonViewModel = viewModel()) {
     val cookie = VisionUserSession.cookie
     val state by viewModel.state.collectAsState()
+    val detailBackFocus = remember { FocusRequester() }
+    VisionInitialFocus(detailBackFocus)
     LaunchedEffect(seasonId, cookie) { viewModel.openDetail(seasonId, cookie) }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        IconButton(onClick = onBack, modifier = Modifier.padding(8.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        IconButton(onClick = onBack, modifier = Modifier.padding(8.dp).focusRequester(detailBackFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             state.detail?.let { detail ->
                 item {
