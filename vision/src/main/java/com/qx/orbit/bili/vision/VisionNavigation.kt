@@ -57,7 +57,17 @@ internal fun VisionNavigation() {
                     onOpenSettings = { controller.navigate("settings") { launchSingleTop = true } },
                     onOpenUserCenter = { controller.navigate("user") { launchSingleTop = true } },
                     onOpenSeasons = { controller.navigate("seasons") { launchSingleTop = true } },
+                    onOpenLive = { controller.navigate("lives") { launchSingleTop = true } },
                 )
+            }
+            composable("lives") {
+                VisionLiveListScreen(
+                    onBack = { controller.popBackStack() },
+                    onRoomClick = { controller.navigate("live/$it") { launchSingleTop = true } },
+                )
+            }
+            composable("live/{roomId}", arguments = listOf(navArgument("roomId") { type = NavType.LongType })) { entry ->
+                VisionLiveScreen(requireNotNull(entry.arguments).getLong("roomId"), onBack = { controller.popBackStack() })
             }
             composable("search") {
                 VisionSearchScreen(

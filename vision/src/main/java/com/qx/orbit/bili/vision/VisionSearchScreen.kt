@@ -662,7 +662,7 @@ private fun SearchLoadMoreFooter(
 }
 
 @Composable
-private fun SearchResultRow(
+internal fun SearchResultRow(
     imageUrl: String,
     title: String,
     subtitle: String,
@@ -728,13 +728,13 @@ private fun SearchResultRow(
     }
 }
 
-private fun formatVisionCount(count: Int): String = when {
+internal fun formatVisionCount(count: Int): String = when {
     count >= 100_000_000 -> String.format(java.util.Locale.ROOT, "%.1f亿", count / 100_000_000.0)
     count >= 10_000 -> String.format(java.util.Locale.ROOT, "%.1f万", count / 10_000.0)
     else -> count.toString()
 }
 
-private fun formatVisionOnline(online: Int): String = formatVisionCount(online)
+internal fun formatVisionOnline(online: Int): String = formatVisionCount(online)
 
 @Composable
 private fun SuggestionRow(suggestion: String, onClick: () -> Unit) {
