@@ -126,13 +126,27 @@ internal fun VisionNavigation() {
                 VisionDynamicScreen(onBack = { controller.popBackStack() },
                     onLogin = { controller.navigate("login") { launchSingleTop = true } },
                     onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
-                    onOpenDetail = { controller.navigate("dynamicDetail/$it") { launchSingleTop = true } })
+                    onOpenDetail = { controller.navigate("dynamicDetail/$it") { launchSingleTop = true } },
+                    onOpenArticle = { controller.navigate("article/$it") { launchSingleTop = true } },
+                    onOpenOpus = { controller.navigate("opus/$it") { launchSingleTop = true } })
             }
             composable("dynamicDetail/{dynamicId}", arguments = listOf(navArgument("dynamicId") { type = NavType.StringType })) { entry ->
                 VisionDynamicDetailScreen(requireNotNull(entry.arguments).getString("dynamicId").orEmpty(),
                     onBack = { controller.popBackStack() },
                     onLogin = { controller.navigate("login") { launchSingleTop = true } },
-                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages)
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
+                    onOpenArticle = { controller.navigate("article/$it") { launchSingleTop = true } },
+                    onOpenOpus = { controller.navigate("opus/$it") { launchSingleTop = true } })
+            }
+            composable("article/{cv}", arguments = listOf(navArgument("cv") { type = NavType.LongType })) { entry ->
+                VisionArticleScreen(requireNotNull(entry.arguments).getLong("cv").toString(), isOpus = false,
+                    onBack = { controller.popBackStack() }, onImages = openImages,
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
+            }
+            composable("opus/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                VisionArticleScreen(requireNotNull(entry.arguments).getString("id").orEmpty(), isOpus = true,
+                    onBack = { controller.popBackStack() }, onImages = openImages,
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
             }
             composable("images/{index}", arguments = listOf(navArgument("index") { type = NavType.IntType })) { entry ->
                 val sources = remember(entry) {

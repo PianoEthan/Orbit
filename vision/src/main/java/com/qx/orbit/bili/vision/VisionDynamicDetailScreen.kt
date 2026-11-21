@@ -30,6 +30,8 @@ internal fun VisionDynamicDetailScreen(
     onLogin: () -> Unit,
     onVideo: (CoreVideo) -> Unit,
     onImages: (List<String>, Int) -> Unit,
+    onOpenArticle: (Long) -> Unit = {},
+    onOpenOpus: (String) -> Unit = {},
     viewModel: VisionDynamicDetailViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -55,7 +57,7 @@ internal fun VisionDynamicDetailScreen(
                     FilledTonalButton(onClick = { viewModel.open(dynamicId, cookie) }) { Text("重试动态") }
                 }
                 state.dynamic != null -> {
-                    DynamicBody(state.dynamic!!, onVideo, onImages)
+                    DynamicBody(state.dynamic!!, onVideo, onImages, onOpenArticle, onOpenOpus)
                     HorizontalDivider()
                     Text("转发动态", style = MaterialTheme.typography.titleMedium)
                     when {
