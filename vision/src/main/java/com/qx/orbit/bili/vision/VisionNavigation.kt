@@ -10,12 +10,15 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -49,7 +52,16 @@ internal fun VisionNavigation() {
             popEnterTransition = { fadeIn(effects) + slideInHorizontally(spatial) { -it / 12 } },
             popExitTransition = { fadeOut(effects) + slideOutHorizontally(spatial) { it / 8 } },
         ) {
-            composable("home") {
+            composable("home") { entry ->
+                val unreadModel: VisionUnreadViewModel = viewModel()
+                val unreadCount by unreadModel.count.collectAsState()
+                DisposableEffect(entry) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) unreadModel.refresh()
+                    }
+                    entry.lifecycle.addObserver(observer)
+                    onDispose { entry.lifecycle.removeObserver(observer) }
+                }
                 VisionHomeScreen(
                     viewModel = viewModel(),
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
@@ -58,7 +70,25 @@ internal fun VisionNavigation() {
                     onOpenUserCenter = { controller.navigate("user") { launchSingleTop = true } },
                     onOpenSeasons = { controller.navigate("seasons") { launchSingleTop = true } },
                     onOpenLive = { controller.navigate("lives") { launchSingleTop = true } },
+                    onOpenMessages = { controller.navigate("messages") { launchSingleTop = true } },
+                    unreadCount = unreadCount,
                 )
+            }
+            composable("messages") {
+                VisionMessageCenterScreen(
+                    onBack = { controller.popBackStack() },
+                    onOpenChat = { controller.navigate("chat/$it?sessionType=1") { launchSingleTop = true } },
+                )
+            }
+            composable(
+                "chat/{talkerId}?sessionType={sessionType}",
+                arguments = listOf(
+                    navArgument("talkerId") { type = NavType.LongType },
+                    navArgument("sessionType") { type = NavType.IntType; defaultValue = 1 },
+                ),
+            ) { entry ->
+                val args = requireNotNull(entry.arguments)
+                VisionPrivateChatScreen(args.getLong("talkerId"), args.getInt("sessionType"), onBack = { controller.popBackStack() })
             }
             composable("lives") {
                 VisionLiveListScreen(
