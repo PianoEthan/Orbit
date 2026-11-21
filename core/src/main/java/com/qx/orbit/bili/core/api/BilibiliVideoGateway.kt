@@ -129,15 +129,31 @@ class BilibiliVideoGateway(
 
     override suspend fun loadReplyPage(aid: Long, offset: String, cookie: String): CoreReplyPage {
         if (aid <= 0) return CoreReplyPage(emptyList(), null, 0)
-        val url = client.signedBilibiliUrl(
-            "https://api.bilibili.com/x/v2/reply/wbi/main",
-            mapOf(
-                "oid" to aid.toString(), "type" to "1", "mode" to "3",
-                "pagination_str" to JsonObject().apply { add("offset", JsonPrimitive(offset)) }.toString(),
-                "plat" to "1", "web_location" to "1315875",
-            ),
+        val params = mapOf(
+            "oid" to aid.toString(), "type" to "1", "mode" to "3",
+            "pagination_str" to JsonObject().apply { add("offset", JsonPrimitive(offset)) }.toString(),
+            "plat" to "1", "ps" to "20",
         )
-        val data = client.getBilibiliJson(url, cookie).requireBilibiliData()
+        // 旧版 main 未登录仍返回整页；wbi/main 未登录仅 3 条，作 fallback
+        val legacyUrl = "https://api.bilibili.com/x/v2/reply/main".toHttpUrl().newBuilder()
+            .apply { params.forEach { (key, value) -> addQueryParameter(key, value) } }.build().toString()
+        val primary = runCatching {
+            parseReplyPage(client.getBilibiliJson(legacyUrl, cookie).requireBilibiliData(), offset)
+        }.getOrNull()
+        if (primary != null && (primary.replies.size > 3 || primary.nextOffset == null)) return primary
+        val fallback = runCatching {
+            val url = client.signedBilibiliUrl("https://api.bilibili.com/x/v2/reply/wbi/main", params + ("web_location" to "1315875"))
+            parseReplyPage(client.getBilibiliJson(url, cookie).requireBilibiliData(), offset)
+        }.getOrNull()
+        return when {
+            fallback == null -> primary ?: CoreReplyPage(emptyList(), null, 0)
+            primary == null -> fallback
+            fallback.replies.size > primary.replies.size -> fallback
+            else -> primary
+        }
+    }
+
+    private fun parseReplyPage(data: JsonObject, offset: String): CoreReplyPage {
         val top = data.get("top")?.takeIf { it.isJsonObject }?.asJsonObject
         val topReplies = data.get("top_replies")
         val pinnedObjects = when {

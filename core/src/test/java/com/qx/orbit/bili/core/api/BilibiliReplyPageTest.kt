@@ -35,6 +35,54 @@ class BilibiliReplyPageTest {
         assertEquals(listOf("fake-session", "new-session"), cookies)
     }
 
+    @Test fun legacyMainIsPrimaryAndServesFullPageWithoutWbiSigning() = runBlocking {
+        val paths = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            paths += request.url.encodedPath
+            val json = if (request.url.encodedPath.endsWith("nav")) nav else
+                """{"code":0,"data":{"replies":[${(1..20).joinToString(",") { reply(it) }}],"cursor":{"pagination_reply":{"next_offset":"more"},"all_count":100}}}"""
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
+        }.build()
+        val page = BilibiliVideoGateway(client).loadReplyPage(42)
+        assertEquals(20, page.replies.size)
+        assertEquals("more", page.nextOffset)
+        assertEquals(100, page.totalCount)
+        assertEquals(listOf("/x/v2/reply/main"), paths)
+    }
+
+    @Test fun fallsBackToSignedWbiMainWhenLegacyMainFails() = runBlocking {
+        val paths = mutableListOf<String>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            paths += request.url.encodedPath
+            val json = when {
+                request.url.encodedPath.endsWith("nav") -> nav
+                request.url.encodedPath == "/x/v2/reply/main" -> """{"code":-404,"message":"啥都木有"}"""
+                else -> """{"code":0,"data":{"replies":[${reply(7)}],"cursor":{"is_end":true}}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
+        }.build()
+        val page = BilibiliVideoGateway(client).loadReplyPage(42, "", "fake-session")
+        assertEquals(listOf(7L), page.replies.map { it.rpid })
+        assertEquals(listOf("/x/v2/reply/main", "/x/v2/reply/wbi/main"), paths.filter { it != "/x/web-interface/nav" })
+    }
+
+    @Test fun restrictedLegacyPagePrefersLargerWbiPage() = runBlocking {
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val json = when {
+                request.url.encodedPath.endsWith("nav") -> nav
+                request.url.encodedPath == "/x/v2/reply/main" ->
+                    """{"code":0,"data":{"replies":[${reply(1)},${reply(2)},${reply(3)}],"cursor":{"pagination_reply":{"next_offset":"more"},"all_count":100}}}"""
+                else -> """{"code":0,"data":{"replies":[${(1..20).joinToString(",") { reply(it) }}],"cursor":{"is_end":true}}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
+        }.build()
+        val page = BilibiliVideoGateway(client).loadReplyPage(42, "", "fake-session")
+        assertEquals(20, page.replies.size)
+    }
+
     @Test fun singleTopObjectAndNullRegularListRemainReadable() = runBlocking {
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()

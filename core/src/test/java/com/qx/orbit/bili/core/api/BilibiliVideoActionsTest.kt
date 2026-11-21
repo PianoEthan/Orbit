@@ -54,14 +54,14 @@ class BilibiliVideoActionsTest {
                 """{"data":{"wbi_img":{"img_url":"https://test/${"a".repeat(32)}.png","sub_url":"https://test/${"b".repeat(32)}.png"}}}"""
             } else {
                 offsets += JsonParser.parseString(request.url.queryParameter("pagination_str")).asJsonObject.get("offset").asString
-                """{"code":0,"data":{"replies":[{"rpid":1,"member":{"uname":"用户","avatar":"//avatar.test/a"},"content":{"message":"评论"},"like":3}],"cursor":{"all_count":2,"pagination_reply":{"next_offset":"next-offset"}}}}"""
+                """{"code":0,"data":{"replies":[{"rpid":1,"member":{"uname":"用户","avatar":"//avatar.test/a"},"content":{"message":"评论"},"like":3},{"rpid":2},{"rpid":3},{"rpid":4}],"cursor":{"all_count":2,"pagination_reply":{"next_offset":"next-offset"}}}}"""
             }
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
         }.build()
         val gateway = BilibiliVideoGateway(client)
         val first = gateway.loadReplyPage(42)
         assertEquals("next-offset", first.nextOffset)
-        assertEquals("用户", first.replies.single().uname)
+        assertEquals("用户", first.replies.first().uname)
         val second = gateway.loadReplyPage(42, first.nextOffset!!)
         assertNull(second.nextOffset)
         assertEquals(listOf("", "next-offset"), offsets)
