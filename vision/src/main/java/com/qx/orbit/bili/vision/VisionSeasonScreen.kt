@@ -39,8 +39,8 @@ internal fun VisionSeasonCatalogScreen(onBack: () -> Unit, onSeason: (Long) -> U
         }
         if (followed && !VisionUserSession.isLoggedIn) {
             Button(onClick = onLogin, modifier = Modifier.padding(24.dp)) { Text("登录查看追番追剧") }
-        } else Box(Modifier.weight(1f).fillMaxWidth()) {
-            LazyVerticalGrid(columns = GridCells.Adaptive(160.dp), contentPadding = PaddingValues(20.dp),
+        } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            LazyVerticalGrid(columns = GridCells.Fixed(visionGridColumns(maxWidth.value)), contentPadding = PaddingValues(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 items(state.items.size, key = { state.items[it].id }) { index ->
                     val season = state.items[index]

@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -71,44 +76,68 @@ internal fun VisionFollowListScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("暂无${if (mode == VisionFollowMode.FOLLOWING) "关注" else "粉丝"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else {
-                val listState = rememberLazyListState()
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.items, key = { it.mid }) { user ->
-                        VisionFollowUserRow(
-                            user = user,
-                            showRelation = !isSelf,
-                            busy = state.relationBusy == user.mid,
-                            onClick = { onOpenUser(user.mid) },
-                            onToggleFollow = {
-                                viewModel.toggleFollow(user.mid, user.attribute != 2 && user.attribute != 3, VisionUserSession.csrf)
-                            },
-                        )
+            } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val userRow: @Composable (CoreFollowUser) -> Unit = { user ->
+                    VisionFollowUserRow(
+                        user = user,
+                        showRelation = !isSelf,
+                        busy = state.relationBusy == user.mid,
+                        onClick = { onOpenUser(user.mid) },
+                        onToggleFollow = {
+                            viewModel.toggleFollow(user.mid, user.attribute != 2 && user.attribute != 3, VisionUserSession.csrf)
+                        },
+                    )
+                }
+                val footer: @Composable () -> Unit = {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        state.relationMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     }
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-                            state.relationMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        }
-                        Box(Modifier.fillMaxWidth().padding(bottom = 16.dp), contentAlignment = Alignment.Center) {
-                            when {
-                                state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                state.error != null -> FilledTonalButton(onClick = viewModel::retry) { Text("重试加载更多") }
-                                state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
-                                else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                    Box(Modifier.fillMaxWidth().padding(bottom = 16.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            state.error != null -> FilledTonalButton(onClick = viewModel::retry) { Text("重试加载更多") }
+                            state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
+                            else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
-                LaunchedEffect(listState) {
-                    snapshotFlow {
-                        val layout = listState.layoutInfo
-                        layout.totalItemsCount > 0 && layout.visibleItemsInfo.lastOrNull()?.index == layout.totalItemsCount - 1
-                    }.collect { atEnd -> if (atEnd) viewModel.loadMore() }
+                val columns = visionListColumns(maxWidth.value)
+                if (columns == 1) {
+                    val listState = rememberLazyListState()
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.items, key = { it.mid }) { user -> userRow(user) }
+                        item { footer() }
+                    }
+                    LaunchedEffect(listState) {
+                        snapshotFlow {
+                            val layout = listState.layoutInfo
+                            layout.totalItemsCount > 0 && layout.visibleItemsInfo.lastOrNull()?.index == layout.totalItemsCount - 1
+                        }.collect { atEnd -> if (atEnd) viewModel.loadMore() }
+                    }
+                } else {
+                    val gridState = rememberLazyGridState()
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.items, key = { it.mid }) { user -> userRow(user) }
+                        item(span = { GridItemSpan(maxLineSpan) }) { footer() }
+                    }
+                    LaunchedEffect(gridState) {
+                        snapshotFlow {
+                            val layout = gridState.layoutInfo
+                            layout.totalItemsCount > 0 && layout.visibleItemsInfo.lastOrNull()?.index == layout.totalItemsCount - 1
+                        }.collect { atEnd -> if (atEnd) viewModel.loadMore() }
+                    }
                 }
             }
         }

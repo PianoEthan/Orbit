@@ -1,5 +1,6 @@
 package com.qx.orbit.bili.vision
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -19,6 +21,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -40,6 +43,8 @@ internal fun VisionReplyComposerScreen(
     val draft by viewModel.draft.collectAsState()
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
+    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+    var nineKey by rememberSaveable { mutableStateOf(isTv || VisionPreferences.preferNineKey) }
     val editorFocus = remember { FocusRequester() }
     val actionFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
@@ -49,8 +54,16 @@ internal fun VisionReplyComposerScreen(
     DisposableEffect(viewModel) { onDispose { viewModel.stop() } }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-        IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus).padding(8.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回，保留草稿")
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus).padding(8.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回，保留草稿")
+            }
+            Spacer(Modifier.weight(1f))
+            FilterChip(
+                selected = nineKey,
+                onClick = { nineKey = !nineKey },
+                label = { Text(if (nineKey) "九键输入 (遥控器)" else "系统输入法") },
+            )
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             val wide = maxWidth >= 840.dp
@@ -67,6 +80,7 @@ internal fun VisionReplyComposerScreen(
                                 true
                             } else false
                         }, label = { Text("评论内容") },
+                        readOnly = nineKey,
                         enabled = !state.sending && state.sentId == null, minLines = 5, maxLines = 10,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                         isError = draft.codePointCount(0, draft.length) > 1000,
@@ -95,15 +109,29 @@ internal fun VisionReplyComposerScreen(
                     }
                 }
             }
+            val keyboard: @Composable () -> Unit = {
+                VisionNineKeyKeyboard(
+                    onCharacter = { viewModel.edit(draft + it) },
+                    onDelete = { viewModel.edit(deleteSearchCharacter(draft)) },
+                    onSearch = { if (draft.isNotBlank()) viewModel.requestConfirmation() },
+                    canSearch = draft.isNotBlank() && !state.sending && state.sentId == null && VisionUserSession.isLoggedIn,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (wide) {
                 Row(Modifier.widthIn(max = 1200.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
                     horizontalArrangement = Arrangement.spacedBy(40.dp)) {
                     Box(Modifier.weight(1.5f)) { editor() }
                     Box(Modifier.weight(1f).padding(top = 8.dp)) { actions() }
+                    if (nineKey) Box(Modifier.widthIn(min = 320.dp, max = 380.dp)) { keyboard() }
                 }
             } else {
                 Column(Modifier.widthIn(max = 760.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)) { editor(); actions() }
+                    verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    editor()
+                    if (nineKey) keyboard()
+                    actions()
+                }
             }
         }
     }

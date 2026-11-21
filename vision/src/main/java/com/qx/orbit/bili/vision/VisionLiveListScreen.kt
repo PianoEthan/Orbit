@@ -4,6 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -13,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.qx.orbit.bili.core.api.CoreLiveRoom
 
 @Composable
 internal fun VisionLiveListScreen(
@@ -63,33 +68,49 @@ internal fun VisionLiveListScreen(
                         else -> Text("暂无直播", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            } else {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.rooms, key = { it.roomId }) { room ->
-                        SearchResultRow(
-                            imageUrl = room.cover.ifBlank { room.face },
-                            title = room.title.ifBlank { room.uname },
-                            subtitle = buildString {
-                                append(room.uname)
-                                if (room.areaName.isNotBlank()) append(" · ").append(room.areaName)
-                            },
-                            trailing = if (room.liveStatus == 1) "直播中 · ${formatVisionOnline(room.online)}" else "已下播",
-                            live = room.liveStatus == 1,
-                            onClick = { onRoomClick(room.roomId) },
-                        )
-                    }
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-                            when {
-                                state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
-                                else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+            } else BoxWithConstraints(Modifier.fillMaxSize()) {
+                val roomRow: @Composable (CoreLiveRoom) -> Unit = { room ->
+                    SearchResultRow(
+                        imageUrl = room.cover.ifBlank { room.face },
+                        title = room.title.ifBlank { room.uname },
+                        subtitle = buildString {
+                            append(room.uname)
+                            if (room.areaName.isNotBlank()) append(" · ").append(room.areaName)
+                        },
+                        trailing = if (room.liveStatus == 1) "直播中 · ${formatVisionOnline(room.online)}" else "已下播",
+                        live = room.liveStatus == 1,
+                        onClick = { onRoomClick(room.roomId) },
+                    )
+                }
+                val footer: @Composable () -> Unit = {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
+                            else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    }
+                }
+                val columns = visionListColumns(maxWidth.value)
+                if (columns == 1) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.rooms, key = { it.roomId }) { room -> roomRow(room) }
+                        item { footer() }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.rooms, key = { it.roomId }) { room -> roomRow(room) }
+                        item(span = { GridItemSpan(maxLineSpan) }) { footer() }
                     }
                 }
             }

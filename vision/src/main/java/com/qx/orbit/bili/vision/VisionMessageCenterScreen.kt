@@ -7,6 +7,10 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -18,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.qx.orbit.bili.core.api.CoreChatSession
 import com.qx.orbit.bili.core.api.CoreNotice
 import com.qx.orbit.bili.core.api.CoreUnreadCount
 import java.text.DateFormat
@@ -38,7 +42,6 @@ internal fun VisionMessageCenterScreen(
     viewModel: VisionMessageCenterViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
     BackHandler(onBack = onBack)
     LaunchedEffect(Unit) { viewModel.refresh() }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -59,37 +62,42 @@ internal fun VisionMessageCenterScreen(
                     )
                 }
             }
-            if (wide) {
-                Row(Modifier.weight(1f).fillMaxWidth()) {
-                    Column(
-                        Modifier.width(200.dp).fillMaxHeight().padding(horizontal = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        VisionMessageTab.entries.forEach { tab ->
-                            FilterChip(
-                                selected = tab == state.tab,
-                                onClick = { viewModel.selectTab(tab) },
-                                label = { Text(tab.title + unreadSuffix(state.unread, tab), modifier = Modifier.fillMaxWidth()) },
-                            )
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val wide = maxWidth >= 600.dp
+                if (wide) {
+                    Row(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier.width(200.dp).fillMaxHeight().padding(horizontal = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            VisionMessageTab.entries.forEach { tab ->
+                                FilterChip(
+                                    selected = tab == state.tab,
+                                    onClick = { viewModel.selectTab(tab) },
+                                    label = { Text(tab.title + unreadSuffix(state.unread, tab), modifier = Modifier.fillMaxWidth()) },
+                                )
+                            }
                         }
+                        VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        MessageTabContent(state, Modifier.weight(1f).fillMaxHeight(), onOpenChat, viewModel)
                     }
-                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    MessageTabContent(state, Modifier.weight(1f).fillMaxHeight(), onOpenChat, viewModel)
-                }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    VisionMessageTab.entries.forEach { tab ->
-                        FilterChip(
-                            selected = tab == state.tab,
-                            onClick = { viewModel.selectTab(tab) },
-                            label = { Text(tab.title + unreadSuffix(state.unread, tab)) },
-                        )
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            VisionMessageTab.entries.forEach { tab ->
+                                FilterChip(
+                                    selected = tab == state.tab,
+                                    onClick = { viewModel.selectTab(tab) },
+                                    label = { Text(tab.title + unreadSuffix(state.unread, tab)) },
+                                )
+                            }
+                        }
+                        MessageTabContent(state, Modifier.weight(1f).fillMaxWidth(), onOpenChat, viewModel)
                     }
                 }
-                MessageTabContent(state, Modifier.weight(1f).fillMaxWidth(), onOpenChat, viewModel)
             }
         }
     }
@@ -124,45 +132,66 @@ private fun MessageTabContent(
                 }
                 else -> Text("暂无${state.tab.title}消息", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (state.tab == VisionMessageTab.CHAT) {
-                    items(state.sessions, key = { it.talkerId }) { session ->
-                        val user = state.sessionUsers[session.talkerId]
-                        MessageRow(
-                            imageUrl = user?.face.orEmpty(),
-                            title = user?.name ?: "用户 ${session.talkerId}",
-                            subtitle = session.lastMessage?.content?.ifBlank { "[消息]" }.orEmpty(),
-                            trailing = session.lastMessage?.timestamp?.let { formatVisionMessageTime(it) }.orEmpty(),
-                            unread = session.unread,
-                            onClick = { onOpenChat(session.talkerId) },
-                        )
+        } else BoxWithConstraints(modifier) {
+            val sessionRow: @Composable (CoreChatSession) -> Unit = { session ->
+                val user = state.sessionUsers[session.talkerId]
+                MessageRow(
+                    imageUrl = user?.face.orEmpty(),
+                    title = user?.name ?: "用户 ${session.talkerId}",
+                    subtitle = session.lastMessage?.content?.ifBlank { "[消息]" }.orEmpty(),
+                    trailing = session.lastMessage?.timestamp?.let { formatVisionMessageTime(it) }.orEmpty(),
+                    unread = session.unread,
+                    onClick = { onOpenChat(session.talkerId) },
+                )
+            }
+            val noticeRow: @Composable (CoreNotice) -> Unit = { notice ->
+                MessageRow(
+                    imageUrl = notice.users.firstOrNull()?.face.orEmpty(),
+                    title = notice.users.joinToString("、") { it.name }.ifBlank { "系统通知" },
+                    subtitle = notice.content,
+                    trailing = if (notice.timeStamp > 0) formatVisionMessageTime(notice.timeStamp) else "",
+                    roundedImage = true,
+                    enabled = false,
+                    onClick = {},
+                )
+            }
+            val footer: @Composable () -> Unit = {
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                    when {
+                        state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
+                        state.error != null -> FilledTonalButton(onClick = viewModel::retry) { Text("重试加载更多") }
+                        else -> Text("已加载全部消息", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } else {
-                    items(state.notices, key = { it.id }) { notice ->
-                        MessageRow(
-                            imageUrl = notice.users.firstOrNull()?.face.orEmpty(),
-                            title = notice.users.joinToString("、") { it.name }.ifBlank { "系统通知" },
-                            subtitle = notice.content,
-                            trailing = if (notice.timeStamp > 0) formatVisionMessageTime(notice.timeStamp) else "",
-                            roundedImage = true,
-                            enabled = false,
-                            onClick = {},
-                        )
+                }
+            }
+            val columns = visionListColumns(maxWidth.value)
+            if (columns == 1) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (state.tab == VisionMessageTab.CHAT) {
+                        items(state.sessions, key = { it.talkerId }) { session -> sessionRow(session) }
+                    } else {
+                        items(state.notices, key = { it.id }) { notice -> noticeRow(notice) }
+                        item { footer() }
                     }
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-                            when {
-                                state.loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                state.hasMore -> FilledTonalButton(onClick = viewModel::loadMore) { Text("加载更多") }
-                                state.error != null -> FilledTonalButton(onClick = viewModel::retry) { Text("重试加载更多") }
-                                else -> Text("已加载全部消息", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (state.tab == VisionMessageTab.CHAT) {
+                        items(state.sessions, key = { it.talkerId }) { session -> sessionRow(session) }
+                    } else {
+                        items(state.notices, key = { it.id }) { notice -> noticeRow(notice) }
+                        item(span = { GridItemSpan(maxLineSpan) }) { footer() }
                     }
                 }
             }
