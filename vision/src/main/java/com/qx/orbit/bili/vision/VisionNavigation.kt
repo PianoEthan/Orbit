@@ -63,6 +63,9 @@ internal fun VisionNavigation() {
                 VisionSearchScreen(
                     onBack = { controller.popBackStack() },
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
+                    onRoomClick = { controller.navigate("live/${it.roomId}") { launchSingleTop = true } },
+                    onUserClick = { controller.navigate("creator/${it.mid}") { launchSingleTop = true } },
+                    onSeasonClick = { controller.navigate("season/${it.seasonId}") { launchSingleTop = true } },
                 )
             }
             composable("user") {
