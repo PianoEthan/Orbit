@@ -20,6 +20,7 @@ import com.qx.orbit.bili.core.api.CoreVideo
 
 @Composable
 internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> Unit, onVideo: (CoreVideo) -> Unit,
+    onFollowList: (VisionFollowMode) -> Unit = {},
     viewModel: VisionCreatorViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
@@ -37,7 +38,15 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
                             AsyncImage(creator.avatar, null, Modifier.size(72.dp).clip(CircleShape))
                             Text(creator.name, style = MaterialTheme.typography.headlineMedium)
                             Text(creator.signature.ifBlank { "暂无签名" })
-                            Text("${creator.fans} 粉丝 · ${creator.following} 关注", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Text("${creator.fans} 粉丝", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton(onClick = { onFollowList(VisionFollowMode.FOLLOWING) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                    Text("${creator.following} 关注")
+                                }
+                                TextButton(onClick = { onFollowList(VisionFollowMode.FANS) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                    Text("粉丝列表")
+                                }
+                            }
                             if (mid != VisionUserSession.mid) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(onClick = {
                                     if (!VisionUserSession.isLoggedIn) onLogin()

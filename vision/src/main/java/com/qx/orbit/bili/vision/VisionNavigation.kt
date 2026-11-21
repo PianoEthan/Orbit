@@ -74,6 +74,7 @@ internal fun VisionNavigation() {
                     onNavigateToLogin = { controller.navigate("login") { launchSingleTop = true } },
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
                     onOpenDynamics = { controller.navigate("dynamics") { launchSingleTop = true } },
+                    onOpenFollowList = { mode -> controller.navigate("follow/${VisionUserSession.mid}?mode=${mode.name}") { launchSingleTop = true } },
                 )
             }
             composable("dynamics") {
@@ -90,7 +91,24 @@ internal fun VisionNavigation() {
             composable("creator/{mid}", arguments = listOf(navArgument("mid") { type = NavType.LongType })) { entry ->
                 VisionCreatorScreen(requireNotNull(entry.arguments).getLong("mid"),
                     onBack = { controller.popBackStack() }, onLogin = { controller.navigate("login") { launchSingleTop = true } },
-                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } })
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
+                    onFollowList = { mode ->
+                        val target = requireNotNull(entry.arguments).getLong("mid")
+                        controller.navigate("follow/$target?mode=${mode.name}") { launchSingleTop = true }
+                    })
+            }
+            composable(
+                "follow/{mid}?mode={mode}",
+                arguments = listOf(
+                    navArgument("mid") { type = NavType.LongType },
+                    navArgument("mode") { type = NavType.StringType; defaultValue = "FOLLOWING" },
+                ),
+            ) { entry ->
+                val args = requireNotNull(entry.arguments)
+                val mode = runCatching { VisionFollowMode.valueOf(args.getString("mode") ?: "FOLLOWING") }.getOrDefault(VisionFollowMode.FOLLOWING)
+                VisionFollowListScreen(args.getLong("mid"), mode,
+                    onBack = { controller.popBackStack() },
+                    onOpenUser = { controller.navigate("creator/$it") { launchSingleTop = true } })
             }
             composable("seasons") {
                 VisionSeasonCatalogScreen(onBack = { controller.popBackStack() },
