@@ -11,6 +11,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -24,27 +28,41 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
     viewModel: VisionCreatorViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
     var confirmBlock by remember(mid, cookie) { mutableStateOf(false) }
     LaunchedEffect(mid, cookie) { viewModel.open(mid, cookie) }
     BackHandler(onBack = onBack)
     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        IconButton(onClick = onBack, modifier = Modifier.padding(8.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+        IconButton(onClick = onBack, modifier = Modifier.padding(8.dp).focusRequester(backFocus)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val headerWide = maxWidth >= 600.dp
             LazyVerticalGrid(columns = GridCells.Fixed(visionGridColumns(maxWidth.value)), contentPadding = PaddingValues(20.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.visionReadableWidth(headerWide), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         state.creator?.let { creator ->
                             AsyncImage(creator.avatar, null, Modifier.size(72.dp).clip(CircleShape))
                             Text(creator.name, style = MaterialTheme.typography.headlineMedium)
-                            Text(creator.signature.ifBlank { "暂无签名" })
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("${creator.fans} 粉丝", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                TextButton(onClick = { onFollowList(VisionFollowMode.FOLLOWING) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                    Text("${creator.following} 关注")
+                            Text(creator.signature.ifBlank { "暂无签名" }, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                            ) {
+                                TextButton(
+                                    onClick = { onFollowList(VisionFollowMode.FANS) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                    modifier = Modifier.heightIn(min = visionTouchMinHeight()),
+                                ) {
+                                    Text("${creator.fans} 粉丝", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                TextButton(onClick = { onFollowList(VisionFollowMode.FANS) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
-                                    Text("粉丝列表")
+                                TextButton(
+                                    onClick = { onFollowList(VisionFollowMode.FOLLOWING) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                    modifier = Modifier.heightIn(min = visionTouchMinHeight()),
+                                ) {
+                                    Text("${creator.following} 关注", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             if (mid != VisionUserSession.mid) FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -64,6 +82,7 @@ internal fun VisionCreatorScreen(mid: Long, onBack: () -> Unit, onLogin: () -> U
                             FilledTonalButton(onClick = viewModel::refreshProfile) { Text("重试资料") }
                         }
                         Text("视频投稿", style = MaterialTheme.typography.titleLarge)
+                    }
                     }
                 }
                 items(state.videos, key = { it.bvid }) { video -> VisionExpressiveVideoCard(video, onClick = { onVideo(video) }) }

@@ -93,6 +93,8 @@ internal fun VisionSearchScreen(
     val history = VisionSearchHistory.history
 
     val keyboard = LocalSoftwareKeyboardController.current
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
 
     val submitSearch: (String) -> Unit = { keyword ->
         val trimmed = keyword.trim()
@@ -133,6 +135,7 @@ internal fun VisionSearchScreen(
                             onSearch = { submitSearch(text) },
                             onBack = onBack,
                             nineKey = nineKey,
+                            backFocus = backFocus,
                         )
 
                         Row(
@@ -239,6 +242,7 @@ internal fun VisionSearchScreen(
                             onSearch = { submitSearch(text) },
                             onBack = onBack,
                             nineKey = nineKey,
+                            backFocus = backFocus,
                         )
 
                         Row(
@@ -326,13 +330,14 @@ private fun SearchInputHeader(
     onSearch: () -> Unit,
     onBack: () -> Unit,
     nineKey: Boolean,
+    backFocus: FocusRequester = remember { FocusRequester() },
 ) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
         }
         OutlinedTextField(
@@ -460,49 +465,71 @@ internal fun SearchRightPane(
                             SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore)
                         }
                     }
-                } else {
-                    LazyColumn(
-                        Modifier.weight(1f).fillMaxWidth().clipToBounds(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                    ) {
-                        when (tab) {
-                            VisionSearchTab.LIVE -> items(roomResults, key = { it.roomId }) { room ->
-                                SearchResultRow(
-                                    imageUrl = room.cover.ifBlank { room.face },
-                                    title = room.title.ifBlank { room.uname },
-                                    subtitle = buildString {
-                                        append(room.uname)
-                                        if (room.areaName.isNotBlank()) append(" · ").append(room.areaName)
-                                    },
-                                    trailing = if (room.liveStatus == 1) "直播中 · ${formatVisionOnline(room.online)}" else "已下播",
-                                    live = room.liveStatus == 1,
-                                    onClick = { onRoomClick(room) },
-                                )
+                } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                    val roomRow: @Composable (CoreLiveRoom) -> Unit = { room ->
+                        SearchResultRow(
+                            imageUrl = room.cover.ifBlank { room.face },
+                            title = room.title.ifBlank { room.uname },
+                            subtitle = buildString {
+                                append(room.uname)
+                                if (room.areaName.isNotBlank()) append(" · ").append(room.areaName)
+                            },
+                            trailing = if (room.liveStatus == 1) "直播中 · ${formatVisionOnline(room.online)}" else "已下播",
+                            live = room.liveStatus == 1,
+                            onClick = { onRoomClick(room) },
+                        )
+                    }
+                    val userRow: @Composable (CoreSearchUser) -> Unit = { user ->
+                        SearchResultRow(
+                            imageUrl = user.face,
+                            title = user.name,
+                            subtitle = user.sign,
+                            trailing = "${formatVisionCount(user.fans)} 粉丝",
+                            roundedImage = true,
+                            onClick = { onUserClick(user) },
+                        )
+                    }
+                    val seasonRow: @Composable (CoreSearchSeason) -> Unit = { season ->
+                        SearchResultRow(
+                            imageUrl = season.cover,
+                            title = season.title,
+                            subtitle = listOf(season.areas, season.subtitle)
+                                .filter(String::isNotBlank).joinToString(" · "),
+                            onClick = { onSeasonClick(season) },
+                        )
+                    }
+                    val rowColumns = visionListColumns(maxWidth.value)
+                    if (rowColumns == 1) {
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                        ) {
+                            when (tab) {
+                                VisionSearchTab.LIVE -> items(roomResults, key = { it.roomId }) { room -> roomRow(room) }
+                                VisionSearchTab.USER -> items(userResults, key = { it.mid }) { user -> userRow(user) }
+                                VisionSearchTab.SEASON -> items(seasonResults, key = { it.seasonId }) { season -> seasonRow(season) }
+                                VisionSearchTab.VIDEO -> Unit
                             }
-                            VisionSearchTab.USER -> items(userResults, key = { it.mid }) { user ->
-                                SearchResultRow(
-                                    imageUrl = user.face,
-                                    title = user.name,
-                                    subtitle = user.sign,
-                                    trailing = "${formatVisionCount(user.fans)} 粉丝",
-                                    roundedImage = true,
-                                    onClick = { onUserClick(user) },
-                                )
-                            }
-                            VisionSearchTab.SEASON -> items(seasonResults, key = { it.seasonId }) { season ->
-                                SearchResultRow(
-                                    imageUrl = season.cover,
-                                    title = season.title,
-                                    subtitle = listOf(season.areas, season.subtitle)
-                                        .filter(String::isNotBlank).joinToString(" · "),
-                                    onClick = { onSeasonClick(season) },
-                                )
-                            }
-                            VisionSearchTab.VIDEO -> Unit
+                            item { SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore) }
                         }
-                        item {
-                            SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore)
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(rowColumns),
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                        ) {
+                            when (tab) {
+                                VisionSearchTab.LIVE -> items(roomResults, key = { it.roomId }) { room -> roomRow(room) }
+                                VisionSearchTab.USER -> items(userResults, key = { it.mid }) { user -> userRow(user) }
+                                VisionSearchTab.SEASON -> items(seasonResults, key = { it.seasonId }) { season -> seasonRow(season) }
+                                VisionSearchTab.VIDEO -> Unit
+                            }
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore)
+                            }
                         }
                     }
                 }
@@ -688,9 +715,10 @@ internal fun SearchResultRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             AsyncImage(
-                model = remember(imageUrl, context) {
+                model = remember(imageUrl, roundedImage, context) {
                     if (imageUrl.isBlank()) null else ImageRequest.Builder(context)
-                        .data(visionThumbnailUrl(imageUrl, 240)).size(240)
+                        .data(if (roundedImage) imageUrl else visionThumbnailUrl(imageUrl, 240))
+                        .size(if (roundedImage) 160 else 240)
                         .setHeader("Referer", "https://www.bilibili.com/").crossfade(false).build()
                 },
                 contentDescription = null,

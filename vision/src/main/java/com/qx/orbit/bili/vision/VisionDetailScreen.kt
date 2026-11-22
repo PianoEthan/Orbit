@@ -82,12 +82,14 @@ fun VisionDetailScreen(
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val wide = maxWidth >= 840.dp && maxHeight >= 400.dp
+                val windowWidth = maxWidth.value
                 Row(Modifier.fillMaxSize()) {
                     if (wide) {
                         VideoCover(display, Modifier.weight(0.9f).padding(start = 24.dp, end = 12.dp, top = 16.dp)) { onCover(display.cover) }
                     }
                     LazyColumn(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                            .padding(horizontal = if (wide) ((windowWidth - 560f).coerceAtLeast(0f) / 2).dp else 0.dp),
                         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -141,7 +143,16 @@ fun VisionDetailScreen(
                                     }
                                 }
                                 item(key = "related-title") { Text("相关推荐", style = MaterialTheme.typography.titleLarge) }
-                                items(related.videos, key = { "related-${it.bvid}" }) { item -> VisionExpressiveVideoCard(item, onClick = { onVideo(item) }) }
+                                related.videos.chunked(if (wide) 2 else 1).forEachIndexed { rowIndex, row ->
+                                    item(key = "related-row-$rowIndex") {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                            row.forEach { item ->
+                                                VisionExpressiveVideoCard(item, modifier = Modifier.weight(1f), onClick = { onVideo(item) })
+                                            }
+                                            if (wide && row.size == 1) Spacer(Modifier.weight(1f))
+                                        }
+                                    }
+                                }
                                 item(key = "related-status") {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         if (related.loading) LinearProgressIndicator(Modifier.fillMaxWidth())

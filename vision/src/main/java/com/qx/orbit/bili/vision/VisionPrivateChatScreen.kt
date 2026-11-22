@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -36,11 +38,94 @@ internal fun VisionPrivateChatScreen(
     val state by viewModel.state.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
+    val backFocus = remember { FocusRequester() }
+    VisionInitialFocus(backFocus)
 
     BackHandler(onBack = onBack)
     LaunchedEffect(talkerId, sessionType) { viewModel.open(talkerId, sessionType) }
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.size)
+    }
+
+    val sendDraft: () -> Unit = { viewModel.send(draft); draft = "" }
+    val messages: @Composable (Modifier) -> Unit = { listModifier ->
+        LazyColumn(
+            state = listState,
+            modifier = listModifier,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.hasOlder) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        when {
+                            state.loading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            else -> FilledTonalButton(onClick = viewModel::loadOlder) { Text("加载更早消息") }
+                        }
+                    }
+                }
+            }
+            itemsIndexed(state.messages) { _, message ->
+                ChatBubble(message, isSelf = message.senderUid == VisionUserSession.mid)
+            }
+            if (state.error != null) {
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                        FilledTonalButton(onClick = viewModel::loadOlder) { Text("重试") }
+                    }
+                }
+            }
+        }
+    }
+    val sendError: @Composable () -> Unit = {
+        state.sendError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
+        }
+    }
+    val imeInput: @Composable () -> Unit = {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                placeholder = { Text("输入消息内容") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = sendDraft, enabled = draft.isNotBlank() && !state.sending) {
+                if (state.sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Text("发送")
+            }
+        }
+    }
+    val nineKeyField: @Composable () -> Unit = {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            placeholder = { Text("输入消息内容") },
+            minLines = 2,
+            readOnly = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            trailingIcon = {
+                IconButton(onClick = sendDraft, enabled = draft.isNotBlank() && !state.sending) {
+                    if (state.sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.AutoMirrored.Filled.Send, "发送")
+                }
+            },
+        )
+    }
+    val nineKeyBoard: @Composable () -> Unit = {
+        VisionNineKeyKeyboard(
+            onCharacter = { draft += it },
+            onDelete = { if (draft.isNotEmpty()) draft = deleteSearchCharacter(draft) },
+            onSearch = sendDraft,
+            canSearch = draft.isNotBlank() && !state.sending,
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+        )
     }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -49,7 +134,9 @@ internal fun VisionPrivateChatScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.focusRequester(backFocus)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+                }
                 Text("私信 · 用户 $talkerId", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 FilterChip(
@@ -58,75 +145,31 @@ internal fun VisionPrivateChatScreen(
                     label = { Text(if (nineKey) "九键输入" else "系统输入法") },
                 )
             }
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (state.hasOlder) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                            when {
-                                state.loading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                                else -> FilledTonalButton(onClick = viewModel::loadOlder) { Text("加载更早消息") }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val wide = maxWidth >= 600.dp
+                if (wide) {
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                            Column(Modifier.widthIn(max = 840.dp).fillMaxHeight()) {
+                                messages(Modifier.weight(1f).fillMaxWidth())
+                                sendError()
+                                if (nineKey) nineKeyField() else imeInput()
                             }
                         }
-                    }
-                }
-                itemsIndexed(state.messages) { index, message ->
-                    ChatBubble(message, isSelf = message.senderUid == VisionUserSession.mid)
-                }
-                if (state.error != null) {
-                    item {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                            Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                            FilledTonalButton(onClick = viewModel::loadOlder) { Text("重试") }
+                        if (nineKey) {
+                            Column(Modifier.widthIn(min = 320.dp, max = 380.dp).fillMaxHeight()) { nineKeyBoard() }
                         }
                     }
-                }
-            }
-            state.sendError?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp))
-            }
-            if (nineKey) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    placeholder = { Text("输入消息内容") },
-                    minLines = 2,
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    trailingIcon = {
-                        IconButton(onClick = { viewModel.send(draft); draft = "" }, enabled = draft.isNotBlank() && !state.sending) {
-                            if (state.sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.AutoMirrored.Filled.Send, "发送")
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        messages(Modifier.weight(1f).fillMaxWidth())
+                        sendError()
+                        if (nineKey) {
+                            nineKeyField()
+                            nineKeyBoard()
+                        } else {
+                            imeInput()
                         }
-                    },
-                )
-                VisionNineKeyKeyboard(
-                    onCharacter = { draft += it },
-                    onDelete = { if (draft.isNotEmpty()) draft = deleteSearchCharacter(draft) },
-                    onSearch = { viewModel.send(draft); draft = "" },
-                    canSearch = draft.isNotBlank() && !state.sending,
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                )
-            } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        placeholder = { Text("输入消息内容") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(onClick = { viewModel.send(draft); draft = "" }, enabled = draft.isNotBlank() && !state.sending) {
-                        if (state.sending) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else Text("发送")
                     }
                 }
             }
