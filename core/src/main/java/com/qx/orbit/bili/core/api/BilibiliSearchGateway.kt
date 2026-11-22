@@ -12,10 +12,29 @@ data class CoreHotword(
     val iconUrl: String = "",
 )
 
+data class CoreSearchUser(
+    val mid: Long,
+    val name: String,
+    val face: String,
+    val sign: String = "",
+    val fans: Int = 0,
+)
+
+data class CoreSearchSeason(
+    val seasonId: Long,
+    val title: String,
+    val cover: String,
+    val subtitle: String = "",
+    val areas: String = "",
+)
+
 fun interface SearchGateway {
     suspend fun searchVideos(keyword: String, page: Int): List<CoreVideo>
     suspend fun loadHotwords(): List<CoreHotword> = emptyList()
     suspend fun loadSuggestions(keyword: String): List<String> = emptyList()
+    suspend fun searchUsers(keyword: String, page: Int): List<CoreSearchUser> = error("暂不支持用户搜索")
+    suspend fun searchRooms(keyword: String, page: Int): List<CoreLiveRoom> = error("暂不支持直播搜索")
+    suspend fun searchSeasons(keyword: String, page: Int): List<CoreSearchSeason> = error("暂不支持番剧搜索")
 }
 
 class BilibiliSearchGateway(private val client: OkHttpClient = OkHttpClient()) : SearchGateway {
@@ -62,6 +81,73 @@ class BilibiliSearchGateway(private val client: OkHttpClient = OkHttpClient()) :
         }.distinctBy { it.bvid }
     }
 
+    override suspend fun searchUsers(keyword: String, page: Int): List<CoreSearchUser> =
+        searchTypeResults(keyword, page, "bili_user").mapNotNull { entry ->
+            val mid = entry.longValue("mid").takeIf { it > 0 } ?: return@mapNotNull null
+            CoreSearchUser(
+                mid = mid,
+                name = entry.text("uname"),
+                face = fixCover(entry.text("upic")),
+                sign = Jsoup.parse(entry.text("usign")).text(),
+                fans = entry.intValue("fans"),
+            )
+        }
+
+    override suspend fun searchRooms(keyword: String, page: Int): List<CoreLiveRoom> =
+        searchTypeResults(keyword, page, "live").mapNotNull { entry ->
+            val roomId = entry.longValue("roomid").takeIf { it > 0 } ?: entry.longValue("short_id")
+            if (roomId <= 0) return@mapNotNull null
+            CoreLiveRoom(
+                roomId = roomId,
+                uid = entry.longValue("uid"),
+                title = Jsoup.parse(entry.text("title")).text(),
+                uname = entry.text("uname"),
+                cover = fixCover(entry.text("user_cover").ifBlank { entry.text("cover") }),
+                liveStatus = entry.intValue("live_status"),
+                online = entry.intValue("online"),
+            )
+        }
+
+    override suspend fun searchSeasons(keyword: String, page: Int): List<CoreSearchSeason> =
+        searchTypeResults(keyword, page, "media_bangumi").mapNotNull { entry ->
+            val seasonId = entry.longValue("season_id").takeIf { it > 0 }
+                ?: entry.longValue("media_id").takeIf { it > 0 }
+                ?: entry.longValue("id")
+            if (seasonId <= 0) return@mapNotNull null
+            CoreSearchSeason(
+                seasonId = seasonId,
+                title = Jsoup.parse(entry.text("title")).text(),
+                cover = fixCover(entry.text("cover").ifBlank { entry.text("pic") }),
+                subtitle = entry.text("index_show"),
+                areas = entry.get("areas")?.let { areas ->
+                    if (areas.isJsonPrimitive) areas.asString
+                    else areas.takeIf { it.isJsonArray }?.asJsonArray
+                        ?.mapNotNull { it.takeIf { value -> value.isJsonPrimitive }?.asString }
+                        ?.joinToString("/")
+                        .orEmpty()
+                }.orEmpty(),
+            )
+        }
+
+    private suspend fun searchTypeResults(keyword: String, page: Int, type: String): List<JsonObject> {
+        require(keyword.isNotBlank()) { "请输入搜索内容" }
+        require(page > 0)
+        val url = client.signedBilibiliUrl("https://api.bilibili.com/x/web-interface/wbi/search/type", mapOf(
+            "keyword" to keyword.trim(), "page" to page.toString(), "search_type" to type,
+        ))
+        val data = client.getBilibiliJson(url).requireBilibiliData()
+        return data.arrayValue("result")
+            ?.mapNotNull { entry -> entry.asJsonObjectOrNull() }
+            .orEmpty()
+    }
+
+    private fun fixCover(url: String) = when {
+        url.isBlank() -> url
+        url.startsWith("//") -> "https:$url"
+        url.startsWith("http://") -> url.replaceFirst("http://", "https://")
+        else -> url
+    }
+
     override suspend fun loadHotwords(): List<CoreHotword> {
         val json = client.getBilibiliJson("https://s.search.bilibili.com/main/hotword")
         val list = json.getAsJsonArray("list") ?: return emptyList()
@@ -86,5 +172,3 @@ class BilibiliSearchGateway(private val client: OkHttpClient = OkHttpClient()) :
         }.distinct()
     }
 }
-
-private fun JsonObject.text(name: String) = get(name)?.takeUnless { it.isJsonNull }?.asString.orEmpty()
