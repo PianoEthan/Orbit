@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -55,13 +56,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.qx.orbit.bili.core.api.CoreHotword
+import com.qx.orbit.bili.core.api.CoreLiveRoom
+import com.qx.orbit.bili.core.api.CoreSearchSeason
+import com.qx.orbit.bili.core.api.CoreSearchUser
 import com.qx.orbit.bili.core.api.CoreVideo
 
 @Composable
 internal fun VisionSearchScreen(
     onBack: () -> Unit,
     onVideoClick: (CoreVideo) -> Unit,
+    onRoomClick: (CoreLiveRoom) -> Unit = {},
+    onUserClick: (CoreSearchUser) -> Unit = {},
+    onSeasonClick: (CoreSearchSeason) -> Unit = {},
     viewModel: VisionSearchViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -71,9 +80,13 @@ internal fun VisionSearchScreen(
 
     val text by viewModel.text.collectAsState()
     val query by viewModel.query.collectAsState()
+    val tab by viewModel.tab.collectAsState()
     val hotwords by viewModel.hotwords.collectAsState()
     val suggestions by viewModel.suggestions.collectAsState()
     val results by viewModel.results.collectAsState()
+    val roomResults by viewModel.roomResults.collectAsState()
+    val userResults by viewModel.userResults.collectAsState()
+    val seasonResults by viewModel.seasonResults.collectAsState()
     val loading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val hasMore by viewModel.hasMore.collectAsState()
@@ -185,9 +198,14 @@ internal fun VisionSearchScreen(
                         SearchRightPane(
                             query = query,
                             text = text,
+                            tab = tab,
+                            onSelectTab = viewModel::switchTab,
                             hotwords = hotwords,
                             suggestions = suggestions,
                             results = results,
+                            roomResults = roomResults,
+                            userResults = userResults,
+                            seasonResults = seasonResults,
                             loading = loading,
                             error = error,
                             hasMore = hasMore,
@@ -199,6 +217,9 @@ internal fun VisionSearchScreen(
                             onLoadMore = viewModel::loadMore,
                             onRetry = viewModel::retry,
                             onVideoClick = onVideoClick,
+                            onRoomClick = onRoomClick,
+                            onUserClick = onUserClick,
+                            onSeasonClick = onSeasonClick,
                             columns = visionGridColumns((screenWidthDp - 380f).coerceAtLeast(300f)),
                         )
                     }
@@ -250,9 +271,14 @@ internal fun VisionSearchScreen(
                         SearchRightPane(
                             query = query,
                             text = text,
+                            tab = tab,
+                            onSelectTab = viewModel::switchTab,
                             hotwords = hotwords,
                             suggestions = suggestions,
                             results = results,
+                            roomResults = roomResults,
+                            userResults = userResults,
+                            seasonResults = seasonResults,
                             loading = loading,
                             error = error,
                             hasMore = hasMore,
@@ -264,6 +290,9 @@ internal fun VisionSearchScreen(
                             onLoadMore = viewModel::loadMore,
                             onRetry = viewModel::retry,
                             onVideoClick = onVideoClick,
+                            onRoomClick = onRoomClick,
+                            onUserClick = onUserClick,
+                            onSeasonClick = onSeasonClick,
                             columns = visionGridColumns(screenWidthDp),
                         )
                     }
@@ -335,22 +364,36 @@ private fun SearchInputHeader(
 internal fun SearchRightPane(
     query: String?,
     text: String,
-    hotwords: List<CoreHotword>,
-    suggestions: List<String>,
-    results: List<CoreVideo>,
-    loading: Boolean,
-    error: String?,
-    hasMore: Boolean,
-    history: List<String>,
-    onSelectKeyword: (String) -> Unit,
-    onClearSearch: () -> Unit,
-    onRefreshHotwords: () -> Unit,
-    onClearHistory: () -> Unit,
-    onLoadMore: () -> Unit,
-    onRetry: () -> Unit,
-    onVideoClick: (CoreVideo) -> Unit,
-    columns: Int,
+    tab: VisionSearchTab = VisionSearchTab.VIDEO,
+    onSelectTab: (VisionSearchTab) -> Unit = {},
+    hotwords: List<CoreHotword> = emptyList(),
+    suggestions: List<String> = emptyList(),
+    results: List<CoreVideo> = emptyList(),
+    roomResults: List<CoreLiveRoom> = emptyList(),
+    userResults: List<CoreSearchUser> = emptyList(),
+    seasonResults: List<CoreSearchSeason> = emptyList(),
+    loading: Boolean = false,
+    error: String? = null,
+    hasMore: Boolean = false,
+    history: List<String> = emptyList(),
+    onSelectKeyword: (String) -> Unit = {},
+    onClearSearch: () -> Unit = {},
+    onRefreshHotwords: () -> Unit = {},
+    onClearHistory: () -> Unit = {},
+    onLoadMore: () -> Unit = {},
+    onRetry: () -> Unit = {},
+    onVideoClick: (CoreVideo) -> Unit = {},
+    onRoomClick: (CoreLiveRoom) -> Unit = {},
+    onUserClick: (CoreSearchUser) -> Unit = {},
+    onSeasonClick: (CoreSearchSeason) -> Unit = {},
+    columns: Int = 2,
 ) {
+    val activeItems: List<Any> = when (tab) {
+        VisionSearchTab.VIDEO -> results
+        VisionSearchTab.LIVE -> roomResults
+        VisionSearchTab.USER -> userResults
+        VisionSearchTab.SEASON -> seasonResults
+    }
     when {
         // State A: Search results loaded or in progress
         query != null -> {
@@ -373,8 +416,20 @@ internal fun SearchRightPane(
                         Text("返回热搜")
                     }
                 }
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    VisionSearchTab.entries.forEach { option ->
+                        FilterChip(
+                            selected = option == tab,
+                            onClick = { onSelectTab(option) },
+                            label = { Text(option.title) },
+                        )
+                    }
+                }
 
-                if (results.isEmpty()) {
+                if (activeItems.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         when {
                             loading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -387,10 +442,10 @@ internal fun SearchRightPane(
                                     Button(onClick = onRetry) { Text("重试搜索") }
                                 }
                             }
-                            else -> Text("未找到相关视频", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else -> Text("未找到相关${tab.title}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                } else {
+                } else if (tab == VisionSearchTab.VIDEO) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
                         contentPadding = PaddingValues(start = 8.dp, top = 12.dp, end = 8.dp, bottom = 24.dp),
@@ -402,20 +457,52 @@ internal fun SearchRightPane(
                             VisionExpressiveVideoCard(video = video, onClick = { onVideoClick(video) })
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            Box(
-                                Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                when {
-                                    loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                                    error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        Text(error, color = MaterialTheme.colorScheme.error)
-                                        FilledTonalButton(onClick = onRetry) { Text("重试加载更多") }
-                                    }
-                                    hasMore -> FilledTonalButton(onClick = onLoadMore) { Text("加载更多") }
-                                    else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
+                            SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                    ) {
+                        when (tab) {
+                            VisionSearchTab.LIVE -> items(roomResults, key = { it.roomId }) { room ->
+                                SearchResultRow(
+                                    imageUrl = room.cover.ifBlank { room.face },
+                                    title = room.title.ifBlank { room.uname },
+                                    subtitle = buildString {
+                                        append(room.uname)
+                                        if (room.areaName.isNotBlank()) append(" · ").append(room.areaName)
+                                    },
+                                    trailing = if (room.liveStatus == 1) "直播中 · ${formatVisionOnline(room.online)}" else "已下播",
+                                    live = room.liveStatus == 1,
+                                    onClick = { onRoomClick(room) },
+                                )
                             }
+                            VisionSearchTab.USER -> items(userResults, key = { it.mid }) { user ->
+                                SearchResultRow(
+                                    imageUrl = user.face,
+                                    title = user.name,
+                                    subtitle = user.sign,
+                                    trailing = "${formatVisionCount(user.fans)} 粉丝",
+                                    roundedImage = true,
+                                    onClick = { onUserClick(user) },
+                                )
+                            }
+                            VisionSearchTab.SEASON -> items(seasonResults, key = { it.seasonId }) { season ->
+                                SearchResultRow(
+                                    imageUrl = season.cover,
+                                    title = season.title,
+                                    subtitle = listOf(season.areas, season.subtitle)
+                                        .filter(String::isNotBlank).joinToString(" · "),
+                                    onClick = { onSeasonClick(season) },
+                                )
+                            }
+                            VisionSearchTab.VIDEO -> Unit
+                        }
+                        item {
+                            SearchLoadMoreFooter(loading, error, hasMore, onRetry, onLoadMore)
                         }
                     }
                 }
@@ -549,6 +636,105 @@ internal fun SearchRightPane(
         }
     }
 }
+
+@Composable
+private fun SearchLoadMoreFooter(
+    loading: Boolean,
+    error: String?,
+    hasMore: Boolean,
+    onRetry: () -> Unit,
+    onLoadMore: () -> Unit,
+) {
+    Box(
+        Modifier.fillMaxWidth().padding(vertical = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(error, color = MaterialTheme.colorScheme.error)
+                FilledTonalButton(onClick = onRetry) { Text("重试加载更多") }
+            }
+            hasMore -> FilledTonalButton(onClick = onLoadMore) { Text("加载更多") }
+            else -> Text("已加载全部内容", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+internal fun SearchResultRow(
+    imageUrl: String,
+    title: String,
+    subtitle: String,
+    trailing: String = "",
+    live: Boolean = false,
+    roundedImage: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val context = LocalContext.current
+    Surface(
+        onClick = onClick,
+        interactionSource = interaction,
+        shape = MaterialTheme.shapes.medium,
+        color = if (focused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            AsyncImage(
+                model = remember(imageUrl, context) {
+                    if (imageUrl.isBlank()) null else ImageRequest.Builder(context)
+                        .data(visionThumbnailUrl(imageUrl, 240)).size(240)
+                        .setHeader("Referer", "https://www.bilibili.com/").crossfade(false).build()
+                },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(width = 72.dp, height = 48.dp)
+                    .clip(if (roundedImage) CircleShape else MaterialTheme.shapes.small),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (focused) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (focused) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (trailing.isNotBlank()) {
+                Text(
+                    trailing,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (live) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+internal fun formatVisionCount(count: Int): String = when {
+    count >= 100_000_000 -> String.format(java.util.Locale.ROOT, "%.1f亿", count / 100_000_000.0)
+    count >= 10_000 -> String.format(java.util.Locale.ROOT, "%.1f万", count / 10_000.0)
+    else -> count.toString()
+}
+
+internal fun formatVisionOnline(online: Int): String = formatVisionCount(online)
 
 @Composable
 private fun SuggestionRow(suggestion: String, onClick: () -> Unit) {

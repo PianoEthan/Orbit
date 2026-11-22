@@ -44,6 +44,7 @@ data class CoreFollowUser(
     val face: String,
     val sign: String = "",
     val fans: Int = 0,
+    val attribute: Int = 0,
 )
 
 data class CoreFollowPage(val items: List<CoreFollowUser>, val total: Int)
@@ -234,6 +235,7 @@ class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient())
                 face = normalizePic(item.string("face")).orEmpty(),
                 sign = item.string("sign").orEmpty(),
                 fans = item.get("follower")?.takeUnless { it.isJsonNull }?.asInt ?: 0,
+                attribute = item.get("attribute")?.takeUnless { it.isJsonNull }?.asInt ?: 0,
             )
         }
         val total = data.get("total")?.takeUnless { it.isJsonNull }?.asInt ?: users.size

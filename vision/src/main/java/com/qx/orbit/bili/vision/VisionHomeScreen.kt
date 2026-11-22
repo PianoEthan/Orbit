@@ -21,6 +21,8 @@ import com.qx.orbit.bili.core.api.parseCookieValue
 import kotlinx.coroutines.CancellationException
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -71,6 +73,9 @@ fun VisionHomeScreen(
     onOpenSettings: () -> Unit,
     onOpenUserCenter: () -> Unit,
     onOpenSeasons: () -> Unit = {},
+    onOpenLive: () -> Unit = {},
+    onOpenMessages: () -> Unit = {},
+    unreadCount: Int = 0,
 ) {
     val feed by viewModel.feed.collectAsState()
     val revision by viewModel.feedRevision.collectAsState()
@@ -107,6 +112,17 @@ fun VisionHomeScreen(
                         Spacer(Modifier.height(12.dp))
                         NavigationRailItem(true, onClick = {}, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
                         NavigationRailItem(false, onClick = onOpenSearch, icon = { Icon(Icons.Default.Search, null) }, label = { Text("搜索") })
+                        NavigationRailItem(false, onClick = onOpenLive, icon = { Icon(Icons.Default.LiveTv, null) }, label = { Text("直播") })
+                        NavigationRailItem(
+                            false,
+                            onClick = onOpenMessages,
+                            icon = {
+                                BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount > 99) "99+" else unreadCount.toString()) } }) {
+                                    Icon(Icons.Default.Notifications, null)
+                                }
+                            },
+                            label = { Text("消息") },
+                        )
                         Spacer(Modifier.weight(1f))
                         VisionAccountButton(onOpenUserCenter)
                         IconButton(onClick = onOpenSettings, modifier = Modifier.padding(bottom = 16.dp)) { Icon(Icons.Default.Settings, "打开设置") }
@@ -131,6 +147,17 @@ fun VisionHomeScreen(
                             NavigationBar(Modifier.weight(1f)) {
                                 NavigationBarItem(true, onClick = {}, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
                                 NavigationBarItem(false, onClick = onOpenSearch, icon = { Icon(Icons.Default.Search, null) }, label = { Text("搜索") })
+                                NavigationBarItem(false, onClick = onOpenLive, icon = { Icon(Icons.Default.LiveTv, null) }, label = { Text("直播") })
+                                NavigationBarItem(
+                                    false,
+                                    onClick = onOpenMessages,
+                                    icon = {
+                                        BadgedBox(badge = { if (unreadCount > 0) Badge { Text(if (unreadCount > 99) "99+" else unreadCount.toString()) } }) {
+                                            Icon(Icons.Default.Notifications, null)
+                                        }
+                                    },
+                                    label = { Text("消息") },
+                                )
                             }
                             VisionAccountButton(onOpenUserCenter)
                             IconButton(onClick = onOpenSettings, modifier = Modifier.padding(horizontal = 12.dp)) { Icon(Icons.Default.Settings, "打开设置") }

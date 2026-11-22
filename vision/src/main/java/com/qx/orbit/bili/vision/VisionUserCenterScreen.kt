@@ -41,6 +41,7 @@ internal fun VisionUserCenterScreen(
     onVideoClick: (CoreVideo) -> Unit,
     viewModel: VisionUserCenterViewModel = viewModel(),
     onOpenDynamics: () -> Unit = {},
+    onOpenFollowList: (VisionFollowMode) -> Unit = {},
 ) {
     val context = LocalContext.current
     val isLoggedIn = VisionUserSession.isLoggedIn
@@ -85,7 +86,11 @@ internal fun VisionUserCenterScreen(
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Spacer(Modifier.weight(1f))
-                if (isLoggedIn) IconButton(onClick = viewModel::refresh, enabled = !loading) { Icon(Icons.Default.Refresh, "刷新数据") }
+                if (isLoggedIn) {
+                    TextButton(onClick = { onOpenFollowList(VisionFollowMode.FOLLOWING) }) { Text("我的关注") }
+                    TextButton(onClick = { onOpenFollowList(VisionFollowMode.FANS) }) { Text("我的粉丝") }
+                    IconButton(onClick = viewModel::refresh, enabled = !loading) { Icon(Icons.Default.Refresh, "刷新数据") }
+                }
             }
             if (!isLoggedIn) {
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
