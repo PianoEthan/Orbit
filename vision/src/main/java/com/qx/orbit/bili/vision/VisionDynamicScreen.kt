@@ -27,7 +27,8 @@ import com.qx.orbit.bili.core.api.CoreVideo
 
 @Composable
 internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVideo: (CoreVideo) -> Unit,
-    viewModel: VisionDynamicViewModel = viewModel(), onImages: (List<String>, Int) -> Unit = { _, _ -> }) {
+    viewModel: VisionDynamicViewModel = viewModel(), onImages: (List<String>, Int) -> Unit = { _, _ -> },
+    onOpenDetail: (String) -> Unit = {}) {
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
     val backFocus = remember { FocusRequester() }
@@ -56,6 +57,7 @@ internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVide
                 LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxHeight(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     items(state.items, key = { it.id }) { item ->
                         DynamicBody(item, onVideo, onImages)
+                        TextButton(onClick = { onOpenDetail(item.id) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("详情 · 转发") }
                         Spacer(Modifier.height(20.dp))
                         HorizontalDivider()
                     }
@@ -80,7 +82,7 @@ internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVide
 }
 
 @Composable
-private fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImages: (List<String>, Int) -> Unit) {
+internal fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImages: (List<String>, Int) -> Unit) {
     var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

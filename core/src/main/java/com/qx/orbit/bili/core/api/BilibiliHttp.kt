@@ -8,8 +8,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -31,6 +33,21 @@ internal suspend fun OkHttpClient.postBilibiliForm(url: String, cookie: String, 
     val request = Request.Builder().url(url).post(form)
         .header("Referer", "https://www.bilibili.com/")
         .header("User-Agent", BILIBILI_USER_AGENT).header("Cookie", cookie).build()
+    return newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build().executeBilibiliJson(request)
+}
+
+internal suspend fun OkHttpClient.postBilibiliJson(
+    url: String,
+    cookie: String,
+    body: JsonObject,
+    referer: String = "https://www.bilibili.com/",
+): JsonObject {
+    val request = Request.Builder().url(url)
+        .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .header("Referer", referer)
+        .header("User-Agent", BILIBILI_USER_AGENT)
+        .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
+        .build()
     return newBuilder().retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build().executeBilibiliJson(request)
 }
 

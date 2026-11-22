@@ -115,10 +115,22 @@ internal fun VisionNavigation() {
                     onVideoClick = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } },
                     onOpenDynamics = { controller.navigate("dynamics") { launchSingleTop = true } },
                     onOpenFollowList = { mode -> controller.navigate("follow/${VisionUserSession.mid}?mode=${mode.name}") { launchSingleTop = true } },
+                    onOpenFavManager = { controller.navigate("favManager") { launchSingleTop = true } },
                 )
+            }
+            composable("favManager") {
+                VisionFavManagerScreen(onBack = { controller.popBackStack() },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } })
             }
             composable("dynamics") {
                 VisionDynamicScreen(onBack = { controller.popBackStack() },
+                    onLogin = { controller.navigate("login") { launchSingleTop = true } },
+                    onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages,
+                    onOpenDetail = { controller.navigate("dynamicDetail/$it") { launchSingleTop = true } })
+            }
+            composable("dynamicDetail/{dynamicId}", arguments = listOf(navArgument("dynamicId") { type = NavType.StringType })) { entry ->
+                VisionDynamicDetailScreen(requireNotNull(entry.arguments).getString("dynamicId").orEmpty(),
+                    onBack = { controller.popBackStack() },
                     onLogin = { controller.navigate("login") { launchSingleTop = true } },
                     onVideo = { controller.navigate(videoRoute("detail", it)) { launchSingleTop = true } }, onImages = openImages)
             }
