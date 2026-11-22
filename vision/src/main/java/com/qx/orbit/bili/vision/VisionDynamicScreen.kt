@@ -28,7 +28,7 @@ import com.qx.orbit.bili.core.api.CoreVideo
 @Composable
 internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVideo: (CoreVideo) -> Unit,
     viewModel: VisionDynamicViewModel = viewModel(), onImages: (List<String>, Int) -> Unit = { _, _ -> },
-    onOpenDetail: (String) -> Unit = {}) {
+    onOpenDetail: (String) -> Unit = {}, onOpenArticle: (Long) -> Unit = {}, onOpenOpus: (String) -> Unit = {}) {
     val state by viewModel.state.collectAsState()
     val cookie = VisionUserSession.cookie
     val backFocus = remember { FocusRequester() }
@@ -56,7 +56,7 @@ internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVide
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(Modifier.widthIn(max = 840.dp).fillMaxHeight(), contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     items(state.items, key = { it.id }) { item ->
-                        DynamicBody(item, onVideo, onImages)
+                        DynamicBody(item, onVideo, onImages, onOpenArticle, onOpenOpus)
                         TextButton(onClick = { onOpenDetail(item.id) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("详情 · 转发") }
                         Spacer(Modifier.height(20.dp))
                         HorizontalDivider()
@@ -82,7 +82,8 @@ internal fun VisionDynamicScreen(onBack: () -> Unit, onLogin: () -> Unit, onVide
 }
 
 @Composable
-internal fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImages: (List<String>, Int) -> Unit) {
+internal fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImages: (List<String>, Int) -> Unit,
+    onOpenArticle: (Long) -> Unit = {}, onOpenOpus: (String) -> Unit = {}) {
     var expanded by rememberSaveable(item.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -108,9 +109,11 @@ internal fun DynamicBody(item: CoreDynamic, onVideo: (CoreVideo) -> Unit, onImag
         }
         item.video?.let { video -> VisionExpressiveVideoCard(video, onClick = { onVideo(video) }) }
         item.unsupportedType?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item.articleId?.let { cv -> TextButton(onClick = { onOpenArticle(cv) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("阅读专栏") } }
+        if (item.opus) TextButton(onClick = { onOpenOpus(item.id) }, modifier = Modifier.heightIn(min = visionTouchMinHeight())) { Text("阅读全文") }
         item.original?.let { original ->
             Text("转发原动态", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            DynamicBody(original, onVideo, onImages)
+            DynamicBody(original, onVideo, onImages, onOpenArticle, onOpenOpus)
         }
     }
 }

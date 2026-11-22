@@ -15,6 +15,8 @@ data class CoreDynamic(
     val video: CoreVideo? = null,
     val original: CoreDynamic? = null,
     val unsupportedType: String? = null,
+    val articleId: Long? = null,
+    val opus: Boolean = false,
 )
 
 data class CoreDynamicPage(val items: List<CoreDynamic>, val nextOffset: String?)
@@ -82,11 +84,12 @@ class BilibiliDynamicGateway(private val client: OkHttpClient = OkHttpClient()) 
         val major = dynamic?.obj("major")
         val opus = major?.obj("opus")
         val archive = major?.obj("archive")
+        val article = major?.obj("article")
         val images = (major?.obj("draw")?.arrayObjects("items").orEmpty().map { it.text("src") } +
             opus?.arrayObjects("pics").orEmpty().map { it.text("url") }).map(::imageUrl).filter { it.isNotBlank() }.distinct()
         val text = dynamic?.obj("desc")?.text("text").orEmpty().ifBlank {
             opus?.obj("summary")?.text("text").orEmpty().ifBlank {
-                opus?.text("title").orEmpty().ifBlank { major?.obj("draw")?.text("desc").orEmpty() }
+                opus?.text("title").orEmpty().ifBlank { article?.text("title").orEmpty().ifBlank { major?.obj("draw")?.text("desc").orEmpty() } }
             }
         }
         val bvid = archive?.text("bvid").orEmpty()
@@ -97,7 +100,7 @@ class BilibiliDynamicGateway(private val client: OkHttpClient = OkHttpClient()) 
             viewText = archive?.obj("stat")?.text("play").orEmpty(),
         ) else null
         val type = major?.text("type").orEmpty()
-        val supported = type in setOf("", "MAJOR_TYPE_ARCHIVE", "MAJOR_TYPE_DRAW", "MAJOR_TYPE_OPUS", "MAJOR_TYPE_NONE")
+        val supported = type in setOf("", "MAJOR_TYPE_ARCHIVE", "MAJOR_TYPE_DRAW", "MAJOR_TYPE_OPUS", "MAJOR_TYPE_ARTICLE", "MAJOR_TYPE_NONE")
         val original = item.obj("orig")?.let { parse(it, depth + 1) }
         return CoreDynamic(
             id, author?.text("name").orEmpty(), imageUrl(author?.text("face").orEmpty()),
@@ -107,6 +110,8 @@ class BilibiliDynamicGateway(private val client: OkHttpClient = OkHttpClient()) 
                 item.text("type") == "DYNAMIC_TYPE_FORWARD" && original == null -> "原动态已删除或暂不可见"
                 else -> null
             },
+            articleId = article?.text("id")?.toLongOrNull(),
+            opus = type == "MAJOR_TYPE_OPUS",
         )
     }
 
