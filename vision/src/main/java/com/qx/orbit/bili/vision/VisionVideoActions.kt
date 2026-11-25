@@ -34,22 +34,22 @@ internal fun VisionVideoActions(viewModel: VisionDetailViewModel, onLogin: () ->
             TextButton(onClick = onLogin, modifier = Modifier.heightIn(min = 48.dp)) { Text("登录后点赞、投币或三连") }
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { viewModel.like(cookie, VisionUserSession.csrf) }, enabled = ready) {
+                FilledTonalButton(onClick = { viewModel.like(cookie, VisionUserSession.csrf) }, enabled = ready, modifier = Modifier.visionFocusBorder()) {
                     Text(if (relation?.liked == true) "已点赞 · 取消" else "点赞")
                 }
-                FilledTonalButton(onClick = { confirmation = "coin" }, enabled = ready && (relation?.coinCount ?: 0) < 2) {
+                FilledTonalButton(onClick = { confirmation = "coin" }, enabled = ready && (relation?.coinCount ?: 0) < 2, modifier = Modifier.visionFocusBorder()) {
                     Text(if ((relation?.coinCount ?: 0) > 0) "已投 ${relation?.coinCount} 枚" else "投币")
                 }
-                FilledTonalButton(onClick = { choosingFavorite = true }, enabled = ready) { Text("收藏到…") }
-                FilledTonalButton(onClick = { confirmation = "triple" }, enabled = ready && !(relation?.liked == true && relation?.favorited == true && (relation?.coinCount ?: 0) > 0)) {
+                FilledTonalButton(onClick = { choosingFavorite = true }, enabled = ready, modifier = Modifier.visionFocusBorder()) { Text("收藏到…") }
+                FilledTonalButton(onClick = { confirmation = "triple" }, enabled = ready && !(relation?.liked == true && relation?.favorited == true && (relation?.coinCount ?: 0) > 0), modifier = Modifier.visionFocusBorder()) {
                     Text(if (relation?.liked == true && relation?.favorited == true && (relation?.coinCount ?: 0) > 0) "已三连" else "一键三连")
                 }
             }
-            TextButton(onClick = { viewModel.addWatchLater(cookie, VisionUserSession.csrf) }, enabled = ready) { Text("添加到稍后再看") }
+            TextButton(onClick = { viewModel.addWatchLater(cookie, VisionUserSession.csrf) }, enabled = ready, modifier = Modifier.visionFocusBorder()) { Text("添加到稍后再看") }
             if (relation != null) Text(if (relation?.favorited == true) "已收藏" else "未收藏", style = MaterialTheme.typography.bodySmall)
             if (relationLoading) Text("正在同步账号操作状态", style = MaterialTheme.typography.bodySmall)
             if (relationError) Text("状态同步失败，暂不提交操作", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = viewModel::refreshRelation, enabled = !pending && !relationLoading) { Text("刷新操作状态") }
+            TextButton(onClick = viewModel::refreshRelation, enabled = !pending && !relationLoading, modifier = Modifier.visionFocusBorder()) { Text("刷新操作状态") }
         }
         if (pending || relationLoading) LinearProgressIndicator()
         if (pending) Text("正在提交，请勿重复操作", style = MaterialTheme.typography.bodySmall)

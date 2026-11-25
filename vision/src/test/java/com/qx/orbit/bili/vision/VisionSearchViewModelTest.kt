@@ -34,13 +34,46 @@ class VisionSearchViewModelTest {
         search: suspend (String, Int) -> List<CoreVideo> = { _, _ -> emptyList() },
         hotwords: suspend () -> List<CoreHotword> = { emptyList() },
         suggestions: suspend (String) -> List<String> = { emptyList() },
+        rooms: suspend (String, Int) -> List<com.qx.orbit.bili.core.api.CoreLiveRoom> = { _, _ -> emptyList() },
     ) = object : SearchGateway {
         override suspend fun searchVideos(keyword: String, page: Int) = search(keyword, page)
         override suspend fun loadHotwords() = hotwords()
         override suspend fun loadSuggestions(keyword: String) = suggestions(keyword)
+        override suspend fun searchRooms(keyword: String, page: Int) = rooms(keyword, page)
     }
 
     private fun video(id: Long) = CoreVideo(id, "BV$id", "视频$id", "https://cover.test/$id", "UP")
+
+    private fun room(id: Long) = com.qx.orbit.bili.core.api.CoreLiveRoom(id, title = "直播$id")
+
+    @Test fun switchingTabRequestsActiveTabAndKeepsListsSeparated() = runTest(dispatcher) {
+        val requests = mutableListOf<Pair<String, Int>>()
+        val model = VisionSearchViewModel(testGateway(
+            search = { k, p -> requests += "video" to p; listOf(video(1)) },
+            rooms = { k, p -> requests += "room" to p; listOf(room(9)) },
+        ), false)
+        model.submit("词"); advanceUntilIdle()
+        model.switchTab(VisionSearchTab.LIVE); advanceUntilIdle()
+        assertEquals(listOf("video" to 1, "room" to 1), requests)
+        assertTrue(model.results.value.isEmpty())
+        assertEquals(listOf(room(9)), model.roomResults.value)
+        model.loadMore(); advanceUntilIdle()
+        assertEquals("room" to 2, requests.last())
+        assertEquals(listOf(room(9)), model.roomResults.value)
+    }
+
+    @Test fun lateVideoResponseCannotLeakIntoLiveTab() = runTest(dispatcher) {
+        val old = CompletableDeferred<List<CoreVideo>>()
+        val model = VisionSearchViewModel(testGateway(
+            search = { _, _ -> withContext(NonCancellable) { old.await() } },
+            rooms = { _, _ -> listOf(room(9)) },
+        ), false)
+        model.submit("词"); runCurrent()
+        model.switchTab(VisionSearchTab.LIVE); advanceUntilIdle()
+        old.complete(listOf(video(1))); advanceUntilIdle()
+        assertTrue(model.results.value.isEmpty())
+        assertEquals(listOf(room(9)), model.roomResults.value)
+    }
 
     @Test fun leavingResultsDiscardsLateResponseEvenWhenRequestIgnoresCancellation() = runTest(dispatcher) {
         val old = CompletableDeferred<List<CoreVideo>>()

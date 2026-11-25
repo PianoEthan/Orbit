@@ -38,6 +38,17 @@ data class CoreHistoryCursor(val max: Long = 0, val viewAt: Long = 0, val busine
 data class CoreHistoryPage(val items: List<CoreHistoryItem>, val next: CoreHistoryCursor?)
 data class CoreDynamicVideoPage(val videos: List<CoreVideo>, val nextOffset: String?)
 
+data class CoreFollowUser(
+    val mid: Long,
+    val name: String,
+    val face: String,
+    val sign: String = "",
+    val fans: Int = 0,
+    val attribute: Int = 0,
+)
+
+data class CoreFollowPage(val items: List<CoreFollowUser>, val total: Int)
+
 interface UserDataGateway {
     suspend fun loadHistory(cookie: String): List<CoreHistoryItem>
     suspend fun loadHistoryPage(cookie: String, cursor: CoreHistoryCursor = CoreHistoryCursor()): CoreHistoryPage = CoreHistoryPage(loadHistory(cookie), null)
@@ -51,6 +62,12 @@ interface UserDataGateway {
     }
     suspend fun loadDynamicVideos(cookie: String, offset: String = ""): List<CoreVideo>
     suspend fun loadDynamicVideoPage(cookie: String, offset: String = ""): CoreDynamicVideoPage = CoreDynamicVideoPage(loadDynamicVideos(cookie, offset), null)
+    suspend fun loadFollowingList(mid: Long, page: Int, cookie: String = ""): CoreFollowPage = error("暂不支持关注列表")
+    suspend fun loadFollowerList(mid: Long, page: Int, cookie: String = ""): CoreFollowPage = error("暂不支持粉丝列表")
+    suspend fun createFavFolder(title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean = false
+    suspend fun editFavFolder(mediaId: Long, title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean = false
+    suspend fun deleteFavFolder(mediaId: Long, cookie: String, csrf: String): Boolean = false
+    suspend fun moveFavVideos(aids: List<Long>, fromFolder: Long, toFolder: Long, cookie: String, csrf: String): Boolean = false
 }
 
 class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient()) : UserDataGateway {
@@ -155,6 +172,42 @@ class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient())
         return CoreFavVideoPage(videos, data.get("has_more")?.takeUnless { it.isJsonNull }?.asBoolean ?: (medias?.size() == 20))
     }
 
+    override suspend fun createFavFolder(title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean {
+        require(title.isNotBlank() && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/add", cookie,
+            mapOf("title" to title, "intro" to intro, "privacy" to privacy.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun editFavFolder(mediaId: Long, title: String, intro: String, privacy: Int, cookie: String, csrf: String): Boolean {
+        require(mediaId > 0 && title.isNotBlank() && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/edit", cookie,
+            mapOf("media_id" to mediaId.toString(), "title" to title, "intro" to intro, "privacy" to privacy.toString(), "cover" to "", "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun deleteFavFolder(mediaId: Long, cookie: String, csrf: String): Boolean {
+        require(mediaId > 0 && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/x/v3/fav/folder/del", cookie,
+            mapOf("media_ids" to mediaId.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
+    override suspend fun moveFavVideos(aids: List<Long>, fromFolder: Long, toFolder: Long, cookie: String, csrf: String): Boolean {
+        require(aids.isNotEmpty() && fromFolder > 0 && toFolder > 0 && fromFolder != toFolder && cookie.isNotBlank() && csrf.isNotBlank()) { "请先登录" }
+        val json = client.postBilibiliForm(
+            "https://api.bilibili.com/medialist/gateway/coll/resource/deal", cookie,
+            mapOf("rid" to aids.joinToString(","), "type" to "2", "add_media_ids" to toFolder.toString(), "del_media_ids" to fromFolder.toString(), "csrf" to csrf),
+        )
+        return json.get("code")?.asInt == 0
+    }
+
     override suspend fun loadDynamicVideos(cookie: String, offset: String): List<CoreVideo> = loadDynamicVideoPage(cookie, offset).videos
 
     override suspend fun loadDynamicVideoPage(cookie: String, offset: String): CoreDynamicVideoPage {
@@ -196,6 +249,37 @@ class BilibiliUserDataGateway(private val client: OkHttpClient = OkHttpClient())
             .post(form).build()
         val json = execute(request)
         check(json.get("code")?.asInt == 0) { "稍后再看操作未完成，请刷新后重试" }
+    }
+
+    override suspend fun loadFollowingList(mid: Long, page: Int, cookie: String): CoreFollowPage =
+        loadFollowPage("followings", mid, page, cookie)
+
+    override suspend fun loadFollowerList(mid: Long, page: Int, cookie: String): CoreFollowPage =
+        loadFollowPage("followers", mid, page, cookie)
+
+    private suspend fun loadFollowPage(endpoint: String, mid: Long, page: Int, cookie: String): CoreFollowPage {
+        require(mid > 0 && page > 0)
+        val data = getWithCookie(
+            "https://api.bilibili.com/x/relation/$endpoint?vmid=$mid&pn=$page&ps=20&order=desc",
+            cookie,
+        ).requireBilibiliData()
+        val items = data.getAsJsonArray("list")
+            ?.mapNotNull { entry -> entry.takeIf { it.isJsonObject }?.asJsonObject }
+            .orEmpty()
+        val users = items.mapNotNull { item ->
+            val itemMid = item.get("mid")?.takeUnless { it.isJsonNull }?.asLong ?: return@mapNotNull null
+            if (itemMid <= 0L) return@mapNotNull null
+            CoreFollowUser(
+                mid = itemMid,
+                name = item.string("uname").orEmpty(),
+                face = normalizePic(item.string("face")).orEmpty(),
+                sign = item.string("sign").orEmpty(),
+                fans = item.get("follower")?.takeUnless { it.isJsonNull }?.asInt ?: 0,
+                attribute = item.get("attribute")?.takeUnless { it.isJsonNull }?.asInt ?: 0,
+            )
+        }
+        val total = data.get("total")?.takeUnless { it.isJsonNull }?.asInt ?: users.size
+        return CoreFollowPage(users, total)
     }
 
     private suspend fun getWithCookie(url: String, cookie: String): JsonObject {

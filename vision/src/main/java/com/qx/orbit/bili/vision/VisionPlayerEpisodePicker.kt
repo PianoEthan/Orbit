@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -39,7 +41,8 @@ internal fun VisionPlayerEpisodePicker(
             selectedFocus.requestFocus()
         }
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("选择分 P") }, text = {
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+    AlertDialog(onDismissRequest = onDismiss, modifier = if (wide) Modifier.widthIn(max = 560.dp) else Modifier, properties = DialogProperties(usePlatformDefaultWidth = !wide), title = { Text("选择分 P") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("新选集从开头播放，保留当前倍速和播放/暂停状态。", style = MaterialTheme.typography.bodySmall)
             when {
@@ -50,7 +53,7 @@ internal fun VisionPlayerEpisodePicker(
                 }
                 state.pages.isEmpty() -> Text("暂无分 P")
             }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = if (wide) 480.dp else 360.dp), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.pages, key = { it.cid }) { page ->
                     val interaction = remember { MutableInteractionSource() }
                     val focused by interaction.collectIsFocusedAsState()

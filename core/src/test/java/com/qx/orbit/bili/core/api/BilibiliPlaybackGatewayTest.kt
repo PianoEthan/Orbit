@@ -43,7 +43,27 @@ class BilibiliPlaybackGatewayTest {
         val query = requests.last().url
         assertEquals("99", query.queryParameter("cid"))
         assertEquals("144", query.queryParameter("fnval"))
+        assertEquals("1", query.queryParameter("try_look"))
         assertEquals(32, query.queryParameter("w_rid")!!.length)
+    }
+
+    @Test
+    fun loggedInSessionOmitsTryLook() = runBlocking {
+        var tryLook: String? = "unset"
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val json = if (request.url.encodedPath.endsWith("nav")) nav else {
+                tryLook = request.url.queryParameter("try_look")
+                """{"code":0,"data":{"durl":[{"url":"https://cdn.test/1.mp4"}]}}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(json.toResponseBody()).build()
+        }.build()
+        val details = object : VideoGateway {
+            override suspend fun loadDetails(video: CoreVideo): CoreVideoDetails =
+                CoreVideoDetails(video.copy(cid = 99), "", 0, 0, 0, 0)
+        }
+        BilibiliPlaybackGateway(client, details, cookieProvider = { "SESSDATA=fake" }).resolve(video)
+        assertNull(tryLook)
     }
 
     @Test

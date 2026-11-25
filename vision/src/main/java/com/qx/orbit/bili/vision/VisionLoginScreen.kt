@@ -70,7 +70,7 @@ internal fun VisionLoginScreen(
             }
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val wide = maxWidth >= 600.dp && maxWidth > maxHeight
-                val qrSize = if (wide) 220.dp else 200.dp
+                val qrSize = if (wide) 280.dp else 200.dp
                 val qr: @Composable () -> Unit = {
                     Box(Modifier.size(qrSize).background(Color.White), contentAlignment = Alignment.Center) {
                         when {
