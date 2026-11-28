@@ -1,7 +1,10 @@
-name: Android CI
+name: Orbit CI
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
     branches:
       - main
   workflow_dispatch:
@@ -10,12 +13,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-ci-${{ github.ref }}
+  group: orbit-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   compile:
-    name: Compile release variants and warm Gradle cache
+    name: Build Vision and Wear
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -29,18 +32,27 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Test shared core and build Vision
+      - name: Test shared code and build Vision
         run: |
           ./gradlew --no-daemon \
-            :core:testDebugUnitTest \
-            :vision:testDebugUnitTest \
-            :vision:assembleDebug \
-            :vision:lintDebug
+            :core:jvmTest \
+            :core:testAndroidHostTest \
+            :vision:desktopTest \
+            :vision:testAndroidHostTest \
+            :vision:compileAndroidDeviceTest \
+            :vision-android:assembleDebug \
+            :vision-android:lintDebug
+
+      - name: Launch Vision Desktop
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
+          timeout 120s xvfb-run -a ./gradlew --no-daemon :vision:run --args=--smoke-test
 
       - name: Compile lite and full release variants
         run: |

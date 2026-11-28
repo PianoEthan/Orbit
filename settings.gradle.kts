@@ -44,6 +44,7 @@ rootProject.name = "Orbit"
 include(":core")
 include(":wear")
 include(":vision")
+include(":vision-android")
 include(":ijkplayer-java")
 include(":DFMNext")
 include(":DanmakuFlameMaster")

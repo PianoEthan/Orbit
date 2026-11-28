@@ -1,36 +1,47 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
-    alias(libs.plugins.android.library)
-    id("kotlin-parcelize")
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
 }
 
-android {
-    namespace = "com.qx.orbit.bili.core"
-    compileSdk {
-        version = release(37) {
-            minorApiLevel = 1
+kotlin {
+    android {
+        namespace = "com.qx.orbit.bili.core"
+        compileSdk {
+            version = release(37) { minorApiLevel = 1 }
         }
-    }
-
-    defaultConfig {
         minSdk = 23
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
+        withHostTestBuilder {}
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    jvm {
+        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
     }
-}
 
-dependencies {
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-    implementation(libs.gson)
-    implementation(libs.coroutines.core)
-    implementation(libs.dec)
-    implementation(libs.protobuf.javalite)
-    implementation(libs.jsoup)
-    implementation(libs.core)
-    testImplementation("junit:junit:4.13.2")
+    applyDefaultHierarchyTemplate()
+
+    sourceSets {
+        val jvmAndAndroidMain = create("jvmAndAndroidMain") {
+            dependsOn(commonMain.get())
+            dependencies {
+                api(libs.okhttp)
+                implementation(libs.gson)
+                implementation(libs.coroutines.core)
+                implementation(libs.jsoup)
+            }
+        }
+        androidMain.get().dependsOn(jvmAndAndroidMain)
+        jvmMain.get().dependsOn(jvmAndAndroidMain)
+
+        val jvmAndAndroidTest = create("jvmAndAndroidTest") {
+            dependsOn(commonTest.get())
+            dependencies {
+                implementation(libs.junit)
+            }
+        }
+        named("androidHostTest") { dependsOn(jvmAndAndroidTest) }
+        jvmTest.get().dependsOn(jvmAndAndroidTest)
+    }
 }

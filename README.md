@@ -4,9 +4,10 @@
 > **多模块架构与多端适配**
 >
 > 本项目已重构为「统一底层内核 + 多端 UI」架构：
-> - `:core`：跨端通用业务内核，承载账号凭据、WBI 签名、用户中心数据、动态、搜索及音视频解析等底层接口能力，无平台 UI 依赖；
+> - `:core`：跨端通用业务内核，承载账号凭据、WBI 签名、用户中心数据、动态、搜索及音视频解析等底层接口能力，通过 Kotlin Multiplatform 为 Android 与 Desktop JVM 提供业务接口和 JVM 实现；
 > - `:wear`：专为 Wear OS 手表设计的客户端界面与触觉扩展，使用 Wear Material 3；
-> - `:vision`：适配手机、平板与电视大屏的客户端（Orbit Vision），使用标准 Material 3 Expressive 设计，并支持遥控器 D-pad 与九键输入双模适配。
+> - `:vision`：Orbit Vision 的 Compose Multiplatform 界面，供 Android 手机、平板、电视与 Desktop JVM 共用。
+> - `:vision-android`：Orbit Vision 的 Android 应用入口、资源和 APK 构建。
 
 哔哩终端的 Wear OS 重写项目。
 
@@ -26,13 +27,13 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 
 ## 关于 Orbit Vision
 
-Orbit Vision 是专为电视大屏、平板电脑、折叠屏及智能手机打造的全场景哔哩哔哩客户端，与 Orbit（Wear OS）共用底层跨端内核 `:core`。
+Orbit Vision 面向 Android 手机、平板、电视及桌面系统，与 Orbit（Wear OS）共用 Kotlin Multiplatform 业务库 `:core`。
 
-界面完全基于 Jetpack Compose 与标准 Material 3 Expressive 规范设计，支持沉浸式无顶栏布局、手机底栏与大屏侧边栏（NavigationRail）响应式自适应切换，提供深色、浅色及 Android 12+ 动态壁纸配色。
+界面基于 Compose Multiplatform 与 Material 3 Expressive，支持沉浸式无顶栏布局、手机底栏与大屏侧边栏（NavigationRail）响应式自适应切换，提供深色、浅色及 Android 12+ 动态壁纸配色。
 
 目前已经支持推荐与热门流、视频详情与分P选集、UP主空间与投稿查看、关注与拉黑、关注/粉丝列表、相关推荐与系列合集、番剧/国创/电影/电视剧/纪录片/综艺全量索引、剧集多季切换与追番追剧、直播观看（推荐/关注主播列表与直播间清晰度切换）、动态图文与多图查看器、评论区主评与楼中楼子回复发表、消息中心（回复/点赞/@/系统通知）与私信收发、分类搜索（视频/直播/用户/番剧）、稍后再看与多收藏夹管理等等。
 
-播放器针对大屏体验深度调优，默认采用 ijkPlayer 进行硬件加速解码，并在高画质流仅提供 DASH 格式时智能调度 Media3 (ExoPlayer) 进行音视频自动合并，确保 1080P 高清流畅播放；内置 DFMNext 高性能 60 帧平滑弹幕引擎，支持 CC 字幕切换、视频缩放平移、洗脑循环与自动连播，各清晰度以账号实际授权为准。
+Android 播放器默认采用 ijkPlayer 进行硬件加速解码，并在高画质流仅提供 DASH 格式时智能调度 Media3 (ExoPlayer) 进行音视频自动合并，确保 1080P 高清流畅播放；内置 DFMNext 高性能 60 帧平滑弹幕引擎，支持 CC 字幕切换、视频缩放平移、洗脑循环与自动连播，各清晰度以账号实际授权为准。桌面播放使用本机 LibVLC 3，支持共享的播放控制、字幕和弹幕设置。
 
 专为电视遥控器打造舒适的交互体验：项目获焦时具备富有表现力的平滑形变与高亮微动效，独立搜索页采用左侧输入与右侧热词建议的左右分栏布局，并针对 D-pad 遥控器首创免弹窗的内联九键输入浮层。
 
@@ -40,7 +41,7 @@ Orbit Vision 是专为电视大屏、平板电脑、折叠屏及智能手机打�
 
 ## 技术栈
 
-- **UI**: Jetpack Compose (Wear Material 3 / Material 3 Expressive)
+- **UI**: Wear 使用 Jetpack Compose 和 Wear Material 3，Vision 使用 Compose Multiplatform 和 Material 3 Expressive
 - **网络**: Retrofit + OkHttp + Gson
 - **视频播放**: ijkplayer (ARM64/ARM32 硬件加速) / Media3-ExoPlayer (DASH/MP4 自适应)
 - **弹幕**: DFM-Next (60帧平滑渲染) / DanmakuFlameMaster
@@ -63,9 +64,17 @@ git submodule update --init --recursive
 ./gradlew :wear:assembleLiteDebug
 ./gradlew :wear:assembleFullDebug
 
-# 构建大屏与手机端安装包 (Orbit Vision)
-./gradlew :vision:assembleDebug
+# 构建 Android Vision（手机、平板和电视）
+./gradlew :vision-android:assembleDebug
+
+# 启动桌面 Vision（视频与直播需要安装与系统架构匹配的 VLC 3 / LibVLC 3）
+./gradlew :vision:run
+
+# 生成当前桌面系统的安装包
+./gradlew :vision:packageDistributionForCurrentOS
 ```
+
+Android 界面测试使用 `./gradlew :vision:connectedAndroidDeviceTest`，需要连接设备或模拟器。Desktop 发行包依赖系统安装的 LibVLC 3。
 
 ## 系统要求
 

@@ -10,6 +10,7 @@
 local.properties
 core/build/
 vision/build/
+vision-android/build/
 vision/release/
 wear/build/
 wear/release/
