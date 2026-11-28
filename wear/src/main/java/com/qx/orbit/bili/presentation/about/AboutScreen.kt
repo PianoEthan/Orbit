@@ -181,6 +181,11 @@ fun AboutScreen(navController: NavController) {
                 val iconRes = when (contributor.id) {
                     OrbitContributorId.QINXIAN -> R.drawable.qinxian
                     OrbitContributorId.IAM_RJ -> R.drawable.iam_rj
+                    OrbitContributorId.YOUSHEN2 -> R.drawable.contributor_youshen2
+                    OrbitContributorId.HAICHUAN_WANG1 -> R.drawable.contributor_haichuan_wang1
+                    OrbitContributorId.RECHOILLES -> R.drawable.contributor_rechoilles
+                    OrbitContributorId.GFHDHYTGHD -> R.drawable.contributor_gfhdhytghd
+                    OrbitContributorId.STAR_ZER0 -> R.drawable.contributor_star_zer0
                 }
                 Button(
                     onClick = { showDonationDialog = true },

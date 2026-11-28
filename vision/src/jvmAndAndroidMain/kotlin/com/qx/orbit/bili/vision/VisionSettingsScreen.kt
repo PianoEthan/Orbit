@@ -40,8 +40,13 @@ import org.jetbrains.compose.resources.painterResource
 import com.qx.orbit.bili.core.api.OrbitContributorId
 import com.qx.orbit.bili.core.api.orbitContributors
 import com.qx.orbit.bili.vision.resources.Res
+import com.qx.orbit.bili.vision.resources.contributor_gfhdhytghd
+import com.qx.orbit.bili.vision.resources.contributor_haichuan_wang1
 import com.qx.orbit.bili.vision.resources.contributor_iam_rj
 import com.qx.orbit.bili.vision.resources.contributor_qinxian
+import com.qx.orbit.bili.vision.resources.contributor_rechoilles
+import com.qx.orbit.bili.vision.resources.contributor_star_zer0
+import com.qx.orbit.bili.vision.resources.contributor_youshen2
 import com.qx.orbit.bili.vision.resources.vision_launcher_background
 import com.qx.orbit.bili.vision.resources.vision_launcher_foreground
 import androidx.compose.ui.semantics.Role
@@ -364,6 +369,11 @@ private fun AboutSettings() {
             val avatar = when (contributor.id) {
                 OrbitContributorId.QINXIAN -> Res.drawable.contributor_qinxian
                 OrbitContributorId.IAM_RJ -> Res.drawable.contributor_iam_rj
+                OrbitContributorId.YOUSHEN2 -> Res.drawable.contributor_youshen2
+                OrbitContributorId.HAICHUAN_WANG1 -> Res.drawable.contributor_haichuan_wang1
+                OrbitContributorId.RECHOILLES -> Res.drawable.contributor_rechoilles
+                OrbitContributorId.GFHDHYTGHD -> Res.drawable.contributor_gfhdhytghd
+                OrbitContributorId.STAR_ZER0 -> Res.drawable.contributor_star_zer0
             }
             SegmentedListItem(
                 shapes = ListItemDefaults.segmentedShapes(index, orbitContributors.size),
