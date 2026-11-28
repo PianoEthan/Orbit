@@ -49,6 +49,8 @@ import androidx.wear.compose.material3.TitleCard
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.compose.foundation.text.ClickableText
 import com.qx.orbit.bili.R
+import com.qx.orbit.bili.core.api.OrbitContributorId
+import com.qx.orbit.bili.core.api.orbitContributors
 import com.qx.orbit.bili.presentation.theme.LocalScreenRound
 import com.qx.orbit.bili.presentation.ui.components.RoundToast
 import com.qx.orbit.bili.presentation.ui.components.adaptiveTransformedHeight
@@ -175,12 +177,11 @@ fun AboutScreen(navController: NavController) {
                 )
             }
 
-            val developers = listOf(
-                Triple("琴弦上的小医生", R.drawable.qinxian, "开发者") ,
-                Triple("iamRJ", R.drawable.iam_rj, "贡献者")
-            )
-
-            items(developers) { (name, iconRes, desc) ->
+            items(orbitContributors) { contributor ->
+                val iconRes = when (contributor.id) {
+                    OrbitContributorId.QINXIAN -> R.drawable.qinxian
+                    OrbitContributorId.IAM_RJ -> R.drawable.iam_rj
+                }
                 Button(
                     onClick = { showDonationDialog = true },
                     modifier = Modifier
@@ -195,7 +196,7 @@ fun AboutScreen(navController: NavController) {
                     icon = {
                         Image(
                             painter = painterResource(id = iconRes),
-                            contentDescription = name,
+                            contentDescription = contributor.displayName,
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(RoundedCornerShape(8.dp))
@@ -203,7 +204,7 @@ fun AboutScreen(navController: NavController) {
                     },
                     label = {
                         Text(
-                            text = name,
+                            text = contributor.displayName,
                             style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -211,7 +212,7 @@ fun AboutScreen(navController: NavController) {
                     },
                     secondaryLabel = {
                         Text(
-                            text = desc,
+                            text = contributor.role.label,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,

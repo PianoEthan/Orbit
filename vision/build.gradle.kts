@@ -1,5 +1,6 @@
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -8,6 +9,8 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.nio.file.Files
 import javax.inject.Inject
 
 plugins {
@@ -81,6 +84,7 @@ kotlin {
                 implementation(libs.coroutines.swing)
                 implementation(libs.vlcj)
                 implementation(libs.jna.jpms)
+                implementation(libs.gson)
             }
         }
 
@@ -185,5 +189,42 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
             )
         }
+    }
+}
+
+// Keep each running JVM on the JARs it started with, even when another build publishes new JARs.
+abstract class SnapshotVisionRunClasspath @Inject constructor(
+    private val objects: ObjectFactory,
+    private val projectDirectory: File,
+) : Action<Task> {
+    override fun execute(task: Task) {
+        val run = task as JavaExec
+        val workTree = projectDirectory.toPath()
+        val jars = run.classpath.files
+        val snapshot = Files.createTempDirectory("orbit-vision-run-")
+        val classpath = jars.mapIndexed { index, jar ->
+            if (jar.extension == "jar" && jar.toPath().startsWith(workTree)) {
+                Files.copy(jar.toPath(), snapshot.resolve("$index-${jar.name}")).toFile()
+            } else jar
+        }
+        run.classpath = objects.fileCollection().from(classpath)
+    }
+}
+
+class DeleteVisionRunSnapshot : Action<Task> {
+    override fun execute(task: Task) {
+        val temporaryDirectory = File(System.getProperty("java.io.tmpdir"))
+        (task as JavaExec).classpath.files.mapNotNull { jar ->
+            jar.parentFile?.takeIf {
+                it.name.startsWith("orbit-vision-run-") && it.parentFile == temporaryDirectory
+            }
+        }.distinct().forEach { it.deleteRecursively() }
+    }
+}
+
+tasks.withType<JavaExec>().configureEach {
+    if (name == "run") {
+        doFirst(objects.newInstance<SnapshotVisionRunClasspath>(rootProject.layout.projectDirectory.asFile))
+        doLast(DeleteVisionRunSnapshot())
     }
 }

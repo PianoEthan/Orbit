@@ -9,13 +9,13 @@
 > - `:vision`：Orbit Vision 的 Compose Multiplatform 界面，供 Android 手机、平板、电视与 Desktop JVM 共用。
 > - `:vision-android`：Orbit Vision 的 Android 应用入口、资源和 APK 构建。
 
-哔哩终端的 Wear OS 重写项目。
+哔哩终端的重写项目。
 
 ## 简介
 
 Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户端，借鉴了哔哩终端的部分 API 接口调用和 UI 设计。
 
-使用Jetpack Compose + Wear Material 3实现，网络层重构为Retrofit+Okhttp，相比原项目更加现代。
+使用 Jetpack Compose + Wear Material 3 实现，网络层重构为 Retrofit+Okhttp，相比原项目更加现代。
 
 目前已经实现大部分基本功能，如看视频、浏览弹幕、发送评论、查看动态、观看直播、离线缓存等等。
 
@@ -23,13 +23,13 @@ Orbit 是一个运行在 Wear OS 智能手表上的第三方哔哩哔哩客户�
 
 拥有一些首创的特色功能，比如推荐页左滑视频可一键净化（隐藏+报告不感兴趣+拉黑UP主），评论区长按可隐藏评论、删除自己的评论、管理自己内容下的置顶评论或拉黑发送者，动态长按可分别置顶、取消置顶、隐藏或删除自己的动态，也可拉黑其他发布者。
 
-注意：项目仍在开发阶段，部分功能仍处于实验性，有Bug请到仓库 issue 反馈，有能力欢迎提交pr。
+注意：项目仍在开发阶段，部分功能仍处于实验性，有 Bug 请到仓库 issue 反馈，有能力欢迎提交pr。
 
 ## 关于 Orbit Vision
 
 Orbit Vision 面向 Android 手机、平板、电视及桌面系统，与 Orbit（Wear OS）共用 Kotlin Multiplatform 业务库 `:core`。
 
-界面基于 Compose Multiplatform 与 Material 3 Expressive，支持沉浸式无顶栏布局、手机底栏与大屏侧边栏（NavigationRail）响应式自适应切换，提供深色、浅色及 Android 12+ 动态壁纸配色。
+界面基于 Compose 与 Material 3 Expressive，支持沉浸式无顶栏布局、手机底栏与大屏侧边栏（NavigationRail）响应式自适应切换，提供深色、浅色及 Android 12+ 动态壁纸配色。
 
 目前已经支持推荐与热门流、视频详情与分P选集、UP主空间与投稿查看、关注与拉黑、关注/粉丝列表、相关推荐与系列合集、番剧/国创/电影/电视剧/纪录片/综艺全量索引、剧集多季切换与追番追剧、直播观看（推荐/关注主播列表与直播间清晰度切换）、动态图文与多图查看器、评论区主评与楼中楼子回复发表、消息中心（回复/点赞/@/系统通知）与私信收发、分类搜索（视频/直播/用户/番剧）、稍后再看与多收藏夹管理等等。
 
