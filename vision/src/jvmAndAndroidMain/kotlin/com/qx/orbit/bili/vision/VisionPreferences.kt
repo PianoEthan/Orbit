@@ -12,7 +12,8 @@ enum class VisionThemeMode(val title: String) {
 enum class VisionPlayerEngine(val title: String) {
     IJK("ijkPlayer（优先硬件解码）"),
     MEDIA3("ExoPlayer / Media3 (原生内核)"),
-    VLC("VLC")
+    VLC("VLC"),
+    MPV("mpv")
 }
 
 object VisionPreferences {

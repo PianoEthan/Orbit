@@ -26,7 +26,7 @@ internal interface AndroidVisionPlayerAdapter : VisionPlayerAdapter {
 internal fun createVisionPlayerAdapter(context: Context, engine: VisionPlayerEngine): AndroidVisionPlayerAdapter =
     when (engine) {
         VisionPlayerEngine.IJK -> VisionAdaptivePlayerAdapter(context)
-        VisionPlayerEngine.MEDIA3, VisionPlayerEngine.VLC -> VisionMedia3PlayerAdapter(context)
+        VisionPlayerEngine.MEDIA3, VisionPlayerEngine.VLC, VisionPlayerEngine.MPV -> VisionMedia3PlayerAdapter(context)
     }
 
 internal class VisionIjkPlayerAdapter : AndroidVisionPlayerAdapter {

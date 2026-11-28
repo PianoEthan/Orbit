@@ -52,6 +52,7 @@ coil-multiplatform-network = { module = "io.coil-kt.coil3:coil-network-okhttp", 
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 vlcj = { module = "uk.co.caprica:vlcj", version.ref = "vlcj" }
+jna-jpms = { module = "net.java.dev.jna:jna-jpms", version = "5.16.0" }
 junit = { module = "junit:junit", version = "4.13.2" }
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }

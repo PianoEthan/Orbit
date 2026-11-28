@@ -21,7 +21,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
 
-internal class DesktopVisionPlayerAdapter : VisionPlayerAdapter {
+internal class DesktopVisionPlayerAdapter : VisionPlayerAdapter, DesktopVisionFrameSource {
     private var factory: MediaPlayerFactory? = null
     private var player: EmbeddedMediaPlayer? = null
     private var surface: CallbackVideoSurface? = null
@@ -37,7 +37,7 @@ internal class DesktopVisionPlayerAdapter : VisionPlayerAdapter {
     @Volatile private var activeMedia = 0
     private val framePending = AtomicBoolean()
     private var pixels = ByteArray(0)
-    var frame by mutableStateOf<Image?>(null)
+    override var frame by mutableStateOf<Image?>(null)
         private set
 
     override val currentPosition: Long get() = player?.status()?.time()?.takeIf { it >= 0 } ?: pendingPosition
@@ -105,7 +105,7 @@ internal class DesktopVisionPlayerAdapter : VisionPlayerAdapter {
         }
 
         try {
-            val mediaFactory = factory ?: MediaPlayerFactory("--no-video-title-show", "--quiet").also { factory = it }
+            val mediaFactory = factory ?: MediaPlayerFactory("--no-video-title-show", "--quiet", "--avcodec-hw=any").also { factory = it }
             val token = ++activeMedia
             val mediaPlayer = mediaFactory.mediaPlayers().newEmbeddedMediaPlayer()
             player = mediaPlayer

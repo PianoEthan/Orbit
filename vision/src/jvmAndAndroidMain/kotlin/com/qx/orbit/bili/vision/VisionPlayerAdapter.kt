@@ -36,6 +36,8 @@ internal expect fun VisionPlayerSurface(player: VisionPlayerAdapter, modifier: M
 
 internal expect fun platformVisionEngine(engine: VisionPlayerEngine): VisionPlayerEngine
 
+internal expect fun isVisionEngineAvailable(engine: VisionPlayerEngine): Boolean
+
 internal expect fun visionPlaybackKey(event: KeyEvent): PlaybackKey
 
 internal expect fun visionPlaybackDescription(engine: VisionPlayerEngine, playback: CorePlayback?): String

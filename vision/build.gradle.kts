@@ -1,4 +1,14 @@
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -70,6 +80,7 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.coroutines.swing)
                 implementation(libs.vlcj)
+                implementation(libs.jna.jpms)
             }
         }
 
@@ -104,10 +115,67 @@ compose.resources {
     packageOfResClass = "com.qx.orbit.bili.vision.resources"
 }
 
+abstract class StageVisionMpvRuntime @Inject constructor(private val files: FileSystemOperations) : DefaultTask() {
+    @get:InputDirectory
+    @get:Optional
+    abstract val runtimeDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val resourceRoot: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        val output = resourceRoot.get().asFile
+        val input = runtimeDirectory.orNull
+        if (input == null) files.delete { delete(output) }
+        else files.sync {
+            from(input) { into("common/mpv") }
+            into(output)
+        }
+        output.mkdirs()
+    }
+}
+
+abstract class VerifyVisionMpvRuntime : DefaultTask() {
+    @get:InputDirectory
+    abstract val resourceRoot: DirectoryProperty
+
+    @get:Input
+    abstract val libraryNames: ListProperty<String>
+
+    @TaskAction
+    fun verify() {
+        val runtime = resourceRoot.dir("common/mpv").get().asFile
+        check(libraryNames.get().any { runtime.resolve(it).isFile }) {
+            "Set -Porbit.mpvRuntimeDir to the directory containing libmpv and its portable runtime dependencies."
+        }
+    }
+}
+
+val desktopMpvRuntimePath = providers.gradleProperty("orbit.mpvRuntimeDir")
+    .orElse(providers.environmentVariable("ORBIT_MPV_RUNTIME_DIR"))
+    .orNull
+val stageVisionMpvRuntime = tasks.register<StageVisionMpvRuntime>("stageVisionMpvRuntime") {
+    if (desktopMpvRuntimePath != null) runtimeDirectory.fileValue(rootProject.file(desktopMpvRuntimePath))
+    resourceRoot.set(layout.buildDirectory.dir("desktopMpvResources"))
+}
+val verifyVisionMpvRuntime = tasks.register<VerifyVisionMpvRuntime>("verifyVisionMpvRuntime") {
+    resourceRoot.set(stageVisionMpvRuntime.flatMap { it.resourceRoot })
+    libraryNames.set(providers.systemProperty("os.name").map { name ->
+        when {
+            name.startsWith("Windows") -> listOf("mpv-2.dll", "libmpv-2.dll", "mpv.dll")
+            name.startsWith("Mac") -> listOf("libmpv.2.dylib", "libmpv.dylib")
+            else -> listOf("libmpv.so.2", "libmpv.so")
+        }
+    })
+}
+tasks.withType<AbstractJPackageTask>().configureEach { dependsOn(verifyVisionMpvRuntime) }
+
 compose.desktop {
     application {
         mainClass = "com.qx.orbit.bili.vision.VisionDesktopKt"
         nativeDistributions {
+            appResourcesRootDir.set(stageVisionMpvRuntime.flatMap { it.resourceRoot })
             packageName = "orbit-vision"
             packageVersion = "0.1.0"
             modules("java.logging", "java.prefs", "java.xml", "jdk.crypto.ec", "jdk.unsupported")

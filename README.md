@@ -33,7 +33,7 @@ Orbit Vision 面向 Android 手机、平板、电视及桌面系统，与 Orbit�
 
 目前已经支持推荐与热门流、视频详情与分P选集、UP主空间与投稿查看、关注与拉黑、关注/粉丝列表、相关推荐与系列合集、番剧/国创/电影/电视剧/纪录片/综艺全量索引、剧集多季切换与追番追剧、直播观看（推荐/关注主播列表与直播间清晰度切换）、动态图文与多图查看器、评论区主评与楼中楼子回复发表、消息中心（回复/点赞/@/系统通知）与私信收发、分类搜索（视频/直播/用户/番剧）、稍后再看与多收藏夹管理等等。
 
-Android 播放器默认采用 ijkPlayer 进行硬件加速解码，并在高画质流仅提供 DASH 格式时智能调度 Media3 (ExoPlayer) 进行音视频自动合并，确保 1080P 高清流畅播放；内置 DFMNext 高性能 60 帧平滑弹幕引擎，支持 CC 字幕切换、视频缩放平移、洗脑循环与自动连播，各清晰度以账号实际授权为准。桌面播放使用本机 LibVLC 3，支持共享的播放控制、字幕和弹幕设置。
+Android 播放器默认采用 ijkPlayer 进行硬件加速解码，并在高画质流仅提供 DASH 格式时智能调度 Media3 (ExoPlayer) 进行音视频自动合并，确保 1080P 高清流畅播放；内置 DFMNext 高性能 60 帧平滑弹幕引擎，支持 CC 字幕切换、视频缩放平移、洗脑循环与自动连播，各清晰度以账号实际授权为准。桌面默认使用内置 mpv。在「设置 → 播放与控制」中始终显示 VLC，检测到兼容的 LibVLC 3 时可切换。播放器自动尝试硬件解码，驱动或格式不支持时使用软件解码。
 
 专为电视遥控器打造舒适的交互体验：项目获焦时具备富有表现力的平滑形变与高亮微动效，独立搜索页采用左侧输入与右侧热词建议的左右分栏布局，并针对 D-pad 遥控器首创免弹窗的内联九键输入浮层。
 
@@ -67,14 +67,14 @@ git submodule update --init --recursive
 # 构建 Android Vision（手机、平板和电视）
 ./gradlew :vision-android:assembleDebug
 
-# 启动桌面 Vision（视频与直播需要安装与系统架构匹配的 VLC 3 / LibVLC 3）
+# 启动桌面 Vision
 ./gradlew :vision:run
 
-# 生成当前桌面系统的安装包
-./gradlew :vision:packageDistributionForCurrentOS
+# 生成当前桌面系统的安装包，包含 mpv 运行库
+./gradlew :vision:packageDistributionForCurrentOS -Porbit.mpvRuntimeDir=/path/to/mpv-runtime
 ```
 
-Android 界面测试使用 `./gradlew :vision:connectedAndroidDeviceTest`，需要连接设备或模拟器。Desktop 发行包依赖系统安装的 LibVLC 3。
+Android 界面测试使用 `./gradlew :vision:connectedAndroidDeviceTest`，需要连接设备或模拟器。桌面打包需要提供与目标系统和架构匹配、含依赖的可移植 libmpv 目录。Windows 使用 DLL 运行库，macOS 使用以 `@loader_path` 等相对路径定位依赖的 dylib 运行库。Linux 可用 `python3 vision/scripts/prepare-mpv-linux.py /path/to/libmpv.so.2 /path/to/mpv-runtime` 准备目录，构建机需安装 `patchelf`。生成的安装包内置 mpv，运行端使用系统 GPU 驱动。源码开发启动可使用系统 libmpv。
 
 ## 系统要求
 

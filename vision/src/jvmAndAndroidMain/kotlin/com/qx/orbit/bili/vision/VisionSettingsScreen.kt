@@ -108,10 +108,14 @@ internal fun VisionSettingsSectionScreen(section: VisionSettingsSection, onBack:
                 Text("播放器内核", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
                 Column(Modifier.selectableGroup()) {
-                    val configuredEngine = VisionPreferences.playerEngine.takeIf { it in platformVisionEngines }
+                    val configuredEngine = VisionPreferences.playerEngine.takeIf(::isVisionEngineAvailable)
                         ?: platformVisionEngines.first()
                     platformVisionEngines.forEach { engine ->
-                        SettingsRadio(engine.title, configuredEngine == engine) { VisionPreferences.updatePlayerEngine(engine) }
+                        val available = isVisionEngineAvailable(engine)
+                        val title = if (available) engine.title else "${engine.title}（需要 LibVLC 3）"
+                        SettingsRadio(title, configuredEngine == engine, enabled = available) {
+                            VisionPreferences.updatePlayerEngine(engine)
+                        }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -196,11 +200,12 @@ private fun SettingsPage(onBack: () -> Unit, content: @Composable ColumnScope.()
 }
 
 @Composable
-private fun SettingsRadio(title: String, selected: Boolean, onSelect: () -> Unit) {
+private fun SettingsRadio(title: String, selected: Boolean, enabled: Boolean = true, onSelect: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     Surface(
         onClick = onSelect,
+        enabled = enabled,
         interactionSource = interaction,
         color = if (focused) MaterialTheme.colorScheme.secondaryContainer
             else if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
@@ -214,8 +219,12 @@ private fun SettingsRadio(title: String, selected: Boolean, onSelect: () -> Unit
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            RadioButton(selected, onClick = null)
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            RadioButton(selected, onClick = null, enabled = enabled)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (enabled) LocalContentColor.current else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            )
         }
     }
     Spacer(Modifier.height(8.dp))

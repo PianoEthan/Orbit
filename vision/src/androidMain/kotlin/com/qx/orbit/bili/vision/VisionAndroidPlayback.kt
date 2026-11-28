@@ -14,6 +14,8 @@ import io.github.ynotbili.dfmnext.ui.widget.DanmakuView
 
 internal actual val platformVisionEngines = listOf(VisionPlayerEngine.IJK, VisionPlayerEngine.MEDIA3)
 
+internal actual fun isVisionEngineAvailable(engine: VisionPlayerEngine): Boolean = engine in platformVisionEngines
+
 internal actual fun platformVisionEngine(engine: VisionPlayerEngine): VisionPlayerEngine =
     effectiveVisionEngine(engine.takeIf { it in platformVisionEngines } ?: VisionPlayerEngine.IJK, Build.SUPPORTED_ABIS.toList())
 
